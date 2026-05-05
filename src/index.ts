@@ -38,7 +38,13 @@ client.on(Events.Error, (error) => {
   console.error('[discord] client error', error);
 });
 
-const server = http.createServer((_, response) => {
+const server = http.createServer((request, response) => {
+  if (request.url === '/health') {
+    response.writeHead(200, { 'content-type': 'text/plain' });
+    response.end('OK');
+    return;
+  }
+
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({
     ok: true,
