@@ -1,8 +1,6 @@
 import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
-import { handleGroupedSubscribeCommand, OPTION_KIND, OPTION_LINK, SUBSCRIBE_COMMAND_NAME } from './subscribe.js';
-import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -13,58 +11,7 @@ const pingCommand = new SlashCommandBuilder()
 
 const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
-  .setDescription('Muel 허브 사이트를 엽니다.');
-
-const subscribeCommand = new SlashCommandBuilder()
-  .setName(SUBSCRIBE_COMMAND_NAME)
-  .setDescription('Manage YouTube post/video subscriptions.')
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName('add')
-      .setDescription('Subscribe the current Discord channel to a YouTube channel.')
-      .addStringOption((option) =>
-        option
-          .setName(OPTION_KIND)
-          .setDescription('YouTube subscription type.')
-          .setRequired(true)
-          .addChoices(
-            { name: '\uac8c\uc2dc\uae00', value: 'posts' },
-            { name: '\uc601\uc0c1', value: 'videos' },
-          ),
-      )
-      .addStringOption((option) =>
-        option
-          .setName(OPTION_LINK)
-          .setDescription('YouTube channel URL or UC channel ID.')
-          .setRequired(true),
-      ),
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName('remove')
-      .setDescription('Remove a YouTube subscription from the current Discord channel.')
-      .addStringOption((option) =>
-        option
-          .setName(OPTION_KIND)
-          .setDescription('YouTube subscription type.')
-          .setRequired(true)
-          .addChoices(
-            { name: '\uac8c\uc2dc\uae00', value: 'posts' },
-            { name: '\uc601\uc0c1', value: 'videos' },
-          ),
-      )
-      .addStringOption((option) =>
-        option
-          .setName(OPTION_LINK)
-          .setDescription('YouTube channel URL or UC channel ID.')
-          .setRequired(true),
-      ),
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName('list')
-      .setDescription('List YouTube subscriptions for this server.'),
-  );
+  .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -72,36 +19,18 @@ const client = new Client({
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [pingCommand.toJSON(), helpCommand.toJSON(), subscribeCommand.toJSON()];
-  const allowedCommandNames = new Set(commands.map((command) => command.name));
-  const primaryEntryPointType = 4;
+  const commands = [helpCommand.toJSON(), pingCommand.toJSON()];
 
-  const existingGlobalCommands = await rest.get(Routes.applicationCommands(readyClient.application.id)) as Array<{
-    id: string;
-    name: string;
-    type?: number;
-  }>;
-
-  for (const command of commands) {
-    await rest.post(Routes.applicationCommands(readyClient.application.id), {
-      body: command,
-    });
-  }
-
-  for (const command of existingGlobalCommands) {
-    if (!allowedCommandNames.has(command.name) && command.type !== primaryEntryPointType) {
-      await rest.delete(Routes.applicationCommand(readyClient.application.id, command.id));
-      console.log(`[discord] deleted legacy global command ${command.name}`);
-    }
-  }
-
-  console.log('[discord] registered global commands');
+  await rest.put(Routes.applicationCommands(readyClient.application.id), {
+    body: commands,
+  });
+  console.log('[discord] replaced global commands');
 
   for (const guild of readyClient.guilds.cache.values()) {
     await rest.put(Routes.applicationGuildCommands(readyClient.application.id, guild.id), {
-      body: commands,
+      body: [],
     });
-    console.log(`[discord] reset guild commands for ${guild.id}`);
+    console.log(`[discord] cleared guild commands for ${guild.id}`);
   }
 };
 
@@ -116,7 +45,6 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('[discord] command registration failed', error);
   }
 
-  startYouTubeMonitor(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -132,17 +60,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.commandName === '도움말') {
     await interaction.reply({
       content: [
-        'Muel 허브 사이트에서 챗봇과 Activity를 확인할 수 있어요.',
-        config.hubUrl,
+        'Muel에서 사용할 수 있는 입구입니다.',
+        '',
+        `Muel Hub: ${config.hubUrl}`,
+        `Weave: ${config.hubUrl}/weave`,
+        '',
+        'Gomdori와 Server는 준비 중입니다.',
       ].join('\n'),
       ephemeral: true,
     });
     return;
   }
 
-  if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
-    await handleGroupedSubscribeCommand(interaction);
-  }
+  await interaction.reply({
+    content: [
+      '지금 사용할 수 있는 명령어는 /도움말 과 /ping 입니다.',
+      config.hubUrl,
+    ].join('\n'),
+    ephemeral: true,
+  });
 });
 
 client.on(Events.Error, (error) => {
@@ -164,7 +100,6 @@ const server = http.createServer((request, response) => {
     loginError,
     wsStatus: client.ws.status,
     uptimeSeconds: Math.floor(process.uptime()),
-    youtubeMonitor: getYouTubeMonitorStatus(),
   }));
 });
 

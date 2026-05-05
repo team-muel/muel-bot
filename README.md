@@ -14,8 +14,10 @@
 ## Features
 
 - Connects the bot user to Discord.
-- Registers slash commands including `/ping` and `/도움말`.
-- Shows the Muel hub site from `/도움말`.
+- Registers only the minimal public slash commands: `/도움말` and `/ping`.
+- Shows the Muel hub and Weave entry route from `/도움말`.
+- Clears guild-scoped legacy commands on startup so Discord does not show duplicate command entries.
+- Leaves older YouTube subscription code inactive; it is not registered as a public command.
 - Exposes a tiny HTTP health endpoint required by Render Web Services.
 
 ## Environment
