@@ -13,6 +13,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
     "discord.js": "^14.19.3"
   },
   "devDependencies": {
