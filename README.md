@@ -5,7 +5,8 @@ Minimal Muel Discord bot for Render Free Web Service.
 ## Features
 
 - Connects the bot user to Discord.
-- Registers one slash command: `/ping`.
+- Registers slash commands including `/ping` and `/도움말`.
+- Shows the Muel hub site from `/도움말`.
 - Exposes a tiny HTTP health endpoint required by Render Web Services.
 
 ## Environment
@@ -13,6 +14,10 @@ Minimal Muel Discord bot for Render Free Web Service.
 Required:
 
 - `DISCORD_BOT_TOKEN`
+
+Optional:
+
+- `HUB_URL` — defaults to `https://muel-tree.vercel.app`
 
 ## Render Free note
 

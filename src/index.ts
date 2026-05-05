@@ -11,6 +11,10 @@ const pingCommand = new SlashCommandBuilder()
   .setName('ping')
   .setDescription('Check whether Muel Bot is online.');
 
+const helpCommand = new SlashCommandBuilder()
+  .setName('도움말')
+  .setDescription('Muel 허브 사이트를 엽니다.');
+
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
   .setDescription('Manage YouTube post/video subscriptions.')
@@ -68,7 +72,7 @@ const client = new Client({
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [pingCommand.toJSON(), subscribeCommand.toJSON()];
+  const commands = [pingCommand.toJSON(), helpCommand.toJSON(), subscribeCommand.toJSON()];
   const allowedCommandNames = new Set(commands.map((command) => command.name));
   const primaryEntryPointType = 4;
 
@@ -122,6 +126,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (interaction.commandName === 'ping') {
     await interaction.reply({ content: 'pong', ephemeral: true });
+    return;
+  }
+
+  if (interaction.commandName === '도움말') {
+    await interaction.reply({
+      content: [
+        'Muel 허브 사이트에서 챗봇과 Activity를 확인할 수 있어요.',
+        config.hubUrl,
+      ].join('\n'),
+      ephemeral: true,
+    });
     return;
   }
 
