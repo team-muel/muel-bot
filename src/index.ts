@@ -2,6 +2,7 @@ import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
 import { handleGroupedSubscribeCommand } from './subscribe.js';
+import { startYouTubeMonitor } from './youtubeMonitor.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -110,6 +111,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     loginError = error instanceof Error ? error.message : String(error);
     console.error('[discord] command registration failed', error);
   }
+
+  startYouTubeMonitor(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

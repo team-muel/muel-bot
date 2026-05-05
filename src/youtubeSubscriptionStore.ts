@@ -145,6 +145,20 @@ const buildSourceUrl = (
   return `https://www.youtube.com/channel/${channelId}?muelGuild=${encodeURIComponent(guildId)}&muelChannel=${encodeURIComponent(discordChannelId)}#${kind}`;
 };
 
+export const parseYouTubeChannelId = async (input: string): Promise<string | null> => {
+  const directChannelId = extractChannelIdFromInput(input);
+  if (directChannelId) {
+    return directChannelId;
+  }
+
+  const resolvedChannelId = await resolveChannelIdFromHandleUrl(input);
+  if (resolvedChannelId) {
+    return resolvedChannelId;
+  }
+
+  return null;
+};
+
 export const parseYouTubeChannelIdOrThrow = async (input: string): Promise<string> => {
   const directChannelId = extractChannelIdFromInput(input);
   if (directChannelId) {

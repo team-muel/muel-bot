@@ -15,4 +15,6 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   supabaseUrl: optionalEnv('SUPABASE_URL'),
   supabaseServiceRoleKey: optionalEnv('SUPABASE_SERVICE_ROLE_KEY') ?? optionalEnv('SUPABASE_KEY'),
+  youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
+  youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
 };
