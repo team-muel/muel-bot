@@ -68,11 +68,29 @@ const client = new Client({
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
   const commands = [pingCommand.toJSON(), subscribeCommand.toJSON()];
+  const allowedCommandNames = new Set(commands.map((command) => command.name));
+  const primaryEntryPointType = 4;
 
-  await rest.put(Routes.applicationCommands(readyClient.application.id), {
-    body: commands,
-  });
-  console.log('[discord] registered global /ping');
+  const existingGlobalCommands = await rest.get(Routes.applicationCommands(readyClient.application.id)) as Array<{
+    id: string;
+    name: string;
+    type?: number;
+  }>;
+
+  for (const command of commands) {
+    await rest.post(Routes.applicationCommands(readyClient.application.id), {
+      body: command,
+    });
+  }
+
+  for (const command of existingGlobalCommands) {
+    if (!allowedCommandNames.has(command.name) && command.type !== primaryEntryPointType) {
+      await rest.delete(Routes.applicationCommand(readyClient.application.id, command.id));
+      console.log(`[discord] deleted legacy global command ${command.name}`);
+    }
+  }
+
+  console.log('[discord] registered global commands');
 
   for (const guild of readyClient.guilds.cache.values()) {
     await rest.put(Routes.applicationGuildCommands(readyClient.application.id, guild.id), {
