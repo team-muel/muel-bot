@@ -2,7 +2,7 @@ import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
 import { handleGroupedSubscribeCommand, OPTION_KIND, OPTION_LINK, SUBSCRIBE_COMMAND_NAME } from './subscribe.js';
-import { startYouTubeMonitor } from './youtubeMonitor.js';
+import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -149,6 +149,7 @@ const server = http.createServer((request, response) => {
     loginError,
     wsStatus: client.ws.status,
     uptimeSeconds: Math.floor(process.uptime()),
+    youtubeMonitor: getYouTubeMonitorStatus(),
   }));
 });
 

@@ -26,6 +26,12 @@ type LatestEntry = {
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
+let lastTickStartedAt: string | null = null;
+let lastTickFinishedAt: string | null = null;
+let lastTickStatus: 'idle' | 'success' | 'error' = 'idle';
+let lastTickMessage: string | null = null;
+let lastTickChecked = 0;
+let lastTickSent = 0;
 
 const decodeXml = (value: string): string => {
   return value
@@ -163,6 +169,20 @@ const updateRow = async (row: SourceRow, latest: LatestEntry): Promise<void> => 
   }
 };
 
+const updateRowNoLatest = async (row: SourceRow): Promise<void> => {
+  const { error } = await getSupabaseClient()
+    .from('sources')
+    .update({
+      last_check_status: 'no_latest',
+      last_check_error: null,
+      last_check_at: new Date().toISOString(),
+    })
+    .eq('id', row.id);
+  if (error) {
+    throw error;
+  }
+};
+
 const updateRowError = async (row: SourceRow, error: unknown): Promise<void> => {
   const message = error instanceof Error ? error.message : String(error);
   await getSupabaseClient()
@@ -179,6 +199,7 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   const mode = getMode(row);
   const latest = await fetchLatest(row);
   if (!latest) {
+    await updateRowNoLatest(row);
     return 'skipped';
   }
 
@@ -204,6 +225,9 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
   }
 
   running = true;
+  lastTickStartedAt = new Date().toISOString();
+  lastTickStatus = 'idle';
+  lastTickMessage = null;
   try {
     const rows = await loadRows();
     let sent = 0;
@@ -220,10 +244,18 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
       }
     }
 
+    lastTickChecked = rows.length;
+    lastTickSent = sent;
+    lastTickStatus = 'success';
+    lastTickMessage = `checked=${rows.length} sent=${sent}`;
     console.log(`[youtube] tick checked=${rows.length} sent=${sent}`);
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lastTickStatus = 'error';
+    lastTickMessage = message;
     console.warn('[youtube] tick failed', error);
   } finally {
+    lastTickFinishedAt = new Date().toISOString();
     running = false;
   }
 };
@@ -238,3 +270,14 @@ export const startYouTubeMonitor = (client: Client): void => {
     void runYouTubeMonitorTick(client);
   }, config.youtubeMonitorIntervalMs);
 };
+
+export const getYouTubeMonitorStatus = () => ({
+  running,
+  intervalMs: config.youtubeMonitorIntervalMs,
+  lastTickStartedAt,
+  lastTickFinishedAt,
+  lastTickStatus,
+  lastTickMessage,
+  lastTickChecked,
+  lastTickSent,
+});
