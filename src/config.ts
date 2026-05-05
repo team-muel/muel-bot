@@ -8,8 +8,5 @@ const requiredEnv = (key: string): string => {
 
 export const config = {
   discordBotToken: requiredEnv('DISCORD_BOT_TOKEN'),
-  supabaseUrl: requiredEnv('SUPABASE_URL'),
-  supabaseServiceRoleKey: requiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
-  youtubeMonitorIntervalMs: 5 * 60_000,
-  youtubeFetchTimeoutMs: 20_000,
+  port: Number(process.env.PORT ?? 3000),
 };

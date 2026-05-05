@@ -1,16 +1,12 @@
 services:
-  - type: worker
+  - type: web
     name: muel-bot
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: DISCORD_BOT_TOKEN
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false

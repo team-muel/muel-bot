@@ -1,6 +1,6 @@
+import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
-import { startYouTubeMonitor } from './youtubeMonitor.js';
 
 const pingCommand = new SlashCommandBuilder()
   .setName('ping')
@@ -18,8 +18,6 @@ client.once(Events.ClientReady, async (readyClient) => {
     body: [pingCommand.toJSON()],
   });
   console.log('[discord] registered /ping');
-
-  startYouTubeMonitor(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -34,6 +32,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.Error, (error) => {
   console.error('[discord] client error', error);
+});
+
+const server = http.createServer((_, response) => {
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify({
+    ok: true,
+    bot: client.user?.tag ?? null,
+    uptimeSeconds: Math.floor(process.uptime()),
+  }));
+});
+
+server.listen(config.port, () => {
+  console.log(`[http] listening on ${config.port}`);
 });
 
 await client.login(config.discordBotToken);
