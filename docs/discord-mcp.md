@@ -79,10 +79,12 @@ Codex global config example at `C:\Users\fancy\.codex\config.toml`:
 
 ```toml
 [mcp_servers.muel-discord]
-command = "node"
-args = ["C:\\Users\\fancy\\Documents\\Codex\\2026-05-05\\obsidian-rag-memory-eval-observer-crm\\muel-bot\\dist\\mcpServer.js"]
+command = "powershell"
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\fancy\\Documents\\Codex\\2026-05-05\\obsidian-rag-memory-eval-observer-crm\\muel-bot\\scripts\\start-discord-mcp.ps1"]
 ```
 
 Keep the token in the Windows user environment or another host-managed secret store. Do not put it in `config.toml`.
+
+The PowerShell wrapper reads `DISCORD_BOT_TOKEN` from the Windows User or Machine environment and passes it to the Node MCP process. This avoids relying on whether the Codex desktop process inherited newly-created environment variables.
 
 Cowork can wrap the same command as a plugin later. The server itself is intentionally plain stdio MCP so it can be reused by Claude Code, Codex, and other MCP-capable hosts.
