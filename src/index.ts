@@ -13,15 +13,28 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
+const registerCommands = async (readyClient: Client<true>): Promise<void> => {
+  const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
+  const commands = [pingCommand.toJSON()];
+
+  await rest.put(Routes.applicationCommands(readyClient.application.id), {
+    body: commands,
+  });
+  console.log('[discord] registered global /ping');
+
+  for (const guild of readyClient.guilds.cache.values()) {
+    await rest.put(Routes.applicationGuildCommands(readyClient.application.id, guild.id), {
+      body: commands,
+    });
+    console.log(`[discord] reset guild commands for ${guild.id}`);
+  }
+};
+
 client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
 
-  const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  await rest.put(Routes.applicationCommands(readyClient.application.id), {
-    body: [pingCommand.toJSON()],
-  });
-  console.log('[discord] registered /ping');
+  await registerCommands(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
