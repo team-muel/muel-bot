@@ -24,9 +24,9 @@ const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
   .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
 
-const weaveCommand = new SlashCommandBuilder()
-  .setName('weave')
-  .setDescription('Weave에서 꿈을 기록하고 연결합니다.');
+const diaryCommand = new SlashCommandBuilder()
+  .setName('일기')
+  .setDescription('꿈을 기록하고 연결합니다.');
 
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
@@ -65,7 +65,7 @@ const client = new Client({
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [helpCommand.toJSON(), weaveCommand.toJSON(), subscribeCommand.toJSON(), pingCommand.toJSON()];
+  const commands = [helpCommand.toJSON(), diaryCommand.toJSON(), subscribeCommand.toJSON(), pingCommand.toJSON()];
 
   await rest.put(Routes.applicationCommands(readyClient.application.id), {
     body: commands,
@@ -110,22 +110,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         'Muel에서 사용할 수 있는 입구입니다.',
         '',
         `Muel Hub: ${config.hubUrl}`,
-        `Weave: ${config.hubUrl}/weave`,
-        '/weave: 꿈을 기록하고 연결하기',
+        `일기: ${config.hubUrl}/weave`,
+        '/일기: 꿈을 기록하고 연결하기',
         '/구독: YouTube 영상/게시글 자동 구독 관리',
         '',
-        'Gomdori와 Server는 준비 중입니다.',
+        `Server: https://discord.gg/NdBHcbXpjh`,
+        'Gomdori는 준비 중입니다.',
       ].join('\n'),
       ephemeral: true,
     });
     return;
   }
 
-  if (interaction.commandName === 'weave') {
+  if (interaction.commandName === '일기') {
     const activityUrl = `${config.hubUrl}/weave`;
     await interaction.reply({
       content: [
-        '🧵 Weave — 꿈을 기록하고, 다른 꿈과 연결합니다.',
+        '📖 일기 — 꿈을 기록하고, 다른 꿈과 연결합니다.',
         '',
         `지금 바로 시작하기: ${activityUrl}`,
         '',
@@ -143,7 +144,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   await interaction.reply({
     content: [
-      '지금 사용할 수 있는 명령어는 /도움말, /weave, /구독, /ping 입니다.',
+      '지금 사용할 수 있는 명령어는 /도움말, /일기, /구독, /ping 입니다.',
       config.hubUrl,
     ].join('\n'),
     ephemeral: true,
