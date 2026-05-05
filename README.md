@@ -1,6 +1,15 @@
-# muel-bot
+# Muel Discord Bot
 
-Minimal Muel Discord bot for Render Free Web Service.
+`muel-bot` is the Render-hosted Discord bot for the Muel Platform.
+
+## Terms
+
+- **Muel Platform**: the overall brand and product system.
+- **Muel Discord Bot**: this repository, deployed on Render.
+- **Muel Web App**: the separate `muel-tree` repository, deployed on Vercel.
+- **Hub**: the public `/` page in `muel-tree`.
+- **Activity**: a Discord Activity route in `muel-tree`, such as `/weave`.
+- **Product**: an individual service such as Muel, Black or White, or 세계수.
 
 ## Features
 
