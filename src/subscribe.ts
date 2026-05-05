@@ -8,8 +8,12 @@ import {
 } from './youtubeSubscriptionStore.js';
 
 export const SUBSCRIBE_COMMAND_NAME = '\uad6c\ub3c5';
+export const OPTION_ACTION = '\ub3d9\uc791';
 export const OPTION_KIND = '\uc885\ub958';
 export const OPTION_LINK = '\ub9c1\ud06c';
+export const SUBSCRIBE_ACTION_LIST = 'list';
+export const SUBSCRIBE_ACTION_ADD = 'add';
+export const SUBSCRIBE_ACTION_REMOVE = 'remove';
 
 const EMBED_INFO = 0x2f80ed;
 const EMBED_WARN = 0xf2c94c;
@@ -234,4 +238,33 @@ export const handleGroupedSubscribeCommand = async (
   }
 
   await handleSubscriptionListCommand(interaction);
+};
+
+export const handleFlatSubscribeCommand = async (
+  interaction: ChatInputCommandInteraction,
+): Promise<void> => {
+  const action = interaction.options.getString(OPTION_ACTION)?.trim();
+
+  if (action === SUBSCRIBE_ACTION_LIST) {
+    await handleSubscriptionListCommand(interaction);
+    return;
+  }
+
+  const kind = getKindOption(interaction);
+  if (!kind) {
+    await interaction.reply({ ...buildSimpleEmbed('Input error', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), ephemeral: true });
+    return;
+  }
+
+  if (action === SUBSCRIBE_ACTION_ADD) {
+    await handleSubscribeYouTubeCommand(interaction, kind);
+    return;
+  }
+
+  if (action === SUBSCRIBE_ACTION_REMOVE) {
+    await handleUnsubscribeCommand(interaction, kind);
+    return;
+  }
+
+  await interaction.reply({ ...buildSimpleEmbed('Input error', '조회, 추가, 제거 중 하나를 선택해주세요.', EMBED_WARN), ephemeral: true });
 };

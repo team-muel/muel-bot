@@ -1,6 +1,17 @@
 import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
+import {
+  handleFlatSubscribeCommand,
+  OPTION_ACTION,
+  OPTION_KIND,
+  OPTION_LINK,
+  SUBSCRIBE_ACTION_ADD,
+  SUBSCRIBE_ACTION_LIST,
+  SUBSCRIBE_ACTION_REMOVE,
+  SUBSCRIBE_COMMAND_NAME,
+} from './subscribe.js';
+import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -13,13 +24,44 @@ const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
   .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
 
+const subscribeCommand = new SlashCommandBuilder()
+  .setName(SUBSCRIBE_COMMAND_NAME)
+  .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다.')
+  .addStringOption((option) =>
+    option
+      .setName(OPTION_ACTION)
+      .setDescription('조회 / 추가 / 제거')
+      .setRequired(true)
+      .addChoices(
+        { name: '조회', value: SUBSCRIBE_ACTION_LIST },
+        { name: '추가', value: SUBSCRIBE_ACTION_ADD },
+        { name: '제거', value: SUBSCRIBE_ACTION_REMOVE },
+      ),
+  )
+  .addStringOption((option) =>
+    option
+      .setName(OPTION_KIND)
+      .setDescription('영상 또는 게시글')
+      .setRequired(false)
+      .addChoices(
+        { name: '영상', value: 'videos' },
+        { name: '게시글', value: 'posts' },
+      ),
+  )
+  .addStringOption((option) =>
+    option
+      .setName(OPTION_LINK)
+      .setDescription('YouTube 채널 링크 또는 UC 채널 ID')
+      .setRequired(false),
+  );
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [helpCommand.toJSON(), pingCommand.toJSON()];
+  const commands = [helpCommand.toJSON(), subscribeCommand.toJSON(), pingCommand.toJSON()];
 
   await rest.put(Routes.applicationCommands(readyClient.application.id), {
     body: commands,
@@ -45,6 +87,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('[discord] command registration failed', error);
   }
 
+  startYouTubeMonitor(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -64,6 +107,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         '',
         `Muel Hub: ${config.hubUrl}`,
         `Weave: ${config.hubUrl}/weave`,
+        '/구독: YouTube 영상/게시글 자동 구독 관리',
         '',
         'Gomdori와 Server는 준비 중입니다.',
       ].join('\n'),
@@ -72,9 +116,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
+  if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
+    await handleFlatSubscribeCommand(interaction);
+    return;
+  }
+
   await interaction.reply({
     content: [
-      '지금 사용할 수 있는 명령어는 /도움말 과 /ping 입니다.',
+      '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
       config.hubUrl,
     ].join('\n'),
     ephemeral: true,
@@ -100,6 +149,7 @@ const server = http.createServer((request, response) => {
     loginError,
     wsStatus: client.ws.status,
     uptimeSeconds: Math.floor(process.uptime()),
+    youtubeMonitor: getYouTubeMonitorStatus(),
   }));
 });
 
