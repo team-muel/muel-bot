@@ -188,6 +188,21 @@ const splitDiscordMessages = (input: string, maxLength = 1800): string[] => {
   return chunks;
 };
 
+const splitCommunityBody = (input: string): { preview: string; overflow: string } => {
+  const text = String(input || '').trim();
+  const maxPreviewLength = 1850;
+  if (text.length <= maxPreviewLength) {
+    return { preview: text, overflow: '' };
+  }
+
+  const preferredBreak = text.lastIndexOf('\n', maxPreviewLength);
+  const splitAt = preferredBreak > 500 ? preferredBreak : maxPreviewLength;
+  return {
+    preview: text.slice(0, splitAt).trim(),
+    overflow: text.slice(splitAt).trim(),
+  };
+};
+
 const isShortsEntry = (latest: LatestEntry): boolean => {
   const markerText = `${latest.title}\n${latest.content}\n${latest.link}`;
   return Boolean(latest.isShorts) || /(^|\W)(#shorts|shorts|쇼츠)(\W|$)/i.test(markerText) || latest.link.includes('/shorts/');
@@ -248,7 +263,18 @@ const buildCommunityMessage = (latest: LatestEntry): string => [
   truncate(latest.title, 180),
 ].filter(Boolean).join('\n');
 
-const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry): string => {
+const buildCommunityBody = (latest: LatestEntry): string => [
+  `📌 ${latest.title}`,
+  '',
+  latest.content || '(본문을 가져오지 못했습니다.)',
+  '',
+  '--------------------------------------------------',
+  '',
+  displayLink(latest),
+  [latest.author, latest.published].filter(Boolean).join(' | '),
+].filter(Boolean).join('\n');
+
+const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow?: string): string => {
   if (mode === 'shorts') {
     return [
       `# ${latest.title}`,
@@ -260,9 +286,7 @@ const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry): string 
   }
 
   return [
-    `# ${latest.title}`,
-    '',
-    latest.content || '(본문을 가져오지 못했습니다.)',
+    overflow || '',
     '',
     displayLink(latest),
     '',
@@ -357,11 +381,15 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   }
 
   if (mode === 'posts') {
+    const body = buildCommunityBody(latest);
+    const { preview, overflow } = splitCommunityBody(body);
     const sentMessage = await channel.send({
-      content: buildCommunityMessage(latest),
+      content: preview || buildCommunityMessage(latest),
       embeds: [buildCommunityEmbed(latest)],
     });
-    await createThreadFromMessage(sentMessage, threadTitle('게시글', latest), buildThreadBody('posts', latest));
+    if (overflow) {
+      await createThreadFromMessage(sentMessage, threadTitle('이어보기', latest), buildThreadBody('posts', latest, overflow));
+    }
   } else if (isShortsEntry(latest)) {
     const sentMessage = await channel.send(buildShortsMessage(latest));
     await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));

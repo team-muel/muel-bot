@@ -18,7 +18,7 @@
 - Shows the Muel hub and Weave entry route from `/도움말`.
 - Clears guild-scoped legacy commands on startup so Discord does not show duplicate command entries.
 - Keeps `/구독` as the Muel utility for YouTube video/community post procurement.
-- Sends regular videos as channel messages, while Shorts and community posts get a thread for smaller follow-up context.
+- Sends regular videos as channel messages; community posts show as much body text as Discord allows and spill the rest into a thread, while Shorts get a small thread.
 - Exposes a tiny HTTP health endpoint required by Render Web Services.
 
 ## Environment
