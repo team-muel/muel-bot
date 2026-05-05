@@ -33,6 +33,22 @@ let lastTickMessage: string | null = null;
 let lastTickChecked = 0;
 let lastTickSent = 0;
 
+const formatUnknownError = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  return String(error);
+};
+
 const decodeXml = (value: string): string => {
   return value
     .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
@@ -184,7 +200,7 @@ const updateRowNoLatest = async (row: SourceRow): Promise<void> => {
 };
 
 const updateRowError = async (row: SourceRow, error: unknown): Promise<void> => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatUnknownError(error);
   await getSupabaseClient()
     .from('sources')
     .update({
@@ -250,7 +266,7 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
     lastTickMessage = `checked=${rows.length} sent=${sent}`;
     console.log(`[youtube] tick checked=${rows.length} sent=${sent}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUnknownError(error);
     lastTickStatus = 'error';
     lastTickMessage = message;
     console.warn('[youtube] tick failed', error);
