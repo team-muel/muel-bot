@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
-import { handleGroupedSubscribeCommand } from './subscribe.js';
+import { handleGroupedSubscribeCommand, OPTION_KIND, OPTION_LINK, SUBSCRIBE_COMMAND_NAME } from './subscribe.js';
 import { startYouTubeMonitor } from './youtubeMonitor.js';
 
 let readyAt: string | null = null;
@@ -12,54 +12,54 @@ const pingCommand = new SlashCommandBuilder()
   .setDescription('Check whether Muel Bot is online.');
 
 const subscribeCommand = new SlashCommandBuilder()
-  .setName('구독')
-  .setDescription('YouTube 채널 게시글/영상 구독을 관리합니다.')
+  .setName(SUBSCRIBE_COMMAND_NAME)
+  .setDescription('Manage YouTube post/video subscriptions.')
   .addSubcommand((subcommand) =>
     subcommand
       .setName('add')
-      .setDescription('현재 Discord 채널에 YouTube 구독을 추가합니다.')
+      .setDescription('Subscribe the current Discord channel to a YouTube channel.')
       .addStringOption((option) =>
         option
-          .setName('종류')
-          .setDescription('구독할 YouTube 항목')
+          .setName(OPTION_KIND)
+          .setDescription('YouTube subscription type.')
           .setRequired(true)
           .addChoices(
-            { name: '게시글', value: 'posts' },
-            { name: '영상', value: 'videos' },
+            { name: '\uac8c\uc2dc\uae00', value: 'posts' },
+            { name: '\uc601\uc0c1', value: 'videos' },
           ),
       )
       .addStringOption((option) =>
         option
-          .setName('링크')
-          .setDescription('YouTube 채널 URL 또는 UC... 채널 ID')
+          .setName(OPTION_LINK)
+          .setDescription('YouTube channel URL or UC channel ID.')
           .setRequired(true),
       ),
   )
   .addSubcommand((subcommand) =>
     subcommand
       .setName('remove')
-      .setDescription('현재 Discord 채널의 YouTube 구독을 해제합니다.')
+      .setDescription('Remove a YouTube subscription from the current Discord channel.')
       .addStringOption((option) =>
         option
-          .setName('종류')
-          .setDescription('해제할 YouTube 항목')
+          .setName(OPTION_KIND)
+          .setDescription('YouTube subscription type.')
           .setRequired(true)
           .addChoices(
-            { name: '게시글', value: 'posts' },
-            { name: '영상', value: 'videos' },
+            { name: '\uac8c\uc2dc\uae00', value: 'posts' },
+            { name: '\uc601\uc0c1', value: 'videos' },
           ),
       )
       .addStringOption((option) =>
         option
-          .setName('링크')
-          .setDescription('YouTube 채널 URL 또는 UC... 채널 ID')
+          .setName(OPTION_LINK)
+          .setDescription('YouTube channel URL or UC channel ID.')
           .setRequired(true),
       ),
   )
   .addSubcommand((subcommand) =>
     subcommand
       .setName('list')
-      .setDescription('이 서버의 YouTube 구독 목록을 봅니다.'),
+      .setDescription('List YouTube subscriptions for this server.'),
   );
 
 const client = new Client({
@@ -125,7 +125,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  if (interaction.commandName === '구독') {
+  if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
     await handleGroupedSubscribeCommand(interaction);
   }
 });
