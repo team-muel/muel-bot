@@ -1,4 +1,4 @@
-import { Client, EmbedBuilder } from 'discord.js';
+import { Client, EmbedBuilder, ThreadAutoArchiveDuration } from 'discord.js';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from './youtubeCommunityScraper.js';
@@ -22,6 +22,7 @@ type LatestEntry = {
   link: string;
   author: string;
   published: string;
+  isShorts?: boolean;
 };
 
 let timer: NodeJS.Timeout | null = null;
@@ -63,6 +64,27 @@ const decodeXml = (value: string): string => {
 const extractTag = (xml: string, tag: string): string => {
   const match = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
   return match?.[1] ? decodeXml(match[1]) : '';
+};
+
+const detectShortsVideo = async (videoId: string): Promise<boolean> => {
+  try {
+    const response = await fetchWithTimeout(
+      `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+      {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (compatible; MuelBot/1.0)',
+          accept: 'text/html,application/xhtml+xml',
+        },
+      },
+      Math.min(config.youtubeFetchTimeoutMs, 8000),
+    );
+
+    if (!response.ok) return false;
+    const html = await response.text();
+    return html.includes('"isShortsEligible":true') || html.includes('"shortsLockupViewModel"') || html.includes('"reelWatchEndpoint"');
+  } catch {
+    return false;
+  }
 };
 
 const getMode = (row: SourceRow): 'posts' | 'videos' => {
@@ -131,6 +153,7 @@ const fetchLatestVideo = async (channelId: string): Promise<LatestEntry | null> 
     link: `https://www.youtube.com/watch?v=${id}`,
     author,
     published,
+    isShorts: await detectShortsVideo(id),
   };
 };
 
@@ -142,6 +165,43 @@ const toLatestEntry = (post: ScrapedCommunityPost): LatestEntry => ({
   author: post.author,
   published: post.published,
 });
+
+const truncate = (input: string, maxLength: number): string => {
+  const text = String(input || '').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
+};
+
+const splitDiscordMessages = (input: string, maxLength = 1800): string[] => {
+  const text = String(input || '').trim();
+  if (!text) return [];
+
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLength) {
+    const preferredBreak = remaining.lastIndexOf('\n', maxLength);
+    const splitAt = preferredBreak > 200 ? preferredBreak : maxLength;
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+};
+
+const isShortsEntry = (latest: LatestEntry): boolean => {
+  const markerText = `${latest.title}\n${latest.content}\n${latest.link}`;
+  return Boolean(latest.isShorts) || /(^|\W)(#shorts|shorts|쇼츠)(\W|$)/i.test(markerText) || latest.link.includes('/shorts/');
+};
+
+const displayLink = (latest: LatestEntry): string => {
+  if (isShortsEntry(latest)) {
+    return `https://www.youtube.com/shorts/${latest.id}`;
+  }
+  return latest.link;
+};
+
+const threadTitle = (prefix: string, latest: LatestEntry): string =>
+  truncate(`${prefix} ${latest.title || latest.author}`, 90);
 
 const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   const channelId = await parseYouTubeChannelId(row.url);
@@ -157,16 +217,82 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   return fetchLatestVideo(channelId);
 };
 
-const buildEmbed = (row: SourceRow, latest: LatestEntry): EmbedBuilder => {
-  const mode = getMode(row) === 'posts' ? 'YouTube post' : 'YouTube video';
-  const description = [latest.content || latest.title, latest.link].filter(Boolean).join('\n\n').slice(0, 4096);
+const buildCommunityEmbed = (latest: LatestEntry): EmbedBuilder => {
+  const description = [
+    truncate(latest.content || latest.title, 900),
+    displayLink(latest),
+  ].filter(Boolean).join('\n\n').slice(0, 4096);
 
   return new EmbedBuilder()
     .setColor(0x2f80ed)
-    .setTitle((latest.title || mode).slice(0, 256))
-    .setURL(latest.link)
+    .setTitle((latest.title || '새 커뮤니티 게시글').slice(0, 256))
+    .setURL(displayLink(latest))
     .setDescription(description)
-    .setFooter({ text: [mode, latest.author, latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
+    .setFooter({ text: ['YouTube community', latest.author, latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
+};
+
+const buildVideoMessage = (latest: LatestEntry): string => [
+  `📌 ${latest.author} 신규 영상 업로드!`,
+  latest.title,
+  displayLink(latest),
+].filter(Boolean).join('\n');
+
+const buildShortsMessage = (latest: LatestEntry): string => [
+  `📌 ${latest.author} 신규 쇼츠 업로드!`,
+  latest.title,
+  displayLink(latest),
+].filter(Boolean).join('\n');
+
+const buildCommunityMessage = (latest: LatestEntry): string => [
+  `📌 ${latest.author} 새 커뮤니티 게시글`,
+  truncate(latest.title, 180),
+].filter(Boolean).join('\n');
+
+const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry): string => {
+  if (mode === 'shorts') {
+    return [
+      `# ${latest.title}`,
+      '',
+      displayLink(latest),
+      '',
+      [latest.author, latest.published].filter(Boolean).join(' | '),
+    ].filter(Boolean).join('\n');
+  }
+
+  return [
+    `# ${latest.title}`,
+    '',
+    latest.content || '(본문을 가져오지 못했습니다.)',
+    '',
+    displayLink(latest),
+    '',
+    [latest.author, latest.published].filter(Boolean).join(' | '),
+  ].filter(Boolean).join('\n');
+};
+
+const createThreadFromMessage = async (
+  message: { startThread?: (options: { name: string; autoArchiveDuration: ThreadAutoArchiveDuration; reason?: string }) => Promise<{ send: (content: string) => Promise<unknown> }> },
+  name: string,
+  body: string,
+): Promise<void> => {
+  if (typeof message.startThread !== 'function') {
+    return;
+  }
+
+  try {
+    const thread = await message.startThread({
+      name,
+      autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+      reason: 'Muel YouTube procurement thread',
+    });
+
+    const chunks = splitDiscordMessages(body);
+    for (const chunk of chunks.length > 0 ? chunks : ['내용 없음']) {
+      await thread.send(chunk);
+    }
+  } catch (error) {
+    console.warn('[youtube] thread creation failed', error);
+  }
 };
 
 const updateRow = async (row: SourceRow, latest: LatestEntry): Promise<void> => {
@@ -230,7 +356,19 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
   }
 
-  await channel.send({ embeds: [buildEmbed(row, latest)] });
+  if (mode === 'posts') {
+    const sentMessage = await channel.send({
+      content: buildCommunityMessage(latest),
+      embeds: [buildCommunityEmbed(latest)],
+    });
+    await createThreadFromMessage(sentMessage, threadTitle('게시글', latest), buildThreadBody('posts', latest));
+  } else if (isShortsEntry(latest)) {
+    const sentMessage = await channel.send(buildShortsMessage(latest));
+    await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
+  } else {
+    await channel.send(buildVideoMessage(latest));
+  }
+
   await updateRow(row, latest);
   return 'sent';
 };
