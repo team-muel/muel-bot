@@ -2,6 +2,7 @@ import type { Client, Message } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import {
+  getUserHistorySummary,
   insertMuelEvent,
   insertMuelMessage,
   listRecentMuelMessages,
@@ -9,6 +10,7 @@ import {
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { fetchServerContext } from './muelContext.js';
+import { formatForContext } from './channelBuffer.js';
 
 const stripBotMention = (content: string, botId: string): string => {
   return content
@@ -60,11 +62,14 @@ export const handleMuelMention = async (
     });
     inboundMessageId = inbound.id;
 
-    const [history, serverContext] = await Promise.all([
+    const [history, serverContext, userHistory] = await Promise.all([
       listRecentMuelMessages(supabase, conversationId, 12),
       fetchServerContext().catch(() => undefined),
+      getUserHistorySummary(supabase, message.author.id, conversationId).catch(() => null),
     ]);
-    const reply = await generateMuelReply(userText, history, serverContext);
+    const channelActivity = formatForContext(message.channelId, client.user.id);
+    const authorName = message.author.displayName ?? message.author.username;
+    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory);
     const sent = await message.reply(toDiscordReply(reply.text));
 
     await insertMuelMessage(supabase, {

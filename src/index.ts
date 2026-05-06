@@ -13,6 +13,7 @@ import {
 } from './subscribe.js';
 import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 import { handleMuelMention } from './mentionHandler.js';
+import { pushMessage } from './channelBuffer.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -30,6 +31,15 @@ const helpCommand = new SlashCommandBuilder()
 const diaryCommand = new SlashCommandBuilder()
   .setName('일기')
   .setDescription('꿈을 기록하고 연결합니다.');
+
+const diaryEntryPointCommand = {
+  name: '일기',
+  description: '꿈을 기록하고 연결합니다.',
+  type: 4,
+  handler: 1,
+  integration_types: [0, 1],
+  contexts: [0, 1, 2],
+};
 
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
@@ -72,7 +82,13 @@ const client = new Client({
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [helpCommand.toJSON(), diaryCommand.toJSON(), subscribeCommand.toJSON(), pingCommand.toJSON()];
+  const commands = [
+    helpCommand.toJSON(),
+    diaryCommand.toJSON(),
+    subscribeCommand.toJSON(),
+    pingCommand.toJSON(),
+    diaryEntryPointCommand,
+  ];
 
   await rest.put(Routes.applicationCommands(readyClient.application.id), {
     body: commands,
@@ -102,6 +118,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isPrimaryEntryPointCommand()) {
+    await interaction.launchActivity();
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) {
     return;
   }
@@ -164,6 +185,15 @@ client.on(Events.MessageCreate, async (message) => {
   }
 
   await handleMuelMention(client, message);
+
+  if (!message.author.bot && message.content) {
+    pushMessage(message.channelId, {
+      authorId: message.author.id,
+      authorName: message.author.displayName ?? message.author.username,
+      content: message.content,
+      timestamp: message.createdTimestamp,
+    });
+  }
 });
 
 client.on(Events.Error, (error) => {

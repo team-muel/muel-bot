@@ -110,6 +110,47 @@ export const listRecentMuelMessages = async (
   return ((data ?? []) as MuelStoredMessage[]).reverse();
 };
 
+export type UserHistorySummary = {
+  totalInteractions: number;
+  recentTopics: string[];
+  lastActiveAt: string | null;
+};
+
+export const getUserHistorySummary = async (
+  supabase: SupabaseClient,
+  discordUserId: string,
+  excludeConversationId?: string,
+): Promise<UserHistorySummary | null> => {
+  let query = supabase
+    .from('muel_messages')
+    .select('content, role, created_at')
+    .eq('discord_user_id', discordUserId)
+    .eq('direction', 'inbound')
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (excludeConversationId) {
+    query = query.neq('conversation_id', excludeConversationId);
+  }
+
+  const { data, error } = await query;
+
+  if (error || !data || data.length === 0) {
+    return null;
+  }
+
+  const messages = data as Array<{ content: string; role: string; created_at: string }>;
+  const recentContents = messages
+    .slice(0, 8)
+    .map((m) => m.content.slice(0, 80));
+
+  return {
+    totalInteractions: messages.length,
+    recentTopics: recentContents,
+    lastActiveAt: messages[0]?.created_at ?? null,
+  };
+};
+
 export const insertMuelEvent = async (
   supabase: SupabaseClient,
   input: {

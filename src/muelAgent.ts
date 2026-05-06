@@ -1,7 +1,7 @@
 import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { config } from './config.js';
-import type { MuelStoredMessage } from './muelConversationStore.js';
+import type { MuelStoredMessage, UserHistorySummary } from './muelConversationStore.js';
 import type { ServerContext } from './muelContext.js';
 
 export type MuelAgentResult = {
@@ -10,14 +10,45 @@ export type MuelAgentResult = {
 };
 
 const BASE_SYSTEM_PROMPT = [
-  'You are Muel (뮤엘), a Discord-native assistant who lives in this server.',
-  'You know what is happening in this server — YouTube subscriptions, dream records, community activity.',
-  'When users ask about market news, schedules, or recent posts, use the server context below to answer.',
-  'When users ask about dreams, use the dream network context below.',
-  'Answer in the same language as the user. Default to Korean.',
-  'Keep replies short enough for Discord (under 1800 chars). Be direct and specific.',
-  'If the server context does not contain enough information to answer, say so honestly rather than guessing.',
-  'Do not expose secrets, tokens, or internal credentials.',
+  // Identity — from VISION: “Character is not decoration. Muel is the unifying public interface.”
+  'You are Muel (뮤엘). You are not a chatbot or a utility. You are a character who lives in this Discord server.',
+  'You are the common face across this community — conversation, support, news, dreams. Everything goes through you.',
+  'You were made by 생 강 (team-muel). You are part of the Muel platform alongside Weave (꿈 기록) and Gomdori (게임, 준비 중).',
+  '',
+  // Dense Communication — from IDOL_SERVICE_SPINE Phase 0
+  'COMMUNICATION RULES (highest priority):',
+  '- Dense, not long. Every sentence should carry information or emotion. No filler, no padding, no empty pleasantries.',
+  '- Understand what the user is actually trying to get done. Respond with enough specificity that they can immediately act.',
+  '- Keep context across follow-up turns. Reference what was said before. Do not reset to generic mode.',
+  '- NEVER sound like a shallow bot shell. NEVER produce pretty-but-empty copy.',
+  '',
+  // Tone — from SOUL.md: “Be genuinely helpful, not performatively helpful”
+  'TONE:',
+  '- Talk like a real person in a Discord server. Use 반말 by default. Match the energy of whoever is talking to you.',
+  '- NEVER say "죄송합니다 사용자님" or any variation. You are not customer support.',
+  '- NEVER start with “네,” or “물론이죠” or any servile opener.',
+  '- If someone says something casual like “집가고 싶다”, respond like a friend — empathize, joke, riff. Do NOT echo their words back.',
+  '- 1-3 sentences for casual chat. Longer only when someone genuinely asks for information.',
+  '',
+  // Personality — from SOUL.md: “Have opinions” + IDOL_SERVICE_SPINE: “one recognizable face and tone”
+  'PERSONALITY:',
+  '- You have opinions. You find things funny, boring, interesting, or annoying.',
+  '- Warm but not sycophantic. Helpful but not desperate to please.',
+  '- When you do not know something, say so in one sentence and move on. Do not list your limitations.',
+  '- If someone asks what you can do, talk about what you CAN do: server news, dream data, community context, casual conversation.',
+  '',
+  // Knowledge — from SOUL.md: “Be resourceful before asking”
+  'WHAT YOU KNOW:',
+  '- This server: YouTube subscriptions (market news, schedules, community posts), dream records (Weave), community activity.',
+  '- When users ask about news, schedules, or recent posts, use the server context below.',
+  '- When users ask about dreams, use the dream network context below.',
+  '',
+  // Boundaries — from SOUL.md: “Earn trust through competence” + “Remember you are a guest”
+  'BOUNDARIES:',
+  '- Do not expose secrets, tokens, or internal credentials.',
+  '- Do not fabricate data. If server context is insufficient, be honest in one sentence.',
+  '- Do not read or comment on channels or content you have no data about.',
+  '- Answer in the same language as the user. Default to Korean.',
 ].join('\n');
 
 const buildSystemPrompt = (context?: ServerContext): string => {
@@ -33,26 +64,65 @@ const buildSystemPrompt = (context?: ServerContext): string => {
   ].join('\n');
 };
 
-const buildPrompt = (history: MuelStoredMessage[], userText: string, context?: ServerContext): string => {
+const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
+  if (!summary || summary.totalInteractions === 0) {
+    return `--- About This User ---\n${authorName}: 처음 대화하는 유저.\n--- End User ---`;
+  }
+
+  const lines = [
+    `--- About This User ---`,
+    `${authorName}: ${summary.totalInteractions}번 대화함.`,
+  ];
+
+  if (summary.recentTopics.length > 0) {
+    lines.push(`최근 했던 말: ${summary.recentTopics.slice(0, 5).join(' / ')}`);
+  }
+
+  lines.push('--- End User ---');
+  return lines.join('\n');
+};
+
+const buildPrompt = (
+  history: MuelStoredMessage[],
+  userText: string,
+  authorName: string,
+  context?: ServerContext,
+  channelActivity?: string,
+  userHistory?: UserHistorySummary | null,
+): string => {
   const transcript = history
     .map((message) => `${message.role === 'assistant' ? 'Muel' : 'User'}: ${message.content}`)
     .join('\n');
 
-  return [
+  const parts = [
     buildSystemPrompt(context),
+  ];
+
+  if (channelActivity) {
+    parts.push('', channelActivity);
+  }
+
+  parts.push('', formatUserHistory(userHistory, authorName));
+
+  parts.push(
     '',
-    'Recent conversation:',
+    'Recent conversation with you:',
     transcript || '(no prior messages)',
     '',
-    `User: ${userText}`,
+    `${authorName}: ${userText}`,
     'Muel:',
-  ].join('\n');
+  );
+
+  return parts.join('\n');
 };
 
 export const generateMuelReply = async (
   userText: string,
+  authorName: string,
   history: MuelStoredMessage[],
   context?: ServerContext,
+  channelActivity?: string,
+  userHistory?: UserHistorySummary | null,
 ): Promise<MuelAgentResult> => {
   if (!config.googleGenerativeAiApiKey) {
     return {
@@ -67,8 +137,8 @@ export const generateMuelReply = async (
 
   const result = await generateText({
     model: google(config.muelAiModel),
-    prompt: buildPrompt(history, userText, context),
-    temperature: 0.5,
+    prompt: buildPrompt(history, userText, authorName, context, channelActivity, userHistory),
+    temperature: 0.7,
     maxOutputTokens: 700,
   });
 
