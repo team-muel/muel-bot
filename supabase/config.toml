@@ -1,0 +1,52 @@
+# Supabase CLI config for muel-bot.
+#
+# This file lets `supabase functions deploy ...` and `supabase db push`
+# operate against the Muel project. It does not store secrets.
+#
+# Project link: run once per machine
+#   supabase link --project-ref <ref>
+# (project ref is in the dashboard URL: dashboard/project/<ref>)
+
+project_id = "muel-bot"
+
+[api]
+enabled = true
+# Schemas exposed via PostgREST (Data API). The mafia schema stays exposed for
+# read-only client queries; write authority is enforced by RLS + Edge Functions.
+schemas = ["public", "mafia"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "https://muel-tree.vercel.app"
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:3015"]
+jwt_expiry = 3600
+enable_signup = true
+
+[functions]
+# Verify JWT for every function unless explicitly overridden per-function.
+# We override health/ to false (health checks should not require auth).
+verify_jwt = true
+
+[functions.health]
+verify_jwt = false
+
+[realtime]
+enabled = true
