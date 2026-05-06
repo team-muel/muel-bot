@@ -36,7 +36,7 @@ const diaryEntryPointCommand = {
   name: '일기',
   description: '꿈을 기록하고 연결합니다.',
   type: 4,
-  handler: 1,
+  handler: 2,
   integration_types: [0, 1],
   contexts: [0, 1, 2],
 };
@@ -118,11 +118,6 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isPrimaryEntryPointCommand()) {
-    await interaction.launchActivity();
-    return;
-  }
-
   if (!interaction.isChatInputCommand()) {
     return;
   }
