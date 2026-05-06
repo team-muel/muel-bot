@@ -28,10 +28,6 @@ const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
   .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
 
-const diaryCommand = new SlashCommandBuilder()
-  .setName('일기')
-  .setDescription('꿈을 기록하고 연결합니다.');
-
 const diaryEntryPointCommand = {
   name: '일기',
   description: '꿈을 기록하고 연결합니다.',
@@ -84,7 +80,6 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
   const commands = [
     helpCommand.toJSON(),
-    diaryCommand.toJSON(),
     subscribeCommand.toJSON(),
     pingCommand.toJSON(),
     diaryEntryPointCommand,
@@ -130,32 +125,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.commandName === '도움말') {
     await interaction.reply({
       content: [
-        'Muel에서 사용할 수 있는 입구입니다.',
+        '**Muel에서 사용할 수 있는 입구**',
         '',
-        `Muel Hub: ${config.hubUrl}`,
-        `일기: ${config.hubUrl}/weave`,
-        '/일기: 꿈을 기록하고 연결하기',
-        '/구독: YouTube 영상/게시글 자동 구독 관리',
+        `Muel Hub: <${config.hubUrl}>`,
+        `일기: <${config.hubUrl}/weave>`,
         '',
-        `Server: https://discord.gg/NdBHcbXpjh`,
+        '**명령어**',
+        '/구독 — YouTube 영상/게시글 자동 구독 관리',
+        '/도움말 — 이 안내 보기',
+        '',
+        '**활동**',
+        '앱 런처에서 일기 — 꿈을 기록하고 연결하기',
+        '',
         'Gomdori는 준비 중입니다.',
       ].join('\n'),
       ephemeral: true,
-    });
-    return;
-  }
-
-  if (interaction.commandName === '일기') {
-    const activityUrl = `${config.hubUrl}/weave`;
-    await interaction.reply({
-      content: [
-        '📖 일기 — 꿈을 기록하고, 다른 꿈과 연결합니다.',
-        '',
-        `지금 바로 시작하기: ${activityUrl}`,
-        '',
-        'Discord Activity에서 열면 인증 없이 바로 저장할 수 있어요.',
-      ].join('\n'),
-      ephemeral: false,
     });
     return;
   }
@@ -167,8 +151,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   await interaction.reply({
     content: [
-      '지금 사용할 수 있는 명령어는 /도움말, /일기, /구독, /ping 입니다.',
-      config.hubUrl,
+      '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
+      `Muel Hub: <${config.hubUrl}>`,
     ].join('\n'),
     ephemeral: true,
   });
