@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import { config } from './config.js';
 import type { MuelStoredMessage, UserHistorySummary } from './muelConversationStore.js';
 import type { ServerContext } from './muelContext.js';
@@ -82,6 +83,29 @@ const formatUserHistory = (summary: UserHistorySummary | null | undefined, autho
   return lines.join('\n');
 };
 
+export type MentionedUserContext = {
+  name: string;
+  summary: UserHistorySummary | null;
+};
+
+const formatMentionedUsers = (mentioned: MentionedUserContext[]): string => {
+  if (!mentioned || mentioned.length === 0) return '';
+
+  const lines = ['--- Mentioned Users ---'];
+  for (const m of mentioned) {
+    if (m.summary && m.summary.totalInteractions > 0) {
+      lines.push(`${m.name}: ${m.summary.totalInteractions}번 대화함.`);
+      if (m.summary.recentTopics.length > 0) {
+        lines.push(`  최근 했던 말: ${m.summary.recentTopics.slice(0, 3).join(' / ')}`);
+      }
+    } else {
+      lines.push(`${m.name}: 나와 대화한 적 없는 유저.`);
+    }
+  }
+  lines.push('--- End Mentioned ---');
+  return lines.join('\n');
+};
+
 const buildPrompt = (
   history: MuelStoredMessage[],
   userText: string,
@@ -89,6 +113,7 @@ const buildPrompt = (
   context?: ServerContext,
   channelActivity?: string,
   userHistory?: UserHistorySummary | null,
+  mentionedUsers?: MentionedUserContext[],
 ): string => {
   const transcript = history
     .map((message) => `${message.role === 'assistant' ? 'Muel' : 'User'}: ${message.content}`)
@@ -104,6 +129,11 @@ const buildPrompt = (
 
   parts.push('', formatUserHistory(userHistory, authorName));
 
+  const mentionedSection = formatMentionedUsers(mentionedUsers ?? []);
+  if (mentionedSection) {
+    parts.push('', mentionedSection);
+  }
+
   parts.push(
     '',
     'Recent conversation with you:',
@@ -116,6 +146,45 @@ const buildPrompt = (
   return parts.join('\n');
 };
 
+const callGemini = async (prompt: string): Promise<{ text: string; model: string }> => {
+  const google = createGoogleGenerativeAI({
+    apiKey: config.googleGenerativeAiApiKey!,
+  });
+
+  const result = await generateText({
+    model: google(config.muelAiModel),
+    prompt,
+    temperature: 0.7,
+    maxOutputTokens: 1200,
+  });
+
+  if (result.finishReason === 'length') {
+    throw new Error('Gemini response hit output length limit');
+  }
+
+  return { text: result.text.trim(), model: config.muelAiModel };
+};
+
+const callNvidia = async (prompt: string): Promise<{ text: string; model: string }> => {
+  const nvidia = createOpenAI({
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    apiKey: config.nvidiaApiKey!,
+  });
+
+  const result = await generateText({
+    model: nvidia(config.nvidiaModel),
+    prompt,
+    temperature: 0.7,
+    maxOutputTokens: 1200,
+  });
+
+  if (result.finishReason === 'length') {
+    throw new Error('NVIDIA NIM response hit output length limit');
+  }
+
+  return { text: result.text.trim(), model: `nvidia:${config.nvidiaModel}` };
+};
+
 export const generateMuelReply = async (
   userText: string,
   authorName: string,
@@ -123,30 +192,40 @@ export const generateMuelReply = async (
   context?: ServerContext,
   channelActivity?: string,
   userHistory?: UserHistorySummary | null,
+  mentionedUsers?: MentionedUserContext[],
 ): Promise<MuelAgentResult> => {
-  if (!config.googleGenerativeAiApiKey) {
+  if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
     return {
-      text: '아직 AI 응답 키가 연결되지 않았어요. Render 환경에 GOOGLE_GENERATIVE_AI_API_KEY 또는 GEMINI_API_KEY를 설정하면 멘션 응답을 시작할 수 있습니다.',
+      text: 'AI 응답 키가 하나도 연결되지 않았어. GEMINI_API_KEY 또는 NVIDIA_API_KEY를 설정해줘.',
       model: 'not-configured',
     };
   }
 
-  const google = createGoogleGenerativeAI({
-    apiKey: config.googleGenerativeAiApiKey,
-  });
+  const prompt = buildPrompt(history, userText, authorName, context, channelActivity, userHistory, mentionedUsers);
 
-  const result = await generateText({
-    model: google(config.muelAiModel),
-    prompt: buildPrompt(history, userText, authorName, context, channelActivity, userHistory),
-    temperature: 0.7,
-    maxOutputTokens: 700,
-  });
+  // Primary: Gemini
+  if (config.googleGenerativeAiApiKey) {
+    try {
+      const reply = await callGemini(prompt);
+      if (reply.text) return reply;
+    } catch (error) {
+      console.warn('[muel-agent] Gemini failed, trying fallback:', error instanceof Error ? error.message : error);
+    }
+  }
 
-  const text = result.text.trim();
+  // Fallback: NVIDIA NIM
+  if (config.nvidiaApiKey) {
+    try {
+      const reply = await callNvidia(prompt);
+      if (reply.text) return reply;
+    } catch (error) {
+      console.warn('[muel-agent] NVIDIA NIM also failed:', error instanceof Error ? error.message : error);
+    }
+  }
 
   return {
-    text: text || '지금은 답변을 만들지 못했어요. 잠시 뒤 다시 불러주세요.',
-    model: config.muelAiModel,
+    text: '지금은 답변을 만들지 못했어. 잠시 뒤 다시 불러줘.',
+    model: 'all-failed',
   };
 };
 

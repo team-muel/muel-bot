@@ -62,14 +62,24 @@ export const handleMuelMention = async (
     });
     inboundMessageId = inbound.id;
 
-    const [history, serverContext, userHistory] = await Promise.all([
+    // Collect mentioned users (excluding the bot)
+    const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
+    const mentionedHistoryPromises = mentionedUsers.map((u) =>
+      getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
+        name: u.displayName ?? u.username,
+        summary,
+      })),
+    );
+
+    const [history, serverContext, userHistory, ...mentionedHistories] = await Promise.all([
       listRecentMuelMessages(supabase, conversationId, 12),
       fetchServerContext().catch(() => undefined),
       getUserHistorySummary(supabase, message.author.id, conversationId).catch(() => null),
+      ...mentionedHistoryPromises,
     ]);
     const channelActivity = formatForContext(message.channelId, client.user.id);
     const authorName = message.author.displayName ?? message.author.username;
-    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory);
+    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory, mentionedHistories);
     const sent = await message.reply(toDiscordReply(reply.text));
 
     await insertMuelMessage(supabase, {

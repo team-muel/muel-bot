@@ -22,5 +22,9 @@ services:
         value: gemini-2.5-flash
       - key: HUB_URL
         value: https://muel-tree.vercel.app
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_MODEL
+        value: deepseek-ai/deepseek-v4-pro
       - key: GOMDORI_BOT_TOKEN
         sync: false

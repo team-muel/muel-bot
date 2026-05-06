@@ -18,6 +18,8 @@ export const config = {
   supabaseServiceRoleKey: optionalEnv('SUPABASE_SERVICE_ROLE_KEY') ?? optionalEnv('SUPABASE_KEY'),
   googleGenerativeAiApiKey: optionalEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? optionalEnv('GEMINI_API_KEY'),
   muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? 'gemini-2.5-flash',
+  nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),
+  nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'deepseek-ai/deepseek-v4-pro',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
