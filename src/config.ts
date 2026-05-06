@@ -18,6 +18,8 @@ export const config = {
   supabaseServiceRoleKey: optionalEnv('SUPABASE_SERVICE_ROLE_KEY') ?? optionalEnv('SUPABASE_KEY'),
   googleGenerativeAiApiKey: optionalEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? optionalEnv('GEMINI_API_KEY'),
   muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? 'gemini-2.5-flash',
+  muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-2',
+  muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 1536),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),
   nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'deepseek-ai/deepseek-v4-pro',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',

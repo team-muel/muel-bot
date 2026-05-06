@@ -132,6 +132,7 @@ const buildPrompt = (
   userHistory?: UserHistorySummary | null,
   mentionedUsers?: MentionedUserContext[],
   guildTopology?: string,
+  semanticMemory?: string,
 ): string => {
   const transcript = history
     .map((message) => `${message.role === 'assistant' ? 'Muel' : 'User'}: ${message.content}`)
@@ -147,6 +148,10 @@ const buildPrompt = (
 
   if (channelActivity) {
     parts.push('', channelActivity);
+  }
+
+  if (semanticMemory) {
+    parts.push('', semanticMemory);
   }
 
   parts.push('', formatUserHistory(userHistory, authorName));
@@ -243,6 +248,7 @@ export const generateMuelReply = async (
   userHistory?: UserHistorySummary | null,
   mentionedUsers?: MentionedUserContext[],
   guildTopology?: string,
+  semanticMemory?: string,
 ): Promise<MuelAgentResult> => {
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
     return {
@@ -252,7 +258,7 @@ export const generateMuelReply = async (
     };
   }
 
-  const prompt = buildPrompt(history, userText, authorName, context, channelActivity, userHistory, mentionedUsers, guildTopology);
+  const prompt = buildPrompt(history, userText, authorName, context, channelActivity, userHistory, mentionedUsers, guildTopology, semanticMemory);
 
   // Primary: Gemini
   if (config.googleGenerativeAiApiKey) {
