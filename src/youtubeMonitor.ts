@@ -190,13 +190,21 @@ const splitDiscordMessages = (input: string, maxLength = 1800): string[] => {
 
 const splitCommunityBody = (input: string): { preview: string; overflow: string } => {
   const text = String(input || '').trim();
-  const maxPreviewLength = 1850;
+  const maxPreviewLength = 1950;
   if (text.length <= maxPreviewLength) {
     return { preview: text, overflow: '' };
   }
 
-  const preferredBreak = text.lastIndexOf('\n', maxPreviewLength);
-  const splitAt = preferredBreak > 500 ? preferredBreak : maxPreviewLength;
+  const newlineBreak = text.lastIndexOf('\n', maxPreviewLength);
+  if (newlineBreak > 400) {
+    return {
+      preview: text.slice(0, newlineBreak).trim(),
+      overflow: text.slice(newlineBreak).trim(),
+    };
+  }
+
+  const spaceBreak = text.lastIndexOf(' ', maxPreviewLength);
+  const splitAt = spaceBreak > 400 ? spaceBreak : maxPreviewLength;
   return {
     preview: text.slice(0, splitAt).trim(),
     overflow: text.slice(splitAt).trim(),
@@ -233,16 +241,10 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
 };
 
 const buildCommunityEmbed = (latest: LatestEntry): EmbedBuilder => {
-  const description = [
-    truncate(latest.content || latest.title, 900),
-    displayLink(latest),
-  ].filter(Boolean).join('\n\n').slice(0, 4096);
-
   return new EmbedBuilder()
     .setColor(0x2f80ed)
     .setTitle((latest.title || '새 커뮤니티 게시글').slice(0, 256))
     .setURL(displayLink(latest))
-    .setDescription(description)
     .setFooter({ text: ['YouTube community', latest.author, latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
 };
 
@@ -384,11 +386,11 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     const body = buildCommunityBody(latest);
     const { preview, overflow } = splitCommunityBody(body);
     const sentMessage = await channel.send({
-      content: preview || buildCommunityMessage(latest),
+      content: preview,
       embeds: [buildCommunityEmbed(latest)],
     });
     if (overflow) {
-      await createThreadFromMessage(sentMessage, threadTitle('이어보기', latest), buildThreadBody('posts', latest, overflow));
+      await createThreadFromMessage(sentMessage, threadTitle('이어보기', latest), overflow);
     }
   } else if (isShortsEntry(latest)) {
     const sentMessage = await channel.send(buildShortsMessage(latest));

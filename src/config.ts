@@ -12,9 +12,12 @@ const optionalEnv = (key: string): string | null => {
 
 export const config = {
   discordBotToken: requiredEnv('DISCORD_BOT_TOKEN'),
+  gomdoriBotToken: optionalEnv('GOMDORI_BOT_TOKEN'),
   port: Number(process.env.PORT ?? 3000),
   supabaseUrl: optionalEnv('SUPABASE_URL'),
   supabaseServiceRoleKey: optionalEnv('SUPABASE_SERVICE_ROLE_KEY') ?? optionalEnv('SUPABASE_KEY'),
+  googleGenerativeAiApiKey: optionalEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? optionalEnv('GEMINI_API_KEY'),
+  muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? 'gemini-2.5-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),

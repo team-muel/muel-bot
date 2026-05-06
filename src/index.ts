@@ -12,9 +12,12 @@ import {
   SUBSCRIBE_COMMAND_NAME,
 } from './subscribe.js';
 import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
+import { handleMuelMention } from './mentionHandler.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
+let gomdoriReadyAt: string | null = null;
+let gomdoriLoginError: string | null = null;
 
 const pingCommand = new SlashCommandBuilder()
   .setName('ping')
@@ -60,7 +63,11 @@ const subscribeCommand = new SlashCommandBuilder()
   );
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
@@ -151,9 +158,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
   });
 });
 
+client.on(Events.MessageCreate, async (message) => {
+  if (!client.isReady()) {
+    return;
+  }
+
+  await handleMuelMention(client, message);
+});
+
 client.on(Events.Error, (error) => {
   console.error('[discord] client error', error);
 });
+
+// --- Gomdori client (optional) ---
+
+const gomdoriClient = config.gomdoriBotToken
+  ? new Client({ intents: [GatewayIntentBits.Guilds] })
+  : null;
+
+if (gomdoriClient) {
+  const gomdoriGameCommand = new SlashCommandBuilder()
+    .setName('게임')
+    .setDescription('Gomdori 게임을 시작합니다.');
+
+  const gomdoriPingCommand = new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check whether Gomdori Bot is online.');
+
+  gomdoriClient.once(Events.ClientReady, async (readyGomdori) => {
+    gomdoriReadyAt = new Date().toISOString();
+    console.log(`[gomdori] online as ${readyGomdori.user.tag}`);
+
+    try {
+      const rest = new REST({ version: '10' }).setToken(config.gomdoriBotToken!);
+      await rest.put(Routes.applicationCommands(readyGomdori.application.id), {
+        body: [gomdoriGameCommand.toJSON(), gomdoriPingCommand.toJSON()],
+      });
+      console.log('[gomdori] replaced global commands');
+    } catch (error) {
+      gomdoriLoginError = error instanceof Error ? error.message : String(error);
+      console.error('[gomdori] command registration failed', error);
+    }
+  });
+
+  gomdoriClient.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'ping') {
+      await interaction.reply({ content: 'pong 🐻', ephemeral: true });
+      return;
+    }
+
+    if (interaction.commandName === '게임') {
+      await interaction.reply({
+        content: [
+          '🐻 Gomdori — 마피아 게임',
+          '',
+          `${config.hubUrl}/game`,
+          '',
+          '준비 중입니다.',
+        ].join('\n'),
+        ephemeral: false,
+      });
+      return;
+    }
+  });
+
+  gomdoriClient.on(Events.Error, (error) => {
+    console.error('[gomdori] client error', error);
+  });
+}
+
+// --- HTTP server ---
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -165,10 +241,20 @@ const server = http.createServer((request, response) => {
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({
     ok: true,
-    bot: client.user?.tag ?? null,
-    readyAt,
-    loginError,
-    wsStatus: client.ws.status,
+    muel: {
+      bot: client.user?.tag ?? null,
+      readyAt,
+      loginError,
+      wsStatus: client.ws.status,
+    },
+    gomdori: gomdoriClient
+      ? {
+          bot: gomdoriClient.user?.tag ?? null,
+          readyAt: gomdoriReadyAt,
+          loginError: gomdoriLoginError,
+          wsStatus: gomdoriClient.ws.status,
+        }
+      : null,
     uptimeSeconds: Math.floor(process.uptime()),
     youtubeMonitor: getYouTubeMonitorStatus(),
   }));
@@ -178,7 +264,16 @@ server.listen(config.port, () => {
   console.log(`[http] listening on ${config.port}`);
 });
 
+// --- Login ---
+
 client.login(config.discordBotToken).catch((error: unknown) => {
   loginError = error instanceof Error ? error.message : String(error);
   console.error('[discord] login failed', error);
 });
+
+if (gomdoriClient && config.gomdoriBotToken) {
+  gomdoriClient.login(config.gomdoriBotToken).catch((error: unknown) => {
+    gomdoriLoginError = error instanceof Error ? error.message : String(error);
+    console.error('[gomdori] login failed', error);
+  });
+}

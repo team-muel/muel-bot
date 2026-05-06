@@ -241,5 +241,85 @@ server.registerTool(
   },
 );
 
+// --- Developer Portal tools (public API scope) ---
+
+server.registerTool(
+  'update_application',
+  {
+    title: 'Update application settings',
+    description:
+      'Update the current Discord application via PATCH /applications/@me. ' +
+      'Accepts description, tags, install_params, integration_types_config, ' +
+      'interactions_endpoint_url, custom_install_url, role_connections_verification_url, ' +
+      'and event_webhooks_url. Only provided fields are changed.',
+    inputSchema: {
+      description: z.string().max(400).optional(),
+      tags: z.array(z.string().max(20)).max(5).optional(),
+      install_params: z
+        .object({
+          scopes: z.array(z.string()),
+          permissions: z.string(),
+        })
+        .optional(),
+      integration_types_config: z.record(z.string(), z.unknown()).optional(),
+      interactions_endpoint_url: z.string().url().optional(),
+      custom_install_url: z.string().url().optional(),
+      role_connections_verification_url: z.string().url().optional(),
+      event_webhooks_url: z.string().url().optional(),
+      confirm: z.literal(true),
+    },
+  },
+  async (params) => {
+    const { confirm: _, ...body } = params;
+    const result = await rest.patch(Routes.oauth2CurrentApplication(), { body });
+    return jsonContent(result);
+  },
+);
+
+server.registerTool(
+  'list_app_skus',
+  {
+    title: 'List application SKUs',
+    description: 'List SKUs (monetization items) for the application.',
+    inputSchema: {
+      applicationId: z.string().optional(),
+    },
+  },
+  async ({ applicationId }) => {
+    const appId = await getApplicationId(applicationId);
+    const skus = await rest.get(`/applications/${appId}/skus` as `/${string}`);
+    return jsonContent(skus);
+  },
+);
+
+server.registerTool(
+  'list_entitlements',
+  {
+    title: 'List application entitlements',
+    description:
+      'List entitlements (purchases/subscriptions) for the application. ' +
+      'Supports optional filters: user_id, sku_ids, guild_id, limit.',
+    inputSchema: {
+      applicationId: z.string().optional(),
+      user_id: z.string().optional(),
+      sku_ids: z.array(z.string()).optional(),
+      guild_id: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+  },
+  async ({ applicationId, ...filters }) => {
+    const appId = await getApplicationId(applicationId);
+    const params = new URLSearchParams();
+    if (filters.user_id) params.set('user_id', filters.user_id);
+    if (filters.sku_ids?.length) params.set('sku_ids', filters.sku_ids.join(','));
+    if (filters.guild_id) params.set('guild_id', filters.guild_id);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    const qs = params.toString();
+    const path = `/applications/${appId}/entitlements${qs ? `?${qs}` : ''}` as `/${string}`;
+    const entitlements = await rest.get(path);
+    return jsonContent(entitlements);
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

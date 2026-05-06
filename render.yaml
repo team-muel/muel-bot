@@ -14,5 +14,11 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: MUEL_AI_MODEL
+        value: gemini-2.5-flash
       - key: HUB_URL
         value: https://muel-tree.vercel.app
+      - key: GOMDORI_BOT_TOKEN
+        sync: false

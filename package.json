@@ -15,8 +15,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.67",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.49.4",
+    "ai": "^6.0.175",
     "discord.js": "^14.19.3",
     "ws": "^8.20.0",
     "zod": "^4.4.3"
