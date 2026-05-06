@@ -4,6 +4,7 @@ import { getSupabaseClient } from './supabase.js';
 import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from './youtubeCommunityScraper.js';
 import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
+import { cachePost } from './youtubePostCache.js';
 
 type SourceRow = {
   id: number;
@@ -397,6 +398,19 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
   } else {
     await channel.send(buildVideoMessage(latest));
+  }
+
+  // Cache post content for Muel context
+  if (latest.content) {
+    cachePost({
+      id: latest.id,
+      title: latest.title,
+      content: latest.content,
+      author: latest.author,
+      link: latest.link,
+      published: latest.published,
+      cachedAt: Date.now(),
+    });
   }
 
   await updateRow(row, latest);

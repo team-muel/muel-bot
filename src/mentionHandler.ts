@@ -11,6 +11,9 @@ import {
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { fetchServerContext } from './muelContext.js';
 import { formatForContext } from './channelBuffer.js';
+import { formatGuildTopology } from './guildTopology.js';
+
+const recentRequests = new Map<string, { content: string; at: number }>();
 
 const stripBotMention = (content: string, botId: string): string => {
   return content
@@ -32,6 +35,16 @@ export const handleMuelMention = async (
     await message.reply('불렀다면 한 문장만 같이 적어주세요.');
     return;
   }
+
+  const requestKey = `${message.channelId}:${message.author.id}`;
+  const previous = recentRequests.get(requestKey);
+  const now = Date.now();
+  if (previous && previous.content === userText && now - previous.at < 20_000) {
+    previous.at = now;
+    await message.reply('그거 방금 봤어. 같은 말 여러 번 보내면 내가 더 느려져.');
+    return;
+  }
+  recentRequests.set(requestKey, { content: userText, at: now });
 
   const supabase = getSupabaseClient();
   let conversationId: string | null = null;
@@ -78,8 +91,9 @@ export const handleMuelMention = async (
       ...mentionedHistoryPromises,
     ]);
     const channelActivity = formatForContext(message.channelId, client.user.id);
+    const guildTopology = message.guild ? formatGuildTopology(message.guild) : '';
     const authorName = message.author.displayName ?? message.author.username;
-    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory, mentionedHistories);
+    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory, mentionedHistories, guildTopology);
     const sent = await message.reply(toDiscordReply(reply.text));
 
     await insertMuelMessage(supabase, {
@@ -91,6 +105,7 @@ export const handleMuelMention = async (
       model: reply.model,
       metadata: {
         reply_to: message.id,
+        provider: reply.provider,
       },
     });
 
@@ -100,6 +115,7 @@ export const handleMuelMention = async (
       eventType: 'mention_replied',
       metadata: {
         model: reply.model,
+        provider: reply.provider,
         discord_message_id: message.id,
         discord_reply_id: sent.id,
       },

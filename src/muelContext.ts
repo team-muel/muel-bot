@@ -1,8 +1,10 @@
 import { getSupabaseClient } from './supabase.js';
+import { formatPostsForContext } from './youtubePostCache.js';
 
 export type ServerContext = {
   recentDreams: string;
   youtubeSourcesSummary: string;
+  recentPosts: string;
 };
 
 const formatDreamSummary = (dreams: Array<{
@@ -76,5 +78,6 @@ export const fetchServerContext = async (): Promise<ServerContext> => {
   return {
     recentDreams: formatDreamSummary(dreams),
     youtubeSourcesSummary: formatSourcesSummary(sources),
+    recentPosts: formatPostsForContext(3),
   };
 };

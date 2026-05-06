@@ -1,6 +1,5 @@
 import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOpenAI } from '@ai-sdk/openai';
 import { config } from './config.js';
 import type { MuelStoredMessage, UserHistorySummary } from './muelConversationStore.js';
 import type { ServerContext } from './muelContext.js';
@@ -8,6 +7,18 @@ import type { ServerContext } from './muelContext.js';
 export type MuelAgentResult = {
   text: string;
   model: string;
+  provider: 'gemini' | 'nvidia' | 'none';
+};
+
+const describeError = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  const extra = error as Error & { statusCode?: number; status?: number; code?: string };
+  return [
+    error.name,
+    extra.statusCode ?? extra.status,
+    extra.code,
+    error.message,
+  ].filter(Boolean).join(' ');
 };
 
 const BASE_SYSTEM_PROMPT = [
@@ -55,14 +66,20 @@ const BASE_SYSTEM_PROMPT = [
 const buildSystemPrompt = (context?: ServerContext): string => {
   if (!context) return BASE_SYSTEM_PROMPT;
 
-  return [
+  const parts = [
     BASE_SYSTEM_PROMPT,
     '',
     '--- Server Context ---',
     `[YouTube 구독] ${context.youtubeSourcesSummary}`,
     `[꿈 네트워크] ${context.recentDreams}`,
     '--- End Context ---',
-  ].join('\n');
+  ];
+
+  if (context.recentPosts) {
+    parts.push('', context.recentPosts);
+  }
+
+  return parts.join('\n');
 };
 
 const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
@@ -114,6 +131,7 @@ const buildPrompt = (
   channelActivity?: string,
   userHistory?: UserHistorySummary | null,
   mentionedUsers?: MentionedUserContext[],
+  guildTopology?: string,
 ): string => {
   const transcript = history
     .map((message) => `${message.role === 'assistant' ? 'Muel' : 'User'}: ${message.content}`)
@@ -122,6 +140,10 @@ const buildPrompt = (
   const parts = [
     buildSystemPrompt(context),
   ];
+
+  if (guildTopology) {
+    parts.push('', guildTopology);
+  }
 
   if (channelActivity) {
     parts.push('', channelActivity);
@@ -146,7 +168,7 @@ const buildPrompt = (
   return parts.join('\n');
 };
 
-const callGemini = async (prompt: string): Promise<{ text: string; model: string }> => {
+const callGemini = async (prompt: string): Promise<{ text: string; model: string; provider: 'gemini' }> => {
   const google = createGoogleGenerativeAI({
     apiKey: config.googleGenerativeAiApiKey!,
   });
@@ -162,27 +184,54 @@ const callGemini = async (prompt: string): Promise<{ text: string; model: string
     throw new Error('Gemini response hit output length limit');
   }
 
-  return { text: result.text.trim(), model: config.muelAiModel };
+  return { text: result.text.trim(), model: config.muelAiModel, provider: 'gemini' };
 };
 
-const callNvidia = async (prompt: string): Promise<{ text: string; model: string }> => {
-  const nvidia = createOpenAI({
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-    apiKey: config.nvidiaApiKey!,
+const callNvidia = async (prompt: string): Promise<{ text: string; model: string; provider: 'nvidia' }> => {
+  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${config.nvidiaApiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.nvidiaModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 1200,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(20_000),
   });
 
-  const result = await generateText({
-    model: nvidia(config.nvidiaModel),
-    prompt,
-    temperature: 0.7,
-    maxOutputTokens: 1200,
-  });
+  const raw = await response.text();
+  let data: {
+    model?: string;
+    choices?: Array<{
+      finish_reason?: string;
+      message?: { content?: string };
+    }>;
+    error?: { message?: string };
+  };
 
-  if (result.finishReason === 'length') {
+  try {
+    data = JSON.parse(raw) as typeof data;
+  } catch {
+    throw new Error(`NVIDIA NIM returned non-JSON response (${response.status}): ${raw.slice(0, 120)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`NVIDIA NIM HTTP ${response.status}: ${data.error?.message ?? raw.slice(0, 120)}`);
+  }
+
+  const choice = data.choices?.[0];
+  if (choice?.finish_reason === 'length') {
     throw new Error('NVIDIA NIM response hit output length limit');
   }
 
-  return { text: result.text.trim(), model: `nvidia:${config.nvidiaModel}` };
+  const text = choice?.message?.content?.trim() ?? '';
+  return { text, model: `nvidia:${data.model ?? config.nvidiaModel}`, provider: 'nvidia' };
 };
 
 export const generateMuelReply = async (
@@ -193,15 +242,17 @@ export const generateMuelReply = async (
   channelActivity?: string,
   userHistory?: UserHistorySummary | null,
   mentionedUsers?: MentionedUserContext[],
+  guildTopology?: string,
 ): Promise<MuelAgentResult> => {
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
     return {
       text: 'AI 응답 키가 하나도 연결되지 않았어. GEMINI_API_KEY 또는 NVIDIA_API_KEY를 설정해줘.',
       model: 'not-configured',
+      provider: 'none',
     };
   }
 
-  const prompt = buildPrompt(history, userText, authorName, context, channelActivity, userHistory, mentionedUsers);
+  const prompt = buildPrompt(history, userText, authorName, context, channelActivity, userHistory, mentionedUsers, guildTopology);
 
   // Primary: Gemini
   if (config.googleGenerativeAiApiKey) {
@@ -209,7 +260,7 @@ export const generateMuelReply = async (
       const reply = await callGemini(prompt);
       if (reply.text) return reply;
     } catch (error) {
-      console.warn('[muel-agent] Gemini failed, trying fallback:', error instanceof Error ? error.message : error);
+      console.warn('[muel-agent] Gemini failed, trying fallback:', describeError(error));
     }
   }
 
@@ -219,13 +270,14 @@ export const generateMuelReply = async (
       const reply = await callNvidia(prompt);
       if (reply.text) return reply;
     } catch (error) {
-      console.warn('[muel-agent] NVIDIA NIM also failed:', error instanceof Error ? error.message : error);
+      console.warn('[muel-agent] NVIDIA NIM also failed:', describeError(error));
     }
   }
 
   return {
     text: '지금은 답변을 만들지 못했어. 잠시 뒤 다시 불러줘.',
     model: 'all-failed',
+    provider: 'none',
   };
 };
 
