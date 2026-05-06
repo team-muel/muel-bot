@@ -32,7 +32,7 @@ export const handleMuelMention = async (
 
   const userText = stripBotMention(message.content, client.user.id);
   if (!userText) {
-    await message.reply('불렀다면 한 문장만 같이 적어주세요.');
+    await message.reply('부를 거면 한 문장만 같이 적어줘.');
     return;
   }
 
@@ -41,7 +41,7 @@ export const handleMuelMention = async (
   const now = Date.now();
   if (previous && previous.content === userText && now - previous.at < 20_000) {
     previous.at = now;
-    await message.reply('그거 방금 봤어. 같은 말 여러 번 보내면 내가 더 느려져.');
+    await message.reply('그거 방금 봤어. 같은 말 여러 번 보내면 내가 좀 느려져.');
     return;
   }
   recentRequests.set(requestKey, { content: userText, at: now });
@@ -75,7 +75,6 @@ export const handleMuelMention = async (
     });
     inboundMessageId = inbound.id;
 
-    // Collect mentioned users (excluding the bot)
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
     const mentionedHistoryPromises = mentionedUsers.map((u) =>
       getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
@@ -134,6 +133,6 @@ export const handleMuelMention = async (
       }).catch(() => {});
     }
 
-    await message.reply('지금은 응답을 만들지 못했어요. 잠시 뒤 다시 불러주세요.').catch(() => {});
+    await message.reply('지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.').catch(() => {});
   }
 };
