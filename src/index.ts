@@ -194,6 +194,15 @@ if (gomdoriClient) {
     .setName('ping')
     .setDescription('Check whether Gomdori Bot is online.');
 
+  const gomdoriActivityEntryPointCommand = {
+    name: '게임',
+    description: 'Gomdori 게임을 시작합니다.',
+    type: 4,
+    handler: 2,
+    integration_types: [0, 1],
+    contexts: [0, 1, 2],
+  };
+
   gomdoriClient.once(Events.ClientReady, async (readyGomdori) => {
     gomdoriReadyAt = new Date().toISOString();
     console.log(`[gomdori] online as ${readyGomdori.user.tag}`);
@@ -201,7 +210,11 @@ if (gomdoriClient) {
     try {
       const rest = new REST({ version: '10' }).setToken(config.gomdoriBotToken!);
       await rest.put(Routes.applicationCommands(readyGomdori.application.id), {
-        body: [gomdoriGameCommand.toJSON(), gomdoriPingCommand.toJSON()],
+        body: [
+          gomdoriGameCommand.toJSON(),
+          gomdoriPingCommand.toJSON(),
+          gomdoriActivityEntryPointCommand,
+        ],
       });
       console.log('[gomdori] replaced global commands');
     } catch (error) {

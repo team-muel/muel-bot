@@ -2,9 +2,14 @@ services:
   - type: web
     name: muel-bot
     runtime: node
+    # Current no-cost operating mode uses UptimeRobot to hit /health every
+    # 5 minutes. Move this to starter or higher only when paid always-on
+    # hosting is intentionally selected.
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
+    autoDeployTrigger: commit
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 20

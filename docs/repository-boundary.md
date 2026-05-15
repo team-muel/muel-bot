@@ -12,6 +12,17 @@
 - Current utility focus: Muel hub entry, Weave entry, YouTube video/community procurement
 - Current operations layer: optional private Discord MCP server for Codex/Cowork/Claude Code
 
+## Product Boundary: Muel vs. Gomdori
+
+`muel-bot` and `muel-tree` are shared implementation repositories. They are not the product taxonomy.
+
+- **Muel** is the platform and identity layer: the main assistant surface, memory/context spine, hub entry, Weave, subscriptions, service registry, and shared infrastructure.
+- **Gomdori** is a separate product experience inside the Muel platform: the mafia game, its own Discord application, its own Activity route, and its own game server state under the `mafia` schema.
+- Sharing `muel-bot` and `muel-tree` is an implementation choice. It must not collapse product naming, Discord app ownership, secrets, OAuth credentials, or UX language back into "Muel Bot."
+- New miniapps should follow the same factory model: shared Muel infrastructure, product-specific Discord/Toss credentials, product-specific routes, and product-specific user-facing names.
+
+Operationally, `muel-bot` may host both the Muel bot client and the Gomdori launcher client, but Gomdori should be treated as its own product and Discord app. Codex should say "Gomdori uses Muel infrastructure" rather than "Gomdori is Muel Bot."
+
 ## Historical Reference Only
 
 `discord-news-bot` may still contain useful patterns, warnings, or old control-tower ideas, but it is not the active service.
@@ -34,6 +45,11 @@ When working on Muel's Discord bot today:
 2. Use `muel-tree` as the web app and Activity truth.
 3. Use `discord-news-bot` only as cautionary reference.
 4. Keep the bot command surface thin unless the user explicitly asks to expand it.
+
+Deployment operations live in `docs/deployment-operations.md`. The short
+version: this repository owns the always-on Discord Gateway process, so
+the current no-cost runtime is Render Free kept warm by UptimeRobot. Vercel
+Functions are not the target runtime for this Gateway bot.
 
 ## Discord MCP Meaning
 
