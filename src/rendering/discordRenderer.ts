@@ -31,11 +31,15 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       textContents.push(part.text);
     } else if (part.type === 'youtube-community-post-card') {
       const embed = new EmbedBuilder()
-        .setColor(0x2f80ed)
+        .setColor(0x2b2d31) // Colorless (Discord dark background)
         .setAuthor({ name: truncateTitle(part.authorName, 256) })
-        .setDescription(part.body ? truncate(part.body, 3900) : null)
+        .setDescription(part.body ? truncate(part.body, 600) : null)
         .setURL(part.sourceUrl)
-        .setFooter({ text: ['YouTube community', part.authorName, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+        .setFooter({ text: ['YouTube community', part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+
+      if (part.title) {
+        embed.setTitle(truncateTitle(part.title, 256));
+      }
 
       if (part.imageUrls && part.imageUrls.length > 0 && part.imageUrls[0]) {
         embed.setImage(part.imageUrls[0]);

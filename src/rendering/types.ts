@@ -5,6 +5,7 @@ export type MuelRenderablePart =
     }
   | {
       type: 'youtube-community-post-card';
+      title?: string;
       authorName: string;
       body: string;
       sourceUrl: string;

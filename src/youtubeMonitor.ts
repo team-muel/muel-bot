@@ -356,15 +356,31 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
 
   if (mode === 'posts') {
     const { preview, overflow } = splitCommunityBody(latest.content);
+    
+    let displayTitle: string | undefined = undefined;
+    let displayBody = preview;
+    
+    const firstNewline = preview.indexOf('\n');
+    if (firstNewline !== -1) {
+      const firstLine = preview.slice(0, firstNewline).trim();
+      if (firstLine.length > 0 && firstLine.length <= 100) {
+        displayTitle = firstLine;
+        displayBody = preview.slice(firstNewline + 1).trim();
+      }
+    } else if (preview.length > 0 && preview.length <= 100) {
+      displayTitle = preview;
+      displayBody = '';
+    }
+
     const intent: MuelRenderablePart[] = [
-      { type: 'text', text: `📌 **${latest.author}** 새 커뮤니티 게시글` },
       {
         type: 'youtube-community-post-card',
+        title: displayTitle,
         authorName: latest.author,
-        body: preview,
+        body: displayBody,
         sourceUrl: displayLink(latest),
         publishedAt: latest.published,
-        imageUrls: latest.images, // Let renderer pick the first image or fallback gracefully
+        imageUrls: latest.images,
       }
     ];
 
