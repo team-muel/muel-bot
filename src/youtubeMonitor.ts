@@ -5,7 +5,8 @@ import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from 
 import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
-import { renderDiscordMessage, type MuelDiscordRenderablePart } from './discordRenderer.js';
+import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import type { MuelRenderablePart } from './rendering/types.js';
 
 type SourceRow = {
   id: number;
@@ -358,16 +359,15 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
 
   if (mode === 'posts') {
     const { preview, overflow } = splitCommunityBody(latest.content);
-    const intent: MuelDiscordRenderablePart[] = [
+    const intent: MuelRenderablePart[] = [
       { type: 'text', text: `📌 **${latest.author}** 새 커뮤니티 게시글` },
       {
-        type: 'announcement-card',
-        title: latest.title,
+        type: 'youtube-community-post-card',
+        authorName: latest.author,
         body: preview,
         sourceUrl: displayLink(latest),
-        author: latest.author,
         publishedAt: latest.published,
-        imageUrl: latest.images?.[0], // attach the first scraped image!
+        imageUrls: latest.images, // Let renderer pick the first image or fallback gracefully
       }
     ];
 
@@ -377,7 +377,7 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
       await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
     }
   } else {
-    const intent: MuelDiscordRenderablePart[] = [
+    const intent: MuelRenderablePart[] = [
       {
         type: 'video-card',
         title: latest.title,
