@@ -245,9 +245,6 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   return fetchLatestVideo(channelId);
 };
 
-const threadTitle = (prefix: string, latest: LatestEntry): string =>
-  truncate(`${prefix} ${latest.title || latest.author}`, 90);
-
 const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow?: string): string => {
   if (mode === 'shorts') {
     return [

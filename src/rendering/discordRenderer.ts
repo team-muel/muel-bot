@@ -14,9 +14,10 @@ function truncateTitle(text: string, max = 256): string {
 }
 
 export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreateOptions {
+  const embeds: EmbedBuilder[] = [];
   const options: MessageCreateOptions = {
     content: '',
-    embeds: [],
+    embeds,
     allowedMentions: {
       parse: [],
       repliedUser: false,
@@ -40,7 +41,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
         embed.setImage(part.imageUrls[0]);
       }
 
-      options.embeds!.push(embed);
+      embeds.push(embed);
     } else if (part.type === 'announcement-card') {
       const embed = new EmbedBuilder()
         .setColor(0x2f80ed)
@@ -51,7 +52,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (part.imageUrl) embed.setImage(part.imageUrl);
 
-      options.embeds!.push(embed);
+      embeds.push(embed);
     } else if (part.type === 'release-note-card') {
       const embed = new EmbedBuilder()
         .setColor(0x00c853)
@@ -60,7 +61,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
         .setFooter({ text: 'Release Note' });
 
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
-      options.embeds!.push(embed);
+      embeds.push(embed);
     } else if (part.type === 'video-card') {
       textContents.push(`📌 **${part.author}** 신규 ${part.isShorts ? '쇼츠' : '영상'} 업로드!\n${part.title}\n${part.url}`);
     }
@@ -70,8 +71,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     options.content = textContents.join('\n\n');
   }
 
-  // Fallback if empty
-  if (!options.content && options.embeds!.length === 0) {
+  if (!options.content && embeds.length === 0) {
     options.content = '내용 없음';
   }
 

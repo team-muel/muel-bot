@@ -22,6 +22,7 @@ create or replace function public.enqueue_job(
 returns uuid
 language plpgsql
 security invoker
+set search_path = public, pg_temp
 as $$
 declare
   v_job_id uuid;
@@ -53,6 +54,7 @@ returns table (
 )
 language plpgsql
 security invoker
+set search_path = public, pg_temp
 as $$
 begin
   return query
@@ -60,11 +62,10 @@ begin
     select j.id
     from public.muel_jobs j
     where (
-      (j.status in ('pending', 'failed') and j.run_after <= now())
+      (j.status in ('pending', 'failed') and j.run_after <= now() and j.attempts < 5)
       or
       (j.status = 'running' and j.locked_at < now() - interval '10 minutes')
     )
-    and j.attempts < 5
     order by j.run_after asc, j.created_at asc
     limit least(greatest(p_limit, 1), 50)
     for update skip locked
@@ -93,6 +94,7 @@ create or replace function public.fail_job(
 returns void
 language plpgsql
 security invoker
+set search_path = public, pg_temp
 as $$
 declare
   v_attempts int;
@@ -121,3 +123,11 @@ begin
   end if;
 end;
 $$;
+
+revoke execute on function public.enqueue_job(text, jsonb, text) from public, anon, authenticated;
+revoke execute on function public.claim_pending_jobs(text, int) from public, anon, authenticated;
+revoke execute on function public.fail_job(uuid, text, int, int) from public, anon, authenticated;
+
+grant execute on function public.enqueue_job(text, jsonb, text) to service_role;
+grant execute on function public.claim_pending_jobs(text, int) to service_role;
+grant execute on function public.fail_job(uuid, text, int, int) to service_role;

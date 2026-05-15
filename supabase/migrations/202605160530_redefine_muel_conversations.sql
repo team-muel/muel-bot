@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS public.muel_messages_v2 (
 
 CREATE INDEX IF NOT EXISTS muel_messages_chat_created_idx ON public.muel_messages_v2(chat_id, created_at);
 
+ALTER TABLE public.muel_chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.muel_messages_v2 ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.muel_chats FROM anon, authenticated;
+REVOKE ALL ON TABLE public.muel_messages_v2 FROM anon, authenticated;
+GRANT ALL ON TABLE public.muel_chats TO service_role;
+GRANT ALL ON TABLE public.muel_messages_v2 TO service_role;
+
 -- 3. Create prepare_chat_turn RPC
 CREATE OR REPLACE FUNCTION public.prepare_chat_turn(
   p_source text,
@@ -49,6 +57,7 @@ CREATE OR REPLACE FUNCTION public.prepare_chat_turn(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_chat_id uuid;
@@ -128,3 +137,6 @@ BEGIN
   );
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION public.prepare_chat_turn(text, text, text, text, jsonb, jsonb) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.prepare_chat_turn(text, text, text, text, jsonb, jsonb) TO service_role;

@@ -223,7 +223,7 @@ export const generateMuelReply = async (
           });
         }
       }
-    }).catch((error) => {
+    }).then(undefined, (error: unknown) => {
       console.error('[muel] failed to await result.response', error);
     });
 

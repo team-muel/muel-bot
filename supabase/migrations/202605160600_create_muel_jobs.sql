@@ -19,6 +19,11 @@ create index if not exists muel_jobs_fetch_idx
 on public.muel_jobs (status, run_after) 
 where status in ('pending', 'failed');
 
+alter table public.muel_jobs enable row level security;
+
+revoke all on table public.muel_jobs from anon, authenticated;
+grant all on table public.muel_jobs to service_role;
+
 -- Trigger to automatically update updated_at
 create or replace function public.muel_jobs_update_updated_at()
 returns trigger as $$
@@ -26,7 +31,7 @@ begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql set search_path = public, pg_temp;
 
 drop trigger if exists trg_muel_jobs_updated_at on public.muel_jobs;
 create trigger trg_muel_jobs_updated_at
@@ -44,6 +49,7 @@ returns table (
 )
 language plpgsql
 security invoker
+set search_path = public, pg_temp
 as $$
 begin
   return query
@@ -75,6 +81,7 @@ create or replace function public.complete_job(p_job_id uuid)
 returns void
 language sql
 security invoker
+set search_path = public, pg_temp
 as $$
   update public.muel_jobs
   set status = 'done',
@@ -89,6 +96,7 @@ create or replace function public.fail_job(p_job_id uuid, p_error text, p_retry_
 returns void
 language sql
 security invoker
+set search_path = public, pg_temp
 as $$
   update public.muel_jobs
   set status = 'failed',
@@ -105,8 +113,19 @@ create or replace function public.enqueue_job(p_type text, p_payload jsonb)
 returns uuid
 language sql
 security invoker
+set search_path = public, pg_temp
 as $$
   insert into public.muel_jobs (type, payload)
   values (p_type, p_payload)
   returning id;
 $$;
+
+revoke execute on function public.claim_pending_jobs(text, int) from public, anon, authenticated;
+revoke execute on function public.complete_job(uuid) from public, anon, authenticated;
+revoke execute on function public.fail_job(uuid, text, int) from public, anon, authenticated;
+revoke execute on function public.enqueue_job(text, jsonb) from public, anon, authenticated;
+
+grant execute on function public.claim_pending_jobs(text, int) to service_role;
+grant execute on function public.complete_job(uuid) to service_role;
+grant execute on function public.fail_job(uuid, text, int) to service_role;
+grant execute on function public.enqueue_job(text, jsonb) to service_role;
