@@ -267,12 +267,14 @@ const getAiModel = () => {
 
 const CommunityPostSchema = z.object({
   title: z.string().describe("게시글의 핵심을 요약한 강렬한 제목 (최대 50자)"),
-  subtitle: z.string().describe("시선을 끄는 한 줄 요약 (최대 100자). 없다면 빈 문자열 가능"),
-  body: z.string().describe("잡담이나 불필요한 인삿말을 걷어낸 본문 핵심 내용 (마크다운 사용, 과도하게 자르지 말고 원문의 중요한 정보는 유지할 것)"),
-  highlights: z.array(z.string()).describe("요약할 만한 핵심 항목이나 일정, 링크 (bullet point 용). 없다면 빈 배열 가능"),
+  subtitle: z.string().optional().describe("시선을 끄는 한 줄 요약 (최대 100자). 없다면 생략"),
+  body: z.string().describe("본문 내용. 원문에 없는 사실(숫자, 날짜, 고유명사)을 절대로 추가하거나 변형하지 말 것. 단순 잡담은 과도하게 뉴스처럼 포장하지 말 것. 마크다운 사용."),
+  highlights: z.array(z.string()).optional().describe("요약할 만한 핵심 항목이나 일정, 링크 등 (bullet point 용). 없다면 생략"),
 });
 
-const editCommunityPost = async (authorName: string, rawContent: string) => {
+export type EditedCommunityPost = z.infer<typeof CommunityPostSchema>;
+
+export const editCommunityPost = async (authorName: string, rawContent: string): Promise<{ data: EditedCommunityPost, modelId: string } | null> => {
   const model = getAiModel();
   if (!model) {
     return null;
@@ -282,10 +284,10 @@ const editCommunityPost = async (authorName: string, rawContent: string) => {
     const { object } = await generateObject({
       model,
       schema: CommunityPostSchema,
-      prompt: `다음은 유튜브 채널 '${authorName}'의 새 커뮤니티 게시글 원문입니다.\n이 원문을 읽기 편하고 시각적으로 깔끔한 Discord Embed 카드용으로 편집(Edit)해주세요.\n불필요한 인삿말은 제거하고 정보의 밀도를 높여주세요.\n\n원문:\n${rawContent}`,
-      temperature: 0.3,
+      prompt: `다음은 유튜브 채널 '${authorName}'의 새 커뮤니티 게시글 원문입니다.\n이 원문을 읽기 편하고 시각적으로 깔끔한 Discord Embed 카드용으로 편집(Edit)해주세요.\n\n[중요 제약사항]\n- 원문에 없는 사실, 숫자, 날짜, 고유명사를 절대 추가하거나 변경하지 마세요.\n- 추측을 섞지 마세요. 불확실하면 원문 표현을 그대로 유지하세요.\n- 원문의 톤을 과도하게 광고나 뉴스처럼 바꾸지 마세요.\n\n원문:\n${rawContent}`,
+      temperature: 0.1, // Lower temperature for faithfulness
     });
-    return object;
+    return { data: object, modelId: model.modelId || 'unknown' };
   } catch (error) {
     console.warn('[youtube] failed to edit community post with AI', error);
     return null;
@@ -404,50 +406,51 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   if (mode === 'posts') {
     const { preview, overflow } = splitCommunityBody(latest.content);
     
-    let displayTitle: string | undefined = undefined;
-    let displayBody = preview;
-    let useTone: RenderTone = 'neutral';
+    let intentBase: MuelRenderablePart = {
+      type: 'youtube-community-post-card',
+      tone: 'neutral',
+      authorName: latest.author,
+      body: preview,
+      sourceUrl: displayLink(latest),
+      publishedAt: latest.published,
+      imageUrls: latest.images,
+      metadata: {
+        editor: 'heuristic',
+        editedAt: new Date().toISOString(),
+      }
+    };
     
     // Attempt to use AI to edit the post
-    const aiEdited = await editCommunityPost(latest.author, latest.content);
-    if (aiEdited) {
-      displayTitle = aiEdited.title;
-      
-      const parts = [];
-      if (aiEdited.subtitle) parts.push(`**${aiEdited.subtitle}**\n`);
-      if (aiEdited.body) parts.push(`${aiEdited.body}\n`);
-      if (aiEdited.highlights && aiEdited.highlights.length > 0) {
-        parts.push(`---\n**▽ 주요 내용**`);
-        aiEdited.highlights.forEach((h: string) => parts.push(`• ${h}`));
-      }
-      displayBody = parts.join('\n');
+    const aiResult = await editCommunityPost(latest.author, latest.content);
+    if (aiResult) {
+      intentBase = {
+        ...intentBase,
+        title: aiResult.data.title,
+        subtitle: aiResult.data.subtitle,
+        body: aiResult.data.body,
+        highlights: aiResult.data.highlights,
+        metadata: {
+          editor: 'ai',
+          editorModel: aiResult.modelId,
+          editedAt: new Date().toISOString(),
+        }
+      };
     } else {
-      // Fallback heuristic if AI fails or is not configured
+      // Fallback heuristic
       const firstNewline = preview.indexOf('\n');
       if (firstNewline !== -1) {
         const firstLine = preview.slice(0, firstNewline).trim();
         if (firstLine.length > 0 && firstLine.length <= 100) {
-          displayTitle = firstLine;
-          displayBody = preview.slice(firstNewline + 1).trim();
+          intentBase.title = firstLine;
+          intentBase.body = preview.slice(firstNewline + 1).trim();
         }
       } else if (preview.length > 0 && preview.length <= 100) {
-        displayTitle = preview;
-        displayBody = '';
+        intentBase.title = preview;
+        intentBase.body = '';
       }
     }
 
-    const intent: MuelRenderablePart[] = [
-      {
-        type: 'youtube-community-post-card',
-        tone: useTone,
-        title: displayTitle,
-        authorName: latest.author,
-        body: displayBody,
-        sourceUrl: displayLink(latest),
-        publishedAt: latest.published,
-        imageUrls: latest.images,
-      }
-    ];
+    const intent: MuelRenderablePart[] = [intentBase];
 
     const sentMessage = await channel.send(renderDiscordMessage(intent));
     

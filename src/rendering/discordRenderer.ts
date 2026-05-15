@@ -31,19 +31,24 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       textContents.push(part.text);
     } else if (part.type === 'youtube-community-post-card') {
       const hasImage = part.imageUrls && part.imageUrls.length > 0 && !!part.imageUrls[0];
-      const maxDescLength = hasImage ? 800 : 1200; // Dynamic truncation based on image presence
+      const maxDescLength = hasImage ? 800 : 1200;
+
+      const descriptionParts = [
+        part.subtitle ? `**${part.subtitle}**\n` : null,
+        part.body ? truncate(part.body, maxDescLength) : null,
+        part.highlights && part.highlights.length ? `\n---\n**▽ 주요 내용**\n${part.highlights.map(h => `• ${h}`).join('\n')}` : null,
+        part.sourceUrl ? `\n---\n[원문 보기](${part.sourceUrl})` : null,
+      ].filter(Boolean);
 
       const embed = new EmbedBuilder()
-        .setAuthor({ name: truncateTitle(part.authorName, 256) })
-        .setDescription(part.body ? truncate(part.body, maxDescLength) : null)
-        .setURL(part.sourceUrl)
-        .setFooter({ text: ['YouTube community', part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+        .setDescription(descriptionParts.join('\n') || null)
+        .setFooter({ text: ['YouTube community', part.authorName, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
 
       // Apply Tone Policy
       if (part.tone === 'muel') embed.setColor(0xa2e61d);
       else if (part.tone === 'warning') embed.setColor(0xff3b30);
       else if (part.tone === 'success') embed.setColor(0x34c759);
-      // 'neutral' or undefined explicitly leaves color unset (Discord's neutral borderless look)
+      // 'neutral' or undefined explicitly leaves color unset
 
       if (part.title) {
         embed.setTitle(truncateTitle(part.title, 256));

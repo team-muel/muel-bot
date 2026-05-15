@@ -19,11 +19,18 @@ export type MuelRenderablePart =
       type: 'youtube-community-post-card';
       tone?: RenderTone;
       title?: string;
+      subtitle?: string;
       authorName: string;
       body: string;
+      highlights?: string[];
       sourceUrl: string;
       publishedAt?: string;
       imageUrls?: string[];
+      metadata?: {
+        editor: 'ai' | 'heuristic';
+        editorModel?: string;
+        editedAt?: string;
+      };
     }
   | {
       type: 'announcement-card';
