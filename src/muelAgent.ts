@@ -182,13 +182,31 @@ export const generateMuelReply = async (
       tools,
       temperature: 0.7,
       maxOutputTokens: 1200,
-      onFinish: async ({ text }) => {
-        try {
-          await saveAssistantMessage(supabase, chatId, crypto.randomUUID(), [
-            { type: 'text', text }
-          ], { provider, model: modelName });
-        } catch (error) {
+      onFinish: ({ text, toolCalls, toolResults }: any) => {
+        const parts: any[] = [];
+        if (text) {
+          parts.push({ type: 'text', text });
+        }
+        if (toolCalls && toolCalls.length > 0) {
+          for (const tc of toolCalls) {
+            parts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args });
+          }
+        }
+        
+        void saveAssistantMessage(supabase, chatId, crypto.randomUUID(), parts, { provider, model: modelName }).catch((error) => {
           console.error('[muel] failed to save assistant message in onFinish', error);
+        });
+
+        if (toolResults && toolResults.length > 0) {
+          const resultParts = toolResults.map((tr: any) => ({
+            type: 'tool-result',
+            toolCallId: tr.toolCallId,
+            toolName: tr.toolName,
+            result: tr.result
+          }));
+          void saveAssistantMessage(supabase, chatId, crypto.randomUUID(), resultParts, { role: 'tool', provider, model: modelName }).catch((error) => {
+            console.error('[muel] failed to save tool result message in onFinish', error);
+          });
         }
       }
     });

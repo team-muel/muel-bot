@@ -10,8 +10,14 @@ CREATE TABLE IF NOT EXISTS public.muel_chats (
   visibility text DEFAULT 'private',
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(source, source_channel_id, source_thread_id)
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX muel_chats_unique_idx ON public.muel_chats (
+  source,
+  COALESCE(source_workspace_id, ''),
+  source_channel_id,
+  COALESCE(source_thread_id, '')
 );
 
 -- Migrate existing muel_conversations to muel_chats if desired (optional data migration could go here)
@@ -51,24 +57,27 @@ BEGIN
   -- 1. Upsert Chat
   INSERT INTO public.muel_chats (
     source,
+    source_workspace_id,
     source_channel_id,
     source_thread_id,
     metadata
   )
   VALUES (
     p_source,
+    p_metadata->>'discordGuildId',
     p_source_channel_id,
     p_source_thread_id,
     '{}'::jsonb
   )
-  ON CONFLICT (source, source_channel_id, source_thread_id) DO NOTHING;
+  ON CONFLICT (source, COALESCE(source_workspace_id, ''), source_channel_id, COALESCE(source_thread_id, '')) DO NOTHING;
 
   SELECT id
   INTO v_chat_id
   FROM public.muel_chats
   WHERE source = p_source
+    AND COALESCE(source_workspace_id, '') = COALESCE(p_metadata->>'discordGuildId', '')
     AND source_channel_id = p_source_channel_id
-    AND source_thread_id = p_source_thread_id
+    AND COALESCE(source_thread_id, '') = COALESCE(p_source_thread_id, '')
   ORDER BY created_at DESC
   LIMIT 1;
 
