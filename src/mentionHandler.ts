@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { Client, Message } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { enqueueMemoryExtractionJob } from './muelJobs.js';
@@ -86,11 +87,12 @@ export const handleMuelMention = async (
     }
 
     const profileId = await upsertDiscordMuelProfile(supabase, message.author);
+    const userMessageId = crypto.randomUUID();
     const { chatId, messages: history } = await prepareChatTurn(supabase, {
       source: 'discord',
       sourceChannelId: message.channelId,
       sourceThreadId: message.channelId,
-      userMessageId: `discord:${message.id}`,
+      userMessageId,
       userParts: [{ type: 'text', text: userText }],
       metadata: {
         discordGuildId: message.guildId,
@@ -102,12 +104,12 @@ export const handleMuelMention = async (
       },
     });
     conversationId = chatId;
-    inboundMessageId = `discord:${message.id}`;
+    inboundMessageId = userMessageId;
 
     // Enqueue job safely without awaiting the outcome or blocking the hot-path
     void enqueueMemoryExtractionJob(supabase, {
       chatId,
-      messageId: inboundMessageId,
+      messageId: userMessageId,
       source: 'discord',
       createdAt: new Date().toISOString(),
     });
