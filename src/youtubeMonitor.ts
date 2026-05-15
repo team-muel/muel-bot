@@ -1,4 +1,8 @@
-import { Client, EmbedBuilder, ThreadAutoArchiveDuration } from 'discord.js';
+import { Client, ThreadAutoArchiveDuration, Message } from 'discord.js';
+import { generateObject } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from './youtubeCommunityScraper.js';
@@ -6,7 +10,7 @@ import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
-import type { MuelRenderablePart } from './rendering/types.js';
+import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 
 type SourceRow = {
   id: number;
@@ -245,6 +249,49 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   return fetchLatestVideo(channelId);
 };
 
+const getAiModel = () => {
+  if (config.googleGenerativeAiApiKey) {
+    const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
+    return google(config.muelAiModel);
+  }
+  if (config.nvidiaApiKey) {
+    const nvidia = createOpenAICompatible({
+      name: 'nvidia',
+      baseURL: 'https://integrate.api.nvidia.com/v1',
+      apiKey: config.nvidiaApiKey,
+    });
+    return nvidia(config.nvidiaModel);
+  }
+  return null;
+};
+
+const CommunityPostSchema = z.object({
+  title: z.string().describe("게시글의 핵심을 요약한 강렬한 제목 (최대 50자)"),
+  subtitle: z.string().describe("시선을 끄는 한 줄 요약 (최대 100자). 없다면 빈 문자열 가능"),
+  body: z.string().describe("잡담이나 불필요한 인삿말을 걷어낸 본문 핵심 내용 (마크다운 사용, 과도하게 자르지 말고 원문의 중요한 정보는 유지할 것)"),
+  highlights: z.array(z.string()).describe("요약할 만한 핵심 항목이나 일정, 링크 (bullet point 용). 없다면 빈 배열 가능"),
+});
+
+const editCommunityPost = async (authorName: string, rawContent: string) => {
+  const model = getAiModel();
+  if (!model) {
+    return null;
+  }
+
+  try {
+    const { object } = await generateObject({
+      model,
+      schema: CommunityPostSchema,
+      prompt: `다음은 유튜브 채널 '${authorName}'의 새 커뮤니티 게시글 원문입니다.\n이 원문을 읽기 편하고 시각적으로 깔끔한 Discord Embed 카드용으로 편집(Edit)해주세요.\n불필요한 인삿말은 제거하고 정보의 밀도를 높여주세요.\n\n원문:\n${rawContent}`,
+      temperature: 0.3,
+    });
+    return object;
+  } catch (error) {
+    console.warn('[youtube] failed to edit community post with AI', error);
+    return null;
+  }
+};
+
 const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow?: string): string => {
   if (mode === 'shorts') {
     return [
@@ -359,22 +406,40 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     
     let displayTitle: string | undefined = undefined;
     let displayBody = preview;
+    let useTone: RenderTone = 'neutral';
     
-    const firstNewline = preview.indexOf('\n');
-    if (firstNewline !== -1) {
-      const firstLine = preview.slice(0, firstNewline).trim();
-      if (firstLine.length > 0 && firstLine.length <= 100) {
-        displayTitle = firstLine;
-        displayBody = preview.slice(firstNewline + 1).trim();
+    // Attempt to use AI to edit the post
+    const aiEdited = await editCommunityPost(latest.author, latest.content);
+    if (aiEdited) {
+      displayTitle = aiEdited.title;
+      
+      const parts = [];
+      if (aiEdited.subtitle) parts.push(`**${aiEdited.subtitle}**\n`);
+      if (aiEdited.body) parts.push(`${aiEdited.body}\n`);
+      if (aiEdited.highlights && aiEdited.highlights.length > 0) {
+        parts.push(`---\n**▽ 주요 내용**`);
+        aiEdited.highlights.forEach((h: string) => parts.push(`• ${h}`));
       }
-    } else if (preview.length > 0 && preview.length <= 100) {
-      displayTitle = preview;
-      displayBody = '';
+      displayBody = parts.join('\n');
+    } else {
+      // Fallback heuristic if AI fails or is not configured
+      const firstNewline = preview.indexOf('\n');
+      if (firstNewline !== -1) {
+        const firstLine = preview.slice(0, firstNewline).trim();
+        if (firstLine.length > 0 && firstLine.length <= 100) {
+          displayTitle = firstLine;
+          displayBody = preview.slice(firstNewline + 1).trim();
+        }
+      } else if (preview.length > 0 && preview.length <= 100) {
+        displayTitle = preview;
+        displayBody = '';
+      }
     }
 
     const intent: MuelRenderablePart[] = [
       {
         type: 'youtube-community-post-card',
+        tone: useTone,
         title: displayTitle,
         authorName: latest.author,
         body: displayBody,
