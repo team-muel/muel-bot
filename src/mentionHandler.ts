@@ -9,10 +9,9 @@ import {
   upsertDiscordConversation,
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
-import { fetchServerContext } from './muelContext.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
-import { formatSemanticMemories, listSemanticMemories, storeMessageEmbedding } from './muelEmbeddings.js';
+import { storeMessageEmbedding } from './muelEmbeddings.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 
@@ -27,7 +26,7 @@ export const handleMuelMention = async (
   client: Client<true>,
   message: Message,
 ): Promise<void> => {
-  if (message.author.bot || !client.user || !message.mentions.has(client.user)) {
+  if (message.author.bot || !client.user || !message.mentions.users.has(client.user.id)) {
     return;
   }
 
@@ -87,27 +86,28 @@ export const handleMuelMention = async (
       })),
     );
 
-    const [history, serverContext, userHistory, ...mentionedHistories] = await Promise.all([
+    const [history, userHistory, ...mentionedHistories] = await Promise.all([
       listRecentMuelMessages(supabase, conversationId, 12),
-      fetchServerContext().catch(() => undefined),
       getUserHistorySummary(supabase, message.author.id, conversationId).catch(() => null),
       ...mentionedHistoryPromises,
     ]);
-    const semanticMemory = await listSemanticMemories(supabase, {
-      query: userText,
-      guildId: message.guildId,
-      userIds: relevantUserIds,
-      limit: 8,
-    })
-      .then(formatSemanticMemories)
-      .catch((error) => {
-        console.warn('[muel] semantic memory lookup skipped', error);
-        return '';
-      });
+
     const channelActivity = formatForContext(message.channelId, client.user.id);
     const guildTopology = message.guild ? formatGuildTopology(message.guild) : '';
     const authorName = message.author.displayName ?? message.author.username;
-    const reply = await generateMuelReply(userText, authorName, history, serverContext, channelActivity, userHistory, mentionedHistories, guildTopology, semanticMemory);
+    
+    const reply = await generateMuelReply(
+      supabase,
+      userText,
+      authorName,
+      history,
+      message.guildId,
+      relevantUserIds,
+      channelActivity,
+      userHistory,
+      mentionedHistories,
+      guildTopology
+    );
     const sent = await message.reply(toDiscordReply(reply.text));
 
     storeMessageEmbedding(supabase, inbound.id, userText).catch((error) => {

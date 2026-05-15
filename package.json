@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.67",
+    "@ai-sdk/openai": "^3.0.64",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.49.4",
     "ai": "^6.0.175",
