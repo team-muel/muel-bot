@@ -132,12 +132,19 @@ export const generateMuelReply = async (
 
   for (const msg of history) {
     if (msg.role === 'system' || msg.role === 'data') continue;
-    let text = msg.parts?.map((p: any) => p.text).filter(Boolean).join('\n') || '';
+    
+    let content = msg.parts || [];
     if (msg.role === 'user') {
       const name = msg.metadata?.discordUsername ?? authorName;
-      text = `${name}: ${text}`;
+      // Prepend name to the first text part
+      content = content.map((p: any) => {
+        if (p.type === 'text' && !p._nameInjected) {
+          return { ...p, text: `${name}: ${p.text}`, _nameInjected: true };
+        }
+        return p;
+      });
     }
-    messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: text });
+    messages.push({ role: msg.role, content });
   }
 
   const tools = {
@@ -182,35 +189,32 @@ export const generateMuelReply = async (
       tools,
       temperature: 0.7,
       maxOutputTokens: 1200,
-      onFinish: ({ text, toolCalls, toolResults }: any) => {
-        const parts: any[] = [];
-        if (text) {
-          parts.push({ type: 'text', text });
-        }
-        if (toolCalls && toolCalls.length > 0) {
-          for (const tc of toolCalls) {
-            parts.push({ type: 'tool-call', toolCallId: tc.toolCallId, toolName: tc.toolName, args: tc.args });
-          }
-        }
-        
-        void saveAssistantMessage(supabase, chatId, crypto.randomUUID(), parts, { provider, model: modelName }).catch((error) => {
-          console.error('[muel] failed to save assistant message in onFinish', error);
-        });
+    });
 
-        if (toolResults && toolResults.length > 0) {
-          const resultParts = toolResults.map((tr: any) => ({
-            type: 'tool-result',
-            toolCallId: tr.toolCallId,
-            toolName: tr.toolName,
-            result: tr.result
-          }));
-          void saveAssistantMessage(supabase, chatId, crypto.randomUUID(), resultParts, { role: 'tool', provider, model: modelName }).catch((error) => {
-            console.error('[muel] failed to save tool result message in onFinish', error);
+    const text = await result.text;
+
+    void result.response.then((response) => {
+      if (response && response.messages) {
+        for (const msg of response.messages) {
+          const parts = typeof msg.content === 'string' 
+            ? [{ type: 'text', text: msg.content }] 
+            : msg.content;
+            
+          void saveAssistantMessage(
+            supabase, 
+            chatId, 
+            crypto.randomUUID(), 
+            parts as any[], 
+            { role: msg.role, provider, model: modelName }
+          ).catch((error) => {
+            console.error('[muel] failed to save generated message', error);
           });
         }
       }
+    }).catch((error) => {
+      console.error('[muel] failed to await result.response', error);
     });
-    const text = await result.text;
+
     return { text: text.trim(), model: modelName, provider };
   };
 
