@@ -1,6 +1,6 @@
 import { generateText, tool } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import { config } from './config.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -190,10 +190,11 @@ export const generateMuelReply = async (
     }
   }
 
-  // Fallback: NVIDIA NIM (via OpenAI SDK)
+  // Fallback: NVIDIA NIM (via OpenAI Compatible SDK)
   if (config.nvidiaApiKey) {
     try {
-      const nvidia = createOpenAI({
+      const nvidia = createOpenAICompatible({
+        name: 'nvidia',
         baseURL: 'https://integrate.api.nvidia.com/v1',
         apiKey: config.nvidiaApiKey,
       });

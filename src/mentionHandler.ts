@@ -22,17 +22,44 @@ const stripBotMention = (content: string, botId: string): string => {
     .trim();
 };
 
+const shouldMuelRespond = async (message: Message, client: Client<true>): Promise<boolean> => {
+  if (message.author.bot) return false;
+  if (!client.user) return false;
+
+  const isDM = message.channel.isDMBased?.() ?? false;
+  const explicitlyMentioned = message.mentions.users.has(client.user.id);
+  
+  let isReplyToMuel = false;
+  if (message.reference?.messageId) {
+    try {
+      const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+      isReplyToMuel = referencedMessage.author.id === client.user.id;
+    } catch {
+      // Ignored
+    }
+  }
+
+  const startsWithCommand =
+    message.content.startsWith('!muel') ||
+    message.content.startsWith('/muel');
+
+  return isDM || explicitlyMentioned || isReplyToMuel || startsWithCommand;
+};
+
 export const handleMuelMention = async (
   client: Client<true>,
   message: Message,
 ): Promise<void> => {
-  if (message.author.bot || !client.user || !message.mentions.users.has(client.user.id)) {
+  if (!(await shouldMuelRespond(message, client))) {
     return;
   }
 
   const userText = stripBotMention(message.content, client.user.id);
   if (!userText) {
-    await message.reply('부를 거면 한 문장만 같이 적어줘.');
+    await message.reply({
+      content: '부를 거면 한 문장만 같이 적어줘.',
+      allowedMentions: { parse: [], repliedUser: false },
+    });
     return;
   }
 
@@ -41,7 +68,10 @@ export const handleMuelMention = async (
   const now = Date.now();
   if (previous && previous.content === userText && now - previous.at < 20_000) {
     previous.at = now;
-    await message.reply('그거 방금 봤어. 같은 말 여러 번 보내면 내가 좀 느려져.');
+    await message.reply({
+      content: '그거 방금 봤어. 같은 말 여러 번 보내면 내가 좀 느려져.',
+      allowedMentions: { parse: [], repliedUser: false },
+    });
     return;
   }
   recentRequests.set(requestKey, { content: userText, at: now });
@@ -108,7 +138,13 @@ export const handleMuelMention = async (
       mentionedHistories,
       guildTopology
     );
-    const sent = await message.reply(toDiscordReply(reply.text));
+    const sent = await message.reply({
+      content: toDiscordReply(reply.text),
+      allowedMentions: {
+        parse: [],
+        repliedUser: false,
+      },
+    });
 
     storeMessageEmbedding(supabase, inbound.id, userText).catch((error) => {
       console.warn('[muel] message embedding skipped', error);
@@ -152,6 +188,9 @@ export const handleMuelMention = async (
       }).catch(() => {});
     }
 
-    await message.reply('지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.').catch(() => {});
+    await message.reply({
+      content: '지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.',
+      allowedMentions: { parse: [], repliedUser: false },
+    }).catch(() => {});
   }
 };
