@@ -5,6 +5,7 @@ import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from 
 import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
+import { renderDiscordMessage, type MuelDiscordRenderablePart } from './discordRenderer.js';
 
 type SourceRow = {
   id: number;
@@ -24,6 +25,7 @@ type LatestEntry = {
   author: string;
   published: string;
   isShorts?: boolean;
+  images?: string[];
 };
 
 let timer: NodeJS.Timeout | null = null;
@@ -165,6 +167,7 @@ const toLatestEntry = (post: ScrapedCommunityPost): LatestEntry => ({
   link: post.link,
   author: post.author,
   published: post.published,
+  images: post.images,
 });
 
 const truncate = (input: string, maxLength: number): string => {
@@ -241,48 +244,8 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   return fetchLatestVideo(channelId);
 };
 
-const buildCommunityEmbed = (latest: LatestEntry): EmbedBuilder => {
-  const { preview } = splitCommunityBody(latest.content);
-  // Do not repeat title in description if it's just the first chunk of the content
-  const desc = preview && latest.title && preview.startsWith(latest.title) 
-    ? preview 
-    : [latest.title, preview].filter(Boolean).join('\n\n');
-
-  return new EmbedBuilder()
-    .setColor(0x2f80ed)
-    .setAuthor({ name: latest.author })
-    .setDescription(desc || '(내용 없음)')
-    .setURL(displayLink(latest))
-    .setFooter({ text: ['YouTube community', latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
-};
-
-const buildVideoMessage = (latest: LatestEntry): string => [
-  `📌 ${latest.author} 신규 영상 업로드!`,
-  latest.title,
-  displayLink(latest),
-].filter(Boolean).join('\n');
-
-const buildShortsMessage = (latest: LatestEntry): string => [
-  `📌 ${latest.author} 신규 쇼츠 업로드!`,
-  latest.title,
-  displayLink(latest),
-].filter(Boolean).join('\n');
-
-const buildCommunityMessage = (latest: LatestEntry): string => [
-  `📌 ${latest.author} 새 커뮤니티 게시글`,
-  truncate(latest.title, 180),
-].filter(Boolean).join('\n');
-
-const buildCommunityBody = (latest: LatestEntry): string => [
-  `📌 ${latest.title}`,
-  '',
-  latest.content || '(본문을 가져오지 못했습니다.)',
-  '',
-  '--------------------------------------------------',
-  '',
-  displayLink(latest),
-  [latest.author, latest.published].filter(Boolean).join(' | '),
-].filter(Boolean).join('\n');
+const threadTitle = (prefix: string, latest: LatestEntry): string =>
+  truncate(`${prefix} ${latest.title || latest.author}`, 90);
 
 const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow?: string): string => {
   if (mode === 'shorts') {
@@ -394,22 +357,43 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   }
 
   if (mode === 'posts') {
-    const sentMessage = await channel.send({
-      content: `📌 **${latest.author}** 새 커뮤니티 게시글`,
-      embeds: [buildCommunityEmbed(latest)],
-    });
+    const { preview, overflow } = splitCommunityBody(latest.content);
+    const intent: MuelDiscordRenderablePart[] = [
+      { type: 'text', text: `📌 **${latest.author}** 새 커뮤니티 게시글` },
+      {
+        type: 'announcement-card',
+        title: latest.title,
+        body: preview,
+        sourceUrl: displayLink(latest),
+        author: latest.author,
+        publishedAt: latest.published,
+        imageUrl: latest.images?.[0], // attach the first scraped image!
+      }
+    ];
+
+    const sentMessage = await channel.send(renderDiscordMessage(intent));
     
-    const { overflow } = splitCommunityBody(latest.content);
     if (overflow) {
       await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
     }
-  } else if (isShortsEntry(latest)) {
-    const sentMessage = await channel.send(buildShortsMessage(latest));
-    await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
   } else {
-    const sentMessage = await channel.send(buildVideoMessage(latest));
-    // Create thread for video discussion
-    await createThreadFromMessage(sentMessage, threadTitle('영상', latest), `[영상 보기](${displayLink(latest)})`);
+    const intent: MuelDiscordRenderablePart[] = [
+      {
+        type: 'video-card',
+        title: latest.title,
+        author: latest.author,
+        url: displayLink(latest),
+        isShorts: isShortsEntry(latest),
+      }
+    ];
+    
+    const sentMessage = await channel.send(renderDiscordMessage(intent));
+    
+    if (isShortsEntry(latest)) {
+      await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
+    } else {
+      await createThreadFromMessage(sentMessage, threadTitle('영상', latest), `[영상 보기](${displayLink(latest)})`);
+    }
   }
 
   // Cache post content for Muel context

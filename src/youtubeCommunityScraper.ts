@@ -7,6 +7,7 @@ export type ScrapedCommunityPost = {
   link: string;
   published: string;
   author: string;
+  images: string[];
 };
 
 const decodeHtml = (input: string): string => {
@@ -223,6 +224,35 @@ const extractPostId = (renderer: Record<string, unknown>, html: string): string 
   return null;
 };
 
+const extractImagesFromRenderer = (renderer: Record<string, unknown>): string[] => {
+  const images: string[] = [];
+  const attachment = renderer.backstageAttachment as Record<string, unknown>;
+  if (!attachment) return images;
+
+  if (attachment.backstageImageRenderer) {
+    const thumbs = getNested(attachment, ['backstageImageRenderer', 'image', 'thumbnails']);
+    if (Array.isArray(thumbs) && thumbs.length > 0) {
+      const best = thumbs[thumbs.length - 1];
+      if (best?.url) images.push(best.url);
+    }
+  }
+
+  if (attachment.postMultiImageRenderer) {
+    const renderers = getNested(attachment, ['postMultiImageRenderer', 'images']);
+    if (Array.isArray(renderers)) {
+      for (const item of renderers) {
+        const thumbs = getNested(item, ['backstageImageRenderer', 'image', 'thumbnails']);
+        if (Array.isArray(thumbs) && thumbs.length > 0) {
+          const best = thumbs[thumbs.length - 1];
+          if (best?.url) images.push(best.url);
+        }
+      }
+    }
+  }
+
+  return images;
+};
+
 export const scrapeLatestCommunityPostByChannelId = async (
   channelId: string,
   timeoutMs: number,
@@ -292,6 +322,7 @@ export const scrapeLatestCommunityPostByUrl = async (
     link: `https://www.youtube.com/post/${postId}`,
     published,
     author: author || 'YouTube Channel',
+    images: extractImagesFromRenderer(renderer),
   };
 };
 
@@ -392,6 +423,7 @@ const extractPostFromTabData = (data: Record<string, unknown>): ScrapedCommunity
       link: `https://www.youtube.com/post/${postId}`,
       published,
       author: author || 'YouTube Channel',
+      images: extractImagesFromRenderer(renderer),
     };
   }
 
