@@ -7,7 +7,7 @@
 // (mafia.current_game_user_id()) read.
 //
 // Required env vars:
-//   SUPABASE_JWT_SECRET — same value as Supabase project's JWT secret
+//   GAME_JWT_SECRET — same value as Supabase project's Legacy JWT Secret
 //
 // Token shape (claims):
 //   sub: <mafia.users.id, uuid string>
@@ -25,9 +25,9 @@ let cachedKey: CryptoKey | null = null;
 
 async function getKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
-  const secret = Deno.env.get("SUPABASE_JWT_SECRET");
+  const secret = Deno.env.get("GAME_JWT_SECRET");
   if (!secret) {
-    throw new Error("SUPABASE_JWT_SECRET must be set in the Edge Function environment.");
+    throw new Error("GAME_JWT_SECRET must be set in the Edge Function environment.");
   }
   const enc = new TextEncoder();
   cachedKey = await crypto.subtle.importKey(

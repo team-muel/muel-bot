@@ -242,11 +242,18 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
 };
 
 const buildCommunityEmbed = (latest: LatestEntry): EmbedBuilder => {
+  const { preview } = splitCommunityBody(latest.content);
+  // Do not repeat title in description if it's just the first chunk of the content
+  const desc = preview && latest.title && preview.startsWith(latest.title) 
+    ? preview 
+    : [latest.title, preview].filter(Boolean).join('\n\n');
+
   return new EmbedBuilder()
     .setColor(0x2f80ed)
-    .setTitle((latest.title || '새 커뮤니티 게시글').slice(0, 256))
+    .setAuthor({ name: latest.author })
+    .setDescription(desc || '(내용 없음)')
     .setURL(displayLink(latest))
-    .setFooter({ text: ['YouTube community', latest.author, latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
+    .setFooter({ text: ['YouTube community', latest.published].filter(Boolean).join(' | ').slice(0, 2048) });
 };
 
 const buildVideoMessage = (latest: LatestEntry): string => [
@@ -374,7 +381,10 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
 
   const previous = mode === 'posts' ? row.last_post_signature : row.last_post_id;
   if (previous === latest.id) {
-    await updateRow(row, latest);
+    // Only update DB occasionally (e.g., 1% chance) to show it's alive, or just don't update to save DB writes
+    if (Math.random() < 0.05) {
+      await updateRow(row, latest);
+    }
     return 'skipped';
   }
 
@@ -384,20 +394,22 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   }
 
   if (mode === 'posts') {
-    const body = buildCommunityBody(latest);
-    const { preview, overflow } = splitCommunityBody(body);
     const sentMessage = await channel.send({
-      content: preview,
+      content: `📌 **${latest.author}** 새 커뮤니티 게시글`,
       embeds: [buildCommunityEmbed(latest)],
     });
+    
+    const { overflow } = splitCommunityBody(latest.content);
     if (overflow) {
-      await createThreadFromMessage(sentMessage, threadTitle('이어보기', latest), overflow);
+      await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
     }
   } else if (isShortsEntry(latest)) {
     const sentMessage = await channel.send(buildShortsMessage(latest));
     await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
   } else {
-    await channel.send(buildVideoMessage(latest));
+    const sentMessage = await channel.send(buildVideoMessage(latest));
+    // Create thread for video discussion
+    await createThreadFromMessage(sentMessage, threadTitle('영상', latest), `[영상 보기](${displayLink(latest)})`);
   }
 
   // Cache post content for Muel context
