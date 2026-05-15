@@ -30,19 +30,27 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     if (part.type === 'text') {
       textContents.push(part.text);
     } else if (part.type === 'youtube-community-post-card') {
+      const hasImage = part.imageUrls && part.imageUrls.length > 0 && !!part.imageUrls[0];
+      const maxDescLength = hasImage ? 800 : 1200; // Dynamic truncation based on image presence
+
       const embed = new EmbedBuilder()
-        .setColor(0x2b2d31) // Colorless (Discord dark background)
         .setAuthor({ name: truncateTitle(part.authorName, 256) })
-        .setDescription(part.body ? truncate(part.body, 600) : null)
+        .setDescription(part.body ? truncate(part.body, maxDescLength) : null)
         .setURL(part.sourceUrl)
         .setFooter({ text: ['YouTube community', part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+
+      // Apply Tone Policy
+      if (part.tone === 'muel') embed.setColor(0xa2e61d);
+      else if (part.tone === 'warning') embed.setColor(0xff3b30);
+      else if (part.tone === 'success') embed.setColor(0x34c759);
+      // 'neutral' or undefined explicitly leaves color unset (Discord's neutral borderless look)
 
       if (part.title) {
         embed.setTitle(truncateTitle(part.title, 256));
       }
 
-      if (part.imageUrls && part.imageUrls.length > 0 && part.imageUrls[0]) {
-        embed.setImage(part.imageUrls[0]);
+      if (hasImage) {
+        embed.setImage(part.imageUrls![0]);
       }
 
       embeds.push(embed);

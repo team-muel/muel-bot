@@ -1,3 +1,15 @@
+/**
+ * MuelRenderablePart represents the canonical, platform-independent UI state (like AI SDK UIMessage.parts).
+ * This structure is the single source of truth. LLMs or Domain Logic (like YouTube Monitor) generate these intents,
+ * and platform-specific renderers (Discord, Web React, Slack) transform them into their native UI components.
+ * 
+ * TONE POLICY:
+ * - 'muel': Uses Muel's signature brand color (#a2e61d). Only for Muel's own system/status/memory/game UI.
+ * - 'neutral': Colorless/unset. Used for external feeds (YouTube, News) to act as a neutral container.
+ * - 'warning': For errors or destructive actions.
+ */
+export type RenderTone = 'muel' | 'neutral' | 'warning' | 'success' | 'game';
+
 export type MuelRenderablePart =
   | {
       type: 'text';
@@ -5,6 +17,7 @@ export type MuelRenderablePart =
     }
   | {
       type: 'youtube-community-post-card';
+      tone?: RenderTone;
       title?: string;
       authorName: string;
       body: string;
