@@ -1,5 +1,6 @@
 import type { Client, Message } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
+import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import {
   getUserHistorySummary,
@@ -102,6 +103,14 @@ export const handleMuelMention = async (
     });
     conversationId = chatId;
     inboundMessageId = `discord:${message.id}`;
+
+    // Enqueue job safely without awaiting the outcome or blocking the hot-path
+    void enqueueMemoryExtractionJob(supabase, {
+      chatId,
+      messageId: inboundMessageId,
+      source: 'discord',
+      createdAt: new Date().toISOString(),
+    });
 
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
     const relevantUserIds = mentionedUsers.size > 0

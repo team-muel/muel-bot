@@ -1,0 +1,71 @@
+import 'dotenv/config';
+import { getSupabaseClient } from '../src/supabase.js';
+
+const WORKER_ID = `worker-${process.pid}-${Math.random().toString(36).slice(2, 7)}`;
+const POLL_INTERVAL_MS = 5000;
+const MAX_JOBS_PER_BATCH = 10;
+
+async function processJob(job: any) {
+  console.log(`[worker] Processing job ${job.id} (type: ${job.type}, attempt: ${job.attempts})`);
+  const supabase = getSupabaseClient();
+  
+  try {
+    if (job.type === 'extract_memory') {
+      // Stub memory extraction
+      console.log(`[worker] Stubbing memory extraction for payload:`, job.payload);
+      
+      // Simulate work
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Complete job
+      const { error } = await supabase.rpc('complete_job', { p_job_id: job.id });
+      if (error) throw error;
+      console.log(`[worker] Completed job ${job.id}`);
+      
+    } else {
+      throw new Error(`Unknown job type: ${job.type}`);
+    }
+  } catch (error: any) {
+    console.error(`[worker] Failed job ${job.id}:`, error);
+    // Fail job with retry delay (e.g. exponential backoff: attempt * 60 seconds)
+    const delay = job.attempts * 60;
+    const { error: failError } = await supabase.rpc('fail_job', { 
+      p_job_id: job.id, 
+      p_error: error.message || String(error), 
+      p_retry_delay_seconds: delay 
+    });
+    if (failError) {
+      console.error(`[worker] Failed to mark job ${job.id} as failed:`, failError);
+    }
+  }
+}
+
+async function tick() {
+  const supabase = getSupabaseClient();
+  try {
+    const { data: jobs, error } = await supabase.rpc('claim_pending_jobs', {
+      p_worker_id: WORKER_ID,
+      p_limit: MAX_JOBS_PER_BATCH,
+    });
+    
+    if (error) {
+      console.error('[worker] Error claiming jobs:', error);
+      return;
+    }
+    
+    if (jobs && jobs.length > 0) {
+      console.log(`[worker] Claimed ${jobs.length} jobs.`);
+      await Promise.allSettled(jobs.map(processJob));
+    }
+  } catch (err) {
+    console.error('[worker] Tick failed:', err);
+  }
+}
+
+async function startWorker() {
+  console.log(`[worker] Starting Muel Job Worker (${WORKER_ID})`);
+  setInterval(() => void tick(), POLL_INTERVAL_MS);
+  void tick(); // Run immediately
+}
+
+startWorker();

@@ -3,6 +3,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import { config } from './config.js';
+import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
@@ -200,13 +201,24 @@ export const generateMuelReply = async (
             ? [{ type: 'text', text: msg.content }] 
             : msg.content;
             
+          const assistantMessageId = crypto.randomUUID();
           void saveAssistantMessage(
             supabase, 
             chatId, 
-            crypto.randomUUID(), 
+            assistantMessageId, 
             parts as any[], 
             { role: msg.role, provider, model: modelName }
-          ).catch((error) => {
+          ).then(() => {
+            // Only enqueue if the text response is somewhat long, to save resources
+            if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.length > 50) {
+              void enqueueMemoryExtractionJob(supabase, {
+                chatId,
+                messageId: assistantMessageId,
+                source: 'system',
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }).catch((error) => {
             console.error('[muel] failed to save generated message', error);
           });
         }
