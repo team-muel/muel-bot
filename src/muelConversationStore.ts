@@ -11,6 +11,61 @@ export type MuelStoredMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool';
 };
 
+export type UIMessage = {
+  id: string;
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'data';
+  parts: Array<{ type: string; text?: string; [key: string]: any }>;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+};
+
+export type ChatTurnResponse = {
+  chatId: string;
+  messages: UIMessage[];
+};
+
+export const prepareChatTurn = async (
+  supabase: SupabaseClient,
+  input: {
+    source: string;
+    sourceChannelId: string;
+    sourceThreadId: string;
+    userMessageId: string;
+    userParts: any[];
+    metadata: Record<string, unknown>;
+  }
+): Promise<ChatTurnResponse> => {
+  const { data, error } = await supabase.rpc('prepare_chat_turn', {
+    p_source: input.source,
+    p_source_channel_id: input.sourceChannelId,
+    p_source_thread_id: input.sourceThreadId,
+    p_user_message_id: input.userMessageId,
+    p_user_parts: input.userParts,
+    p_metadata: input.metadata,
+  });
+
+  if (error) throw error;
+  return data as ChatTurnResponse;
+};
+
+export const saveAssistantMessage = async (
+  supabase: SupabaseClient,
+  chatId: string,
+  messageId: string,
+  parts: any[],
+  metadata: Record<string, unknown> = {}
+): Promise<void> => {
+  const { error } = await supabase.from('muel_messages_v2').insert({
+    id: messageId,
+    chat_id: chatId,
+    role: 'assistant',
+    parts,
+    source: 'system',
+    metadata,
+  });
+  if (error) console.error('[muel] failed to save assistant message', error);
+};
+
 export const getDiscordConversationKey = (message: Message): string => {
   const guildId = message.guildId ?? 'dm';
   return `${guildId}:${message.channelId}`;

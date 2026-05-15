@@ -1,10 +1,11 @@
-import { generateText, tool } from 'ai';
+import { streamText, tool } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import { config } from './config.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MuelStoredMessage, UserHistorySummary } from './muelConversationStore.js';
+import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
+import { saveAssistantMessage } from './muelConversationStore.js';
 import { fetchServerContext } from './muelContext.js';
 import { listSemanticMemories, formatSemanticMemories } from './muelEmbeddings.js';
 
@@ -98,9 +99,10 @@ const formatMentionedUsers = (mentioned: MentionedUserContext[]): string => {
 
 export const generateMuelReply = async (
   supabase: SupabaseClient,
+  chatId: string,
   userText: string,
   authorName: string,
-  history: MuelStoredMessage[],
+  history: UIMessage[],
   guildId: string | null,
   relevantUserIds: string[],
   channelActivity?: string,
@@ -124,14 +126,19 @@ export const generateMuelReply = async (
   const mentionedSection = formatMentionedUsers(mentionedUsers ?? []);
   if (mentionedSection) systemParts.push('', mentionedSection);
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+  const messages: Array<any> = [
     { role: 'system', content: systemParts.join('\n') },
   ];
 
   for (const msg of history) {
-    messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+    if (msg.role === 'system' || msg.role === 'data') continue;
+    let text = msg.parts?.map((p: any) => p.text).filter(Boolean).join('\n') || '';
+    if (msg.role === 'user') {
+      const name = msg.metadata?.discordUsername ?? authorName;
+      text = `${name}: ${text}`;
+    }
+    messages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: text });
   }
-  messages.push({ role: 'user', content: `${authorName}: ${userText}` });
 
   const tools = {
     get_server_context: tool({
@@ -169,15 +176,24 @@ export const generateMuelReply = async (
   };
 
   const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string) => {
-    const result = await generateText({
+    const result = streamText({
       model: aiModel,
       messages,
       tools,
       temperature: 0.7,
       maxOutputTokens: 1200,
+      onFinish: async ({ text }) => {
+        try {
+          await saveAssistantMessage(supabase, chatId, crypto.randomUUID(), [
+            { type: 'text', text }
+          ], { provider, model: modelName });
+        } catch (error) {
+          console.error('[muel] failed to save assistant message in onFinish', error);
+        }
+      }
     });
-    if (result.finishReason === 'length') throw new Error(`${provider} response hit output length limit`);
-    return { text: result.text.trim(), model: modelName, provider };
+    const text = await result.text;
+    return { text: text.trim(), model: modelName, provider };
   };
 
   // Primary: Gemini

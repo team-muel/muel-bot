@@ -4,9 +4,7 @@ import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import {
   getUserHistorySummary,
   insertMuelEvent,
-  insertMuelMessage,
-  listRecentMuelMessages,
-  upsertDiscordConversation,
+  prepareChatTurn,
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { formatForContext } from './channelBuffer.js';
@@ -87,23 +85,23 @@ export const handleMuelMention = async (
     }
 
     const profileId = await upsertDiscordMuelProfile(supabase, message.author);
-    const conversation = await upsertDiscordConversation(supabase, message, profileId);
-    conversationId = conversation.id;
-
-    const inbound = await insertMuelMessage(supabase, {
-      conversationId,
-      direction: 'inbound',
-      role: 'user',
-      externalMessageId: message.id,
-      discordUserId: message.author.id,
-      discordUsername: message.author.username,
-      content: userText,
+    const { chatId, messages: history } = await prepareChatTurn(supabase, {
+      source: 'discord',
+      sourceChannelId: message.channelId,
+      sourceThreadId: message.channelId,
+      userMessageId: `discord:${message.id}`,
+      userParts: [{ type: 'text', text: userText }],
       metadata: {
-        guild_id: message.guildId,
-        channel_id: message.channelId,
+        discordGuildId: message.guildId,
+        discordChannelId: message.channelId,
+        discordMessageId: message.id,
+        discordUserId: message.author.id,
+        discordUsername: message.author.username,
+        externalMessageId: message.id,
       },
     });
-    inboundMessageId = inbound.id;
+    conversationId = chatId;
+    inboundMessageId = `discord:${message.id}`;
 
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
     const relevantUserIds = mentionedUsers.size > 0
@@ -116,9 +114,8 @@ export const handleMuelMention = async (
       })),
     );
 
-    const [history, userHistory, ...mentionedHistories] = await Promise.all([
-      listRecentMuelMessages(supabase, conversationId, 12),
-      getUserHistorySummary(supabase, message.author.id, conversationId).catch(() => null),
+    const [userHistory, ...mentionedHistories] = await Promise.all([
+      getUserHistorySummary(supabase, message.author.id).catch(() => null),
       ...mentionedHistoryPromises,
     ]);
 
@@ -128,6 +125,7 @@ export const handleMuelMention = async (
     
     const reply = await generateMuelReply(
       supabase,
+      chatId,
       userText,
       authorName,
       history,
@@ -146,22 +144,14 @@ export const handleMuelMention = async (
       },
     });
 
-    storeMessageEmbedding(supabase, inbound.id, userText).catch((error) => {
-      console.warn('[muel] message embedding skipped', error);
-    });
+    // Embeddings generation is now skipped from this synchronous path, as it will be handled async via a queue/webhook later.
+    // storeMessageEmbedding(supabase, inboundMessageId, userText).catch((error) => {
+    //   console.warn('[muel] message embedding skipped', error);
+    // });
 
-    await insertMuelMessage(supabase, {
-      conversationId,
-      direction: 'outbound',
-      role: 'assistant',
-      externalMessageId: sent.id,
-      content: reply.text,
-      model: reply.model,
-      metadata: {
-        reply_to: message.id,
-        provider: reply.provider,
-      },
-    });
+    // The assistant message is now saved by the AI SDK stream onFinish hook. 
+    // We pass the chatId to generateMuelReply to do this.
+
 
     await insertMuelEvent(supabase, {
       conversationId,
