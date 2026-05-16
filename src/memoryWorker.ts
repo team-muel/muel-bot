@@ -45,8 +45,10 @@ CRITICAL RULES (QUALITY GATES):
 2. DO NOT extract ephemeral facts (e.g. "User ate pizza", "User is debugging a bug", "User ran typecheck").
 3. DO NOT extract simple greetings or context-dependent opinions.
 4. NEVER store credentials, API keys, infrastructure details, file names, commit history, provider configurations, or implementation logs as user memory.
-5. Most conversations should produce NO memories. If there is nothing profound, return an empty array [].
-6. Frame facts as interpreted user structures (e.g. "User prefers AI capabilities to remain invisible in UX" instead of "User said hide the AI button").`;
+5. NEVER store sensitive personal information: health conditions, political views, religious beliefs, sexual orientation, precise location, workplace internal secrets, financial details, or personally identifiable information (real name, address, phone number, ID numbers).
+6. If the user mentions sensitive topics casually, do NOT extract them. Only extract durable judgment frameworks, not personal facts.
+7. Most conversations should produce NO memories. If there is nothing profound, return an empty array [].
+8. Frame facts as interpreted user structures (e.g. "User prefers AI capabilities to remain invisible in UX" instead of "User said hide the AI button").`;
 
 export async function processMemoryJob(job: any) {
   const supabase = getSupabaseClient();
