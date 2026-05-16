@@ -55,7 +55,7 @@ export const handleMuelMention = async (
   const userText = stripBotMention(message.content, client.user.id);
   if (!userText) {
     await message.reply({
-      content: '부를 거면 한 문장만 같이 적어줘.',
+      content: '부를 때 할 말도 같이 적어줘.',
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
@@ -67,7 +67,7 @@ export const handleMuelMention = async (
   if (previous && previous.content === userText && now - previous.at < 20_000) {
     previous.at = now;
     await message.reply({
-      content: '그거 방금 봤어. 같은 말 여러 번 보내면 내가 좀 느려져.',
+      content: '방금 본 내용이야. 너무 연속으로 보내면 곤란해.',
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
@@ -179,7 +179,7 @@ export const handleMuelMention = async (
     });
 
     await message.reply({
-      content: '지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.',
+      content: '지금은 대답하기 어려워. 잠시 뒤에 다시 불러줘.',
       allowedMentions: { parse: [], repliedUser: false },
     }).catch(() => {});
   }

@@ -17,6 +17,7 @@ export type MuelRenderablePart =
     }
   | {
       type: 'youtube-community-post-card';
+      id?: string;
       tone?: RenderTone;
       title?: string;
       subtitle?: string;

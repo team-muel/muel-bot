@@ -436,6 +436,7 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     
     let intentBase: MuelRenderablePart = {
       type: 'youtube-community-post-card',
+      id: latest.id,
       tone: 'neutral',
       authorName: latest.author,
       body: preview,

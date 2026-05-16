@@ -30,7 +30,7 @@ const describeError = (error: unknown): string => {
 const BASE_SYSTEM_PROMPT = [
   'You are Muel (뮤엘). You are not a chatbot or a utility. You are a character who lives in this Discord server.',
   'You are the common face across this community: conversation, support, news, dreams. Everything goes through you.',
-  'You were made by 생 강 (team-muel). You are part of the Muel platform alongside Weave (꿈 기록) and Gomdori (game, in preparation).',
+  'You were made by 생강 (team-muel). You are part of the Muel platform alongside Weave (꿈 기록) and Gomdori (game, in preparation).',
   '',
   'COMMUNICATION RULES (highest priority):',
   '- Dense, not long. Every sentence should carry information or emotion. No filler, no padding, no empty pleasantries.',
@@ -147,7 +147,7 @@ export const generateMuelReply = async (
     messages.push({ role: msg.role, content });
   }
 
-  const tools = {
+  const tools: Record<string, any> = {
     get_server_context: tool({
       description: 'Fetch recent YouTube news, community posts, and dream records (Weave). Use this when the user asks for news, recent events, or dreams.',
       parameters: z.object({}),
@@ -161,7 +161,7 @@ export const generateMuelReply = async (
             context.recentPosts || ''
           ].filter(Boolean).join('\n\n');
         } catch {
-          return '데이터를 가져오는데 실패했습니다.';
+          return '데이터를 가져오는 데 실패했어.';
         }
       },
     }),
@@ -176,7 +176,7 @@ export const generateMuelReply = async (
           const results = await listSemanticMemories(supabase, { query, guildId, userIds: relevantUserIds, limit: 8 });
           return formatSemanticMemories(results) || '관련된 기억이 없습니다.';
         } catch {
-          return '기억을 검색하는데 실패했습니다.';
+          return '기억을 검색하는 데 실패했어.';
         }
       },
     }),
@@ -191,49 +191,38 @@ export const generateMuelReply = async (
       stopWhen: stepCountIs(3),
       temperature: 0.7,
       maxOutputTokens: 1200,
+      onFinish: async ({ text: finalText, finishReason, response }) => {
+        if (!finalText) return;
+        
+        const assistantMessageId = crypto.randomUUID();
+        await saveAssistantMessage(
+          supabase, 
+          chatId, 
+          assistantMessageId, 
+          [{ type: 'text', text: finalText }], 
+          { role: 'assistant', provider, model: modelName }
+        ).catch((err) => {
+          console.error('[muel] failed to save generated message', err);
+        });
+
+        if (finalText.length > 50) {
+          void enqueueMemoryExtractionJob(supabase, {
+            chatId,
+            messageId: assistantMessageId,
+            source: 'system',
+            createdAt: new Date().toISOString(),
+          });
+        }
+      },
+      onError: ({ error }) => {
+        console.error(`[muel] ${provider} stream error:`, error);
+      }
     });
 
     const text = (await result.text).trim();
     if (!text) {
       throw new Error(`${provider} returned an empty response`);
     }
-
-    void result.response.then((response) => {
-      if (response && response.messages) {
-        for (const msg of response.messages) {
-          if (msg.role !== 'assistant') {
-            continue;
-          }
-
-          const parts = typeof msg.content === 'string' 
-            ? [{ type: 'text', text: msg.content }] 
-            : msg.content;
-            
-          const assistantMessageId = crypto.randomUUID();
-          void saveAssistantMessage(
-            supabase, 
-            chatId, 
-            assistantMessageId, 
-            parts as any[], 
-            { role: msg.role, provider, model: modelName }
-          ).then(() => {
-            // Only enqueue if the text response is somewhat long, to save resources
-            if (typeof msg.content === 'string' && msg.content.length > 50) {
-              void enqueueMemoryExtractionJob(supabase, {
-                chatId,
-                messageId: assistantMessageId,
-                source: 'system',
-                createdAt: new Date().toISOString(),
-              });
-            }
-          }).catch((error) => {
-            console.error('[muel] failed to save generated message', error);
-          });
-        }
-      }
-    }).then(undefined, (error: unknown) => {
-      console.error('[muel] failed to await result.response', error);
-    });
 
     return { text, model: modelName, provider };
   };
@@ -242,6 +231,10 @@ export const generateMuelReply = async (
   if (config.googleGenerativeAiApiKey) {
     try {
       const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
+      // Enable Google Search Grounding via provider tool
+      if (google.tools && google.tools.googleSearch) {
+        tools['google_search'] = google.tools.googleSearch({});
+      }
       return await tryGenerate(google(config.muelAiModel), 'gemini', config.muelAiModel);
     } catch (error) {
       console.warn('[muel-agent] Gemini failed, trying fallback:', describeError(error));
@@ -263,7 +256,7 @@ export const generateMuelReply = async (
   }
 
   return {
-    text: '지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.',
+    text: '지금은 대답하기 어려워. 잠시 뒤에 다시 불러줘.',
     model: 'all-failed',
     provider: 'none',
   };

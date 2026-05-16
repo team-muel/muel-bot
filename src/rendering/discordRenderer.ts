@@ -1,5 +1,23 @@
-import { EmbedBuilder, type MessageCreateOptions } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions } from 'discord.js';
 import type { MuelRenderablePart } from './types.js';
+
+function parseRelativeTimeToUnix(text: string): number | null {
+  if (!text) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const match = text.match(/(\d+)\s*(초|분|시간|일|주|개월|년|second|minute|hour|day|week|month|year)/i);
+  if (!match) return null;
+  const val = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+  
+  if (unit.includes('초') || unit.includes('second')) return now - val;
+  if (unit.includes('분') || unit.includes('minute')) return now - val * 60;
+  if (unit.includes('시간') || unit.includes('hour')) return now - val * 3600;
+  if (unit.includes('일') || unit.includes('day')) return now - val * 86400;
+  if (unit.includes('주') || unit.includes('week')) return now - val * 604800;
+  if (unit.includes('개월') || unit.includes('month')) return now - val * 2592000;
+  if (unit.includes('년') || unit.includes('year')) return now - val * 31536000;
+  return null;
+}
 
 function truncate(text: string, max: number): string {
   if (!text) return '';
@@ -40,12 +58,14 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
         part.subtitle ? `**${part.subtitle}**\n` : null,
         part.body ? truncate(part.body, maxDescLength) : null,
         highlightText,
-        part.sourceUrl ? `\n---\n[원문 보기](${part.sourceUrl})` : null,
       ].filter((value): value is string => Boolean(value));
+
+      const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
+      const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
 
       const embed = new EmbedBuilder()
         .setDescription(descriptionParts.join('\n') || null)
-        .setFooter({ text: ['YouTube 커뮤니티', part.authorName, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+        .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' | ').slice(0, 2048) });
 
       if (part.tone === 'muel') embed.setColor(0xa2e61d);
       else if (part.tone === 'warning') embed.setColor(0xff3b30);
@@ -59,7 +79,15 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
         embed.setImage(imageUrl);
       }
 
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setLabel('원문')
+          .setStyle(ButtonStyle.Link)
+          .setURL(part.sourceUrl || 'https://youtube.com')
+      );
+
       embeds.push(embed);
+      options.components = [...(options.components || []), row];
     } else if (part.type === 'announcement-card') {
       const embed = new EmbedBuilder()
         .setColor(0x2f80ed)
