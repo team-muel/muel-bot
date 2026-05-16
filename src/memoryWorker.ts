@@ -5,8 +5,8 @@ import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 
 const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey || '' });
-const model = google('gemini-2.5-flash');
-const embeddingModel = google.textEmbeddingModel('text-embedding-004');
+const model = google(config.muelAiModel);
+const embeddingModel = google.textEmbeddingModel(config.muelEmbeddingModel);
 
 const extractMemorySchema = z.object({
   memories: z.array(z.object({

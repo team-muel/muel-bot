@@ -1,4 +1,4 @@
-import { stepCountIs, streamText, tool } from 'ai';
+import { generateText, tool } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
@@ -227,48 +227,43 @@ export const generateMuelReply = async (
   const providerFailures: string[] = [];
 
   const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string, activeTools: any) => {
-    const result = streamText({
+    const { text, finishReason, usage } = await generateText({
       model: aiModel,
       system,
       messages,
       tools: activeTools,
-      stopWhen: stepCountIs(3),
+      // @ts-ignore
+      maxSteps: 3,
       temperature: 0.7,
       maxOutputTokens: 1200,
-      onFinish: async ({ text: finalText, finishReason, response }) => {
-        if (!finalText) return;
-        
-        const assistantMessageId = crypto.randomUUID();
-        await saveAssistantMessage(
-          supabase, 
-          chatId, 
-          assistantMessageId, 
-          [{ type: 'text', text: finalText }], 
-          { role: 'assistant', provider, model: modelName }
-        ).catch((err) => {
-          console.error('[muel] failed to save generated message', err);
-        });
-
-        if (finalText.length > 50) {
-          void enqueueMemoryExtractionJob(supabase, {
-            chatId,
-            messageId: assistantMessageId,
-            source: 'system',
-            createdAt: new Date().toISOString(),
-          });
-        }
-      },
-      onError: ({ error }) => {
-        console.error(`[muel] ${provider} stream error:`, error);
-      }
     });
 
-    const text = (await result.text).trim();
-    if (!text) {
+    const finalText = text.trim();
+    if (!finalText) {
       throw new Error(`${provider} returned an empty response`);
     }
 
-    return { text, model: modelName, provider };
+    const assistantMessageId = crypto.randomUUID();
+    await saveAssistantMessage(
+      supabase, 
+      chatId, 
+      assistantMessageId, 
+      [{ type: 'text', text: finalText }], 
+      { role: 'assistant', provider, model: modelName }
+    ).catch((err) => {
+      console.error('[muel] failed to save generated message', err);
+    });
+
+    if (finalText.length > 50) {
+      void enqueueMemoryExtractionJob(supabase, {
+        chatId,
+        messageId: assistantMessageId,
+        source: 'system',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    return { text: finalText, model: modelName, provider };
   };
 
   // Primary: Gemini

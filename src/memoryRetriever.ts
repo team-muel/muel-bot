@@ -12,7 +12,7 @@ let embeddingModel: ReturnType<ReturnType<typeof createGoogleGenerativeAI>['text
 function getEmbeddingModel() {
   if (!embeddingModel && config.googleGenerativeAiApiKey) {
     const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
-    embeddingModel = google.textEmbeddingModel('text-embedding-004');
+    embeddingModel = google.textEmbeddingModel(config.muelEmbeddingModel);
   }
   return embeddingModel;
 }
