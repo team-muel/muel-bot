@@ -101,8 +101,9 @@ export const getUserHistorySummary = async (
   const recentContents = data
     .slice(0, 8)
     .map((m: any) => {
-      const text = m.parts?.find((p: any) => p.type === 'text')?.text ?? '';
-      return text.slice(0, 80);
+      if (!m.parts || !Array.isArray(m.parts)) return '';
+      const textPart = m.parts.find((p: any) => p.type === 'text');
+      return textPart ? textPart.text.slice(0, 80) : '';
     })
     .filter(Boolean);
 

@@ -172,11 +172,13 @@ export const handleMuelMention = async (
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.error('[muel] mention handling failed', error);
-    console.warn('[muel] mention failed', {
+    console.error('[muel] mention handling failed!', error);
+    console.error(`[muel] context: user=${message.author.username}, text="${userText}"`);
+    console.warn('[muel] mention failed metadata', {
       event: 'mention_failed',
       messageId: inboundMessageId,
       reason,
+      stack: error instanceof Error ? error.stack : undefined
     });
 
     await message.reply({

@@ -197,12 +197,12 @@ export const generateMuelReply = async (
     }),
   };
 
-  const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string) => {
+  const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string, activeTools: any) => {
     const result = streamText({
       model: aiModel,
       system,
       messages,
-      tools,
+      tools: activeTools,
       stopWhen: stepCountIs(3),
       temperature: 0.7,
       maxOutputTokens: 1200,
@@ -246,11 +246,24 @@ export const generateMuelReply = async (
   if (config.googleGenerativeAiApiKey) {
     try {
       const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
-      // Enable Google Search Grounding via provider tool
-      if (google.tools && google.tools.googleSearch) {
-        tools['google_search'] = google.tools.googleSearch({});
+      const googleModel = google(config.muelAiModel);
+      
+      // Google Search Grounding is best enabled via tools in latest SDK
+      // Note: This requires the model to support googleSearch tool.
+      const agentTools = { ...tools };
+      if (config.muelAiModel.includes('flash') || config.muelAiModel.includes('pro')) {
+         try {
+            // @ts-ignore - Some versions of the SDK might have this under tools
+            if (google.tools?.googleSearch) {
+               // @ts-ignore
+               agentTools['googleSearch'] = google.tools.googleSearch({});
+            }
+         } catch (e) {
+            console.warn('[muel-agent] Failed to attach googleSearch tool:', e);
+         }
       }
-      return await tryGenerate(google(config.muelAiModel), 'gemini', config.muelAiModel);
+
+      return await tryGenerate(googleModel, 'gemini', config.muelAiModel, agentTools);
     } catch (error) {
       console.warn('[muel-agent] Gemini failed, trying fallback:', describeError(error));
     }
@@ -264,7 +277,7 @@ export const generateMuelReply = async (
         baseURL: 'https://integrate.api.nvidia.com/v1',
         apiKey: config.nvidiaApiKey,
       });
-      return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`);
+      return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`, tools);
     } catch (error) {
       console.warn('[muel-agent] NVIDIA NIM also failed:', describeError(error));
     }
