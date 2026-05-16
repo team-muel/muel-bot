@@ -9,6 +9,7 @@ import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
 import { fetchServerContext } from './muelContext.js';
 import { listSemanticMemories, formatSemanticMemories } from './muelEmbeddings.js';
+import { retrieveRelevantMemories } from './memoryRetriever.js';
 
 export type MuelAgentResult = {
   text: string;
@@ -110,6 +111,7 @@ export const generateMuelReply = async (
   userHistory?: UserHistorySummary | null,
   mentionedUsers?: MentionedUserContext[],
   guildTopology?: string,
+  sourceUserId?: string,
 ): Promise<MuelAgentResult> => {
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
     return {
@@ -126,6 +128,19 @@ export const generateMuelReply = async (
   systemParts.push('', formatUserHistory(userHistory, authorName));
   const mentionedSection = formatMentionedUsers(mentionedUsers ?? []);
   if (mentionedSection) systemParts.push('', mentionedSection);
+
+  // Retrieve relevant long-term memories (silent on failure)
+  if (sourceUserId) {
+    try {
+      const memoryContext = await retrieveRelevantMemories(supabase, {
+        userId: sourceUserId,
+        query: userText,
+      });
+      if (memoryContext) systemParts.push('', memoryContext);
+    } catch (err) {
+      console.warn('[muel-agent] memory retrieval failed, proceeding without', err);
+    }
+  }
 
   const system = systemParts.join('\n');
   const messages: Array<any> = [];

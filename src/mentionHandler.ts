@@ -141,7 +141,8 @@ export const handleMuelMention = async (
       channelActivity,
       userHistory,
       mentionedHistories,
-      guildTopology
+      guildTopology,
+      message.author.id,
     );
     const sent = await message.reply({
       content: toDiscordReply(reply.text),

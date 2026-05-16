@@ -104,26 +104,10 @@ export async function processMemoryJob(job: any) {
 
   const sourceUserId = chatData.source_user_id;
 
-  // Fetch existing memories for this user to deduplicate/merge
-  const { data: existingMemories } = await supabase
-    .from('muel_memory_entries')
-    .select('id, content, importance, kind')
-    .eq('muel_chats.source_user_id', sourceUserId)
-    .order('created_at', { ascending: false });
-    
-  // Wait, joining via foreign key using postgrest is slightly different, let's fetch chats for this user first
-  const { data: userChats } = await supabase
-    .from('muel_chats')
-    .select('id')
-    .eq('source_user_id', sourceUserId);
-  
-  const userChatIds = userChats?.map(c => c.id) || [chatId];
-
-  const { data: userMemories } = await supabase
-    .from('muel_memory_entries')
-    .select('id, content, importance, kind, status, created_at')
-    .in('chat_id', userChatIds)
-    .eq('status', 'active');
+  // Fetch existing active memories for this user to deduplicate/merge
+  const { data: userMemories } = await supabase.rpc('fetch_active_memories_by_user', {
+    p_user_id: sourceUserId,
+  });
 
   // 4. Process each candidate memory
   for (const memory of object.memories) {
@@ -139,7 +123,7 @@ export async function processMemoryJob(job: any) {
     let targetId = null;
 
     if (userMemories && userMemories.length > 0) {
-      const existingText = userMemories.map(m => `ID: ${m.id}\nContent: ${m.content}`).join('\n\n');
+      const existingText = userMemories.map((m: any) => `ID: ${m.id}\nContent: ${m.content}`).join('\n\n');
       const { object: mergeDecision } = await generateObject({
         model,
         schema: mergeMemorySchema,
@@ -196,7 +180,7 @@ Task:
           .eq('id', toArchive.id);
           
         // Remove from current list to keep accurate count if multiple inserts happen
-        const idx = userMemories.findIndex(m => m.id === toArchive.id);
+        const idx = userMemories.findIndex((m: any) => m.id === toArchive.id);
         if (idx > -1) userMemories.splice(idx, 1);
       }
 
