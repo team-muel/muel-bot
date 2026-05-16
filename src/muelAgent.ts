@@ -19,13 +19,40 @@ export type MuelAgentResult = {
 
 const describeError = (error: unknown): string => {
   if (!(error instanceof Error)) return String(error);
-  const extra = error as Error & { statusCode?: number; status?: number; code?: string };
+  const extra = error as Error & { 
+    statusCode?: number; 
+    status?: number; 
+    code?: string;
+    responseBody?: any;
+  };
+  
+  let bodyStr = '';
+  if (extra.responseBody) {
+    try {
+      bodyStr = typeof extra.responseBody === 'string' 
+        ? extra.responseBody 
+        : JSON.stringify(extra.responseBody);
+    } catch {
+      bodyStr = String(extra.responseBody);
+    }
+  }
+
   return [
     error.name,
     extra.statusCode ?? extra.status,
     extra.code,
     error.message,
+    bodyStr ? `body=${bodyStr}` : ''
   ].filter(Boolean).join(' ');
+};
+
+const CASUAL_GREETING_RE = /^(?:안녕|안뇽|ㅎㅇ|하이|hello|hi|hey|yo)[!.?~\s]*$/iu;
+
+const getLocalFallbackReply = (userText: string): string | null => {
+  if (CASUAL_GREETING_RE.test(userText.trim())) {
+    return '안녕. 지금 머리가 잠깐 안 돌아가서 길게는 못 받는데, 호출은 살아있어.';
+  }
+  return null;
 };
 
 const BASE_SYSTEM_PROMPT = [
@@ -197,6 +224,8 @@ export const generateMuelReply = async (
     }),
   };
 
+  const providerFailures: string[] = [];
+
   const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string, activeTools: any) => {
     const result = streamText({
       model: aiModel,
@@ -265,8 +294,12 @@ export const generateMuelReply = async (
 
       return await tryGenerate(googleModel, 'gemini', config.muelAiModel, agentTools);
     } catch (error) {
-      console.warn('[muel-agent] Gemini failed, trying fallback:', describeError(error));
+      const reason = describeError(error);
+      providerFailures.push(`gemini:${config.muelAiModel}:${reason}`);
+      console.warn('[muel-agent] Gemini failed, trying fallback:', reason);
     }
+  } else {
+    providerFailures.push('gemini:not-configured');
   }
 
   // Fallback: NVIDIA NIM (via OpenAI Compatible SDK)
@@ -279,15 +312,32 @@ export const generateMuelReply = async (
       });
       return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`, tools);
     } catch (error) {
-      console.warn('[muel-agent] NVIDIA NIM also failed:', describeError(error));
+      const reason = describeError(error);
+      providerFailures.push(`nvidia:${config.nvidiaModel}:${reason}`);
+      console.warn('[muel-agent] NVIDIA NIM also failed:', reason);
     }
+  } else {
+    providerFailures.push('nvidia:not-configured');
   }
 
-  return {
-    text: '지금은 대답하기 어려워. 잠시 뒤에 다시 불러줘.',
-    model: 'all-failed',
-    provider: 'none',
-  };
+  console.error('[muel-agent] all providers failed', {
+    event: 'llm_all_failed',
+    chatId,
+    providers: providerFailures,
+  });
+
+  const localFallback = getLocalFallbackReply(userText);
+  if (localFallback) {
+    return {
+      text: localFallback,
+      model: 'local-fallback:greeting',
+      provider: 'none',
+    };
+  }
+
+  // Instead of returning a silent dummy message, throw an error.
+  // This forces mentionHandler to catch it, log the real causes, and handle the user reply.
+  throw new Error(`LLM All Failed: ${providerFailures.join(', ')}`);
 };
 
 export const toDiscordReply = (text: string): string => {

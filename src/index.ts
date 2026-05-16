@@ -274,6 +274,13 @@ const server = http.createServer((request, response) => {
       readyAt,
       loginError,
       wsStatus: client.ws.status,
+      ai: {
+        primaryProvider: config.googleGenerativeAiApiKey ? 'gemini' : config.nvidiaApiKey ? 'nvidia' : null,
+        geminiConfigured: Boolean(config.googleGenerativeAiApiKey),
+        geminiModel: config.muelAiModel,
+        nvidiaConfigured: Boolean(config.nvidiaApiKey),
+        nvidiaModel: config.nvidiaModel,
+      },
     },
     gomdori: gomdoriClient
       ? {
