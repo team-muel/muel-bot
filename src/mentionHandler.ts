@@ -5,13 +5,11 @@ import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import {
   getUserHistorySummary,
-  insertMuelEvent,
   prepareChatTurn,
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
-import { storeMessageEmbedding } from './muelEmbeddings.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 
@@ -77,7 +75,6 @@ export const handleMuelMention = async (
   recentRequests.set(requestKey, { content: userText, at: now });
 
   const supabase = getSupabaseClient();
-  let conversationId: string | null = null;
   let inboundMessageId: string | null = null;
 
   try {
@@ -103,7 +100,6 @@ export const handleMuelMention = async (
         externalMessageId: message.id,
       },
     });
-    conversationId = chatId;
     inboundMessageId = userMessageId;
 
     // Enqueue job safely without awaiting the outcome or blocking the hot-path
@@ -164,30 +160,23 @@ export const handleMuelMention = async (
     // We pass the chatId to generateMuelReply to do this.
 
 
-    await insertMuelEvent(supabase, {
-      conversationId,
+    console.log('[muel] mention replied', {
+      event: 'mention_replied',
+      chatId,
       messageId: inboundMessageId,
-      eventType: 'mention_replied',
-      metadata: {
-        model: reply.model,
-        provider: reply.provider,
-        discord_message_id: message.id,
-        discord_reply_id: sent.id,
-      },
+      model: reply.model,
+      provider: reply.provider,
+      discordMessageId: message.id,
+      discordReplyId: sent.id,
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error('[muel] mention handling failed', error);
-
-    if (conversationId) {
-      await insertMuelEvent(supabase, {
-        conversationId,
-        messageId: inboundMessageId,
-        eventType: 'mention_failed',
-        status: 'error',
-        metadata: { reason },
-      }).catch(() => {});
-    }
+    console.warn('[muel] mention failed', {
+      event: 'mention_failed',
+      messageId: inboundMessageId,
+      reason,
+    });
 
     await message.reply({
       content: '지금은 응답을 만들지 못했어. 잠시 뒤 다시 불러줘.',
