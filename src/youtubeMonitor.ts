@@ -552,7 +552,9 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
     lastTickSent = sent;
     lastTickStatus = 'success';
     lastTickMessage = `checked=${rows.length} sent=${sent}`;
-    console.log(`[youtube] tick checked=${rows.length} sent=${sent}`);
+    if (sent > 0) {
+      console.log(`[youtube] tick checked=${rows.length} sent=${sent}`);
+    }
   } catch (error) {
     const message = formatUnknownError(error);
     lastTickStatus = 'error';

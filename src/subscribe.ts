@@ -1,4 +1,4 @@
-import { ChannelType, EmbedBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import { ChannelType, EmbedBuilder, type ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
@@ -93,7 +93,7 @@ export const handleSubscribeYouTubeCommand = async (
   kind: YouTubeSubscriptionKind,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('Subscribe error', 'This command can only be used in a server.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Subscribe error', 'This command can only be used in a server.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -101,16 +101,16 @@ export const handleSubscribeYouTubeCommand = async (
   const targetChannel = interaction.channel;
 
   if (!channelInput) {
-    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Enter a YouTube channel URL or UC channel ID.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Enter a YouTube channel URL or UC channel ID.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
-    await interaction.reply({ ...buildSimpleEmbed('Channel error', 'Use this in a text, announcement, or thread channel.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Channel error', 'Use this in a text, announcement, or thread channel.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
   try {
     const result = await createYouTubeSubscription({
@@ -135,11 +135,11 @@ export const handleSubscriptionListCommand = async (
   interaction: ChatInputCommandInteraction,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('Subscriptions', 'This command can only be used in a server.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Subscriptions', 'This command can only be used in a server.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
   try {
     const rows = await listYouTubeSubscriptions({ guildId: interaction.guildId });
@@ -167,7 +167,7 @@ export const handleUnsubscribeCommand = async (
   forcedKind?: YouTubeSubscriptionKind,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('Unsubscribe', 'This command can only be used in a server.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Unsubscribe', 'This command can only be used in a server.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -176,21 +176,21 @@ export const handleUnsubscribeCommand = async (
   const targetChannel = interaction.channel;
 
   if (!kind) {
-    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Choose videos or posts.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Choose videos or posts.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!channelInput) {
-    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Enter the YouTube channel to remove.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Input error', 'Enter the YouTube channel to remove.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
-    await interaction.reply({ ...buildSimpleEmbed('Channel error', 'Use this in a text, announcement, or thread channel.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Channel error', 'Use this in a text, announcement, or thread channel.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
   try {
     const result = await deleteYouTubeSubscription({
@@ -225,7 +225,7 @@ export const handleGroupedSubscribeCommand = async (
   if (subcommand === 'add') {
     const kind = getKindOption(interaction);
     if (!kind) {
-      await interaction.reply({ ...buildSimpleEmbed('Input error', 'Choose videos or posts.', EMBED_WARN), ephemeral: true });
+      await interaction.reply({ ...buildSimpleEmbed('Input error', 'Choose videos or posts.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
       return;
     }
     await handleSubscribeYouTubeCommand(interaction, kind);
@@ -252,7 +252,7 @@ export const handleFlatSubscribeCommand = async (
 
   const kind = getKindOption(interaction);
   if (!kind) {
-    await interaction.reply({ ...buildSimpleEmbed('Input error', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), ephemeral: true });
+    await interaction.reply({ ...buildSimpleEmbed('Input error', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -266,5 +266,5 @@ export const handleFlatSubscribeCommand = async (
     return;
   }
 
-  await interaction.reply({ ...buildSimpleEmbed('Input error', '조회, 추가, 제거 중 하나를 선택해주세요.', EMBED_WARN), ephemeral: true });
+  await interaction.reply({ ...buildSimpleEmbed('Input error', '조회, 추가, 제거 중 하나를 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
 };

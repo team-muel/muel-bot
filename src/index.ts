@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
 import {
   handleFlatSubscribeCommand,
@@ -90,13 +90,6 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     body: commands,
   });
   console.log('[discord] replaced global commands');
-
-  for (const guild of readyClient.guilds.cache.values()) {
-    await rest.put(Routes.applicationGuildCommands(readyClient.application.id, guild.id), {
-      body: [],
-    });
-    console.log(`[discord] cleared guild commands for ${guild.id}`);
-  }
 };
 
 client.once(Events.ClientReady, async (readyClient) => {
@@ -124,7 +117,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.commandName === 'ping') {
-    await interaction.reply({ content: 'pong', ephemeral: true });
+    await interaction.reply({ content: 'pong', flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -145,7 +138,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         '',
         'Gomdori는 준비 중입니다.',
       ].join('\n'),
-      ephemeral: true,
+      flags: [MessageFlags.Ephemeral],
     });
     return;
   }
@@ -160,7 +153,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
       `Muel Hub: <${config.hubUrl}>`,
     ].join('\n'),
-    ephemeral: true,
+    flags: [MessageFlags.Ephemeral],
   });
 });
 
@@ -233,7 +226,7 @@ if (gomdoriClient) {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'ping') {
-      await interaction.reply({ content: 'pong 🐻', ephemeral: true });
+      await interaction.reply({ content: 'pong 🐻', flags: [MessageFlags.Ephemeral] });
       return;
     }
 
