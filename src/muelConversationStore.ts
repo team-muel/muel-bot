@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Message } from 'discord.js';
 import type { UIMessage as AiUIMessage } from 'ai';
 
 export type MuelConversation = {
@@ -64,104 +63,6 @@ export const saveAssistantMessage = async (
   if (error) console.error('[muel] failed to save assistant message', error);
 };
 
-export const getDiscordConversationKey = (message: Message): string => {
-  const guildId = message.guildId ?? 'dm';
-  return `${guildId}:${message.channelId}`;
-};
-
-export const upsertDiscordConversation = async (
-  supabase: SupabaseClient,
-  message: Message,
-  profileId: string | null,
-): Promise<MuelConversation> => {
-  const externalThreadId = getDiscordConversationKey(message);
-  const now = new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from('muel_conversations')
-    .upsert(
-      {
-        platform: 'discord',
-        external_thread_id: externalThreadId,
-        discord_guild_id: message.guildId,
-        discord_channel_id: message.channelId,
-        discord_user_id: message.author.id,
-        muel_profile_id: profileId,
-        metadata: {
-          channel_type: message.channel.type,
-          last_discord_message_id: message.id,
-        },
-        last_message_at: now,
-        updated_at: now,
-      },
-      { onConflict: 'platform,external_thread_id' },
-    )
-    .select('id')
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data as MuelConversation;
-};
-
-export const insertMuelMessage = async (
-  supabase: SupabaseClient,
-  input: {
-    conversationId: string;
-    direction: 'inbound' | 'outbound' | 'internal';
-    role: 'user' | 'assistant' | 'system' | 'tool';
-    content: string;
-    externalMessageId?: string | null;
-    discordUserId?: string | null;
-    discordUsername?: string | null;
-    model?: string | null;
-    metadata?: Record<string, unknown>;
-  },
-): Promise<MuelStoredMessage> => {
-  const { data, error } = await supabase
-    .from('muel_messages')
-    .insert({
-      conversation_id: input.conversationId,
-      platform: 'discord',
-      direction: input.direction,
-      role: input.role,
-      external_message_id: input.externalMessageId,
-      discord_user_id: input.discordUserId,
-      discord_username: input.discordUsername,
-      content: input.content,
-      model: input.model,
-      metadata: input.metadata ?? {},
-    })
-    .select('id, content, role')
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data as MuelStoredMessage;
-};
-
-export const listRecentMuelMessages = async (
-  supabase: SupabaseClient,
-  conversationId: string,
-  limit = 10,
-): Promise<MuelStoredMessage[]> => {
-  const { data, error } = await supabase
-    .from('muel_messages')
-    .select('id, content, role')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw error;
-  }
-
-  return ((data ?? []) as MuelStoredMessage[]).reverse();
-};
 
 export type UserHistorySummary = {
   totalInteractions: number;
@@ -172,58 +73,42 @@ export type UserHistorySummary = {
 export const getUserHistorySummary = async (
   supabase: SupabaseClient,
   discordUserId: string,
-  excludeConversationId?: string,
 ): Promise<UserHistorySummary | null> => {
-  let query = supabase
-    .from('muel_messages')
-    .select('content, role, created_at')
-    .eq('discord_user_id', discordUserId)
-    .eq('direction', 'inbound')
-    .order('created_at', { ascending: false })
-    .limit(20);
+  // Find chats belonging to this user
+  const { data: chats, error: chatError } = await supabase
+    .from('muel_chats')
+    .select('id')
+    .eq('source_user_id', discordUserId);
 
-  if (excludeConversationId) {
-    query = query.neq('conversation_id', excludeConversationId);
+  if (chatError || !chats || chats.length === 0) {
+    return null;
   }
 
-  const { data, error } = await query;
+  const chatIds = chats.map((c: any) => c.id);
+
+  const { data, error } = await supabase
+    .from('muel_messages_v2')
+    .select('parts, role, created_at')
+    .in('chat_id', chatIds)
+    .eq('role', 'user')
+    .order('created_at', { ascending: false })
+    .limit(20);
 
   if (error || !data || data.length === 0) {
     return null;
   }
 
-  const messages = data as Array<{ content: string; role: string; created_at: string }>;
-  const recentContents = messages
+  const recentContents = data
     .slice(0, 8)
-    .map((m) => m.content.slice(0, 80));
+    .map((m: any) => {
+      const text = m.parts?.find((p: any) => p.type === 'text')?.text ?? '';
+      return text.slice(0, 80);
+    })
+    .filter(Boolean);
 
   return {
-    totalInteractions: messages.length,
+    totalInteractions: data.length,
     recentTopics: recentContents,
-    lastActiveAt: messages[0]?.created_at ?? null,
+    lastActiveAt: data[0]?.created_at ?? null,
   };
-};
-
-export const insertMuelEvent = async (
-  supabase: SupabaseClient,
-  input: {
-    conversationId?: string | null;
-    messageId?: string | null;
-    eventType: string;
-    status?: 'ok' | 'error' | 'skipped';
-    metadata?: Record<string, unknown>;
-  },
-): Promise<void> => {
-  const { error } = await supabase.from('muel_events').insert({
-    conversation_id: input.conversationId,
-    message_id: input.messageId,
-    event_type: input.eventType,
-    platform: 'discord',
-    status: input.status ?? 'ok',
-    metadata: input.metadata ?? {},
-  });
-
-  if (error) {
-    throw error;
-  }
 };

@@ -1,14 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
 import { generateObject, embed } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { config } from './config.js';
+import { getSupabaseClient } from './supabase.js';
 
-if (!config.supabaseUrl || !config.supabaseServiceRoleKey || !config.googleGenerativeAiApiKey) {
-  console.warn('[memory] Missing required config for memory worker. It will not run correctly.');
-}
-
-const supabase = createClient(config.supabaseUrl || '', config.supabaseServiceRoleKey || '');
 const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey || '' });
 const model = google('gemini-2.5-flash');
 const embeddingModel = google.textEmbeddingModel('text-embedding-004');
@@ -54,6 +49,7 @@ CRITICAL RULES (QUALITY GATES):
 6. Frame facts as interpreted user structures (e.g. "User prefers AI capabilities to remain invisible in UX" instead of "User said hide the AI button").`;
 
 export async function processMemoryJob(job: any) {
+  const supabase = getSupabaseClient();
   const { payload } = job;
   const { chatId, messageId } = payload;
 
@@ -212,6 +208,7 @@ Task:
 }
 
 export async function runMemoryWorkerLoop() {
+  const supabase = getSupabaseClient();
   console.log('[memory] Worker started');
   while (true) {
     try {
@@ -244,7 +241,7 @@ export async function runMemoryWorkerLoop() {
       console.error('[memory] worker loop error', err);
     }
 
-    // Wait before polling again
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait before polling again (60s — jobs have a 30min delay anyway)
+    await new Promise(resolve => setTimeout(resolve, 60_000));
   }
 }
