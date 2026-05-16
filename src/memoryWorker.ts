@@ -15,10 +15,25 @@ const embeddingModel = google.textEmbeddingModel('text-embedding-004');
 
 const extractMemorySchema = z.object({
   memories: z.array(z.object({
-    content: z.string().describe("Dense, profound, persistent truth about the user. e.g. 'Prefers Samsung over Apple because of technical transparency'"),
-    kind: z.enum(['fact', 'preference', 'project', 'decision', 'summary']).describe("The type of memory. Use 'preference' or 'fact' for deep worldview items."),
-    importance: z.number().int().min(1).max(5).describe("Scale 1-5. 1=trivial, 3=moderate, 4=high, 5=fundamental worldview/identity."),
-  })).describe("List of profound facts. Empty if nothing profound is found in the recent messages.")
+    content: z.string().describe("Dense, profound, persistent truth about the user."),
+    kind: z.enum([
+      'fact',
+      'preference',
+      'project',
+      'decision',
+      'summary'
+    ]).describe("The type of memory. Usually 'preference' or 'fact'."),
+    memory_type: z.enum([
+      'stable_preference',
+      'worldview',
+      'source_trust_pattern',
+      'working_style',
+      'product_design_principle',
+      'communication_preference',
+      'long_term_tool_preference'
+    ]).describe("The specific classification of this memory."),
+    importance: z.number().int().min(1).max(5).describe("Scale 1-5. Must be >= 4 to be saved."),
+  })).describe("List of profound facts. Empty if nothing profound is found.")
 });
 
 const mergeMemorySchema = z.object({
@@ -29,11 +44,11 @@ const mergeMemorySchema = z.object({
 
 const SYSTEM_PROMPT = `Analyze the following conversation segment and extract ONLY profound, persistent truths about the user's worldview, core preferences, deep working methods, or long-term identity.
 
-CRITICAL RULES:
+CRITICAL RULES (QUALITY GATES):
 1. Extract a memory only if it would remain useful after the current project, current week, and current implementation details are forgotten.
 2. DO NOT extract ephemeral facts (e.g. "User ate pizza", "User is debugging a bug", "User ran typecheck").
 3. DO NOT extract simple greetings or context-dependent opinions.
-4. Extracted memories should be high-signal, standalone facts that permanently change how an AI should understand this user.
+4. NEVER store credentials, API keys, infrastructure details, file names, commit history, provider configurations, or implementation logs as user memory.
 5. Most conversations should produce NO memories. If there is nothing profound, return an empty array [].
 6. Frame facts as interpreted user structures (e.g. "User prefers AI capabilities to remain invisible in UX" instead of "User said hide the AI button").`;
 
@@ -53,14 +68,14 @@ export async function processMemoryJob(job: any) {
   }
 
   // 2. Fetch the recent messages in this chat up to the messageId
-  // We fetch last 10 messages before or equal to this message
+  // Fetch up to 30 messages to capture repetitive patterns
   const { data: messages, error: messagesError } = await supabase
     .from('muel_messages_v2')
     .select('id, role, parts, created_at')
     .eq('chat_id', chatId)
     .lte('created_at', payload.createdAt)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(30);
 
   if (messagesError || !messages) {
     throw new Error(`Failed to fetch messages: ${messagesError?.message}`);
@@ -134,9 +149,9 @@ Here are the user's existing memories:
 ${existingText}
 
 Task:
-If this new candidate is highly similar or overlaps conceptually with an existing memory, choose "merge" and provide the updated 'mergedContent' that combines both seamlessly, and the 'targetId' to replace.
-If it is completely new and profound, choose "insert".
-If the existing memory already covers this well enough and the new info adds no durable value, choose "discard".`,
+- Choose "discard" ONLY if the existing memory already covers this exactly and the new info adds NO durable value.
+- Choose "merge" ONLY if the new candidate is on the exact same axis/topic and you can safely update the existing memory's wording to encompass both. Provide 'mergedContent' and 'targetId'.
+- Choose "insert" if the new candidate is related but DISTINCT (e.g. "dislikes AI-branded UX" is distinct from "values technical transparency"), or completely new. DO NOT over-merge independent preferences.`,
       });
 
       finalAction = mergeDecision.action;
@@ -149,6 +164,10 @@ If the existing memory already covers this well enough and the new info adds no 
       continue;
     }
 
+    // Generate embedding FIRST so if it fails, the job retries safely without partial inserts
+    console.log(`[memory] Generating embedding for action=${finalAction}...`);
+    const { embedding } = await embed({ model: embeddingModel, value: finalContent });
+
     if (finalAction === 'merge' && targetId) {
       console.log(`[memory] Merging with ${targetId}: ${finalContent}`);
       await supabase
@@ -159,12 +178,7 @@ If the existing memory already covers this well enough and the new info adds no 
         })
         .eq('id', targetId);
 
-      try {
-        const { embedding } = await embed({ model: embeddingModel, value: finalContent });
-        await supabase.from('muel_memory_embeddings').upsert({ memory_id: targetId, embedding, embedding_model: 'text-embedding-004' });
-      } catch (embErr) {
-        console.error('[memory] Failed to update embedding', embErr);
-      }
+      await supabase.from('muel_memory_embeddings').upsert({ memory_id: targetId, embedding, embedding_model: 'text-embedding-004' });
     } else {
       console.log(`[memory] Inserting new: ${finalContent}`);
       const { data: newEntry } = await supabase
@@ -180,12 +194,7 @@ If the existing memory already covers this well enough and the new info adds no 
         .single();
 
       if (newEntry) {
-        try {
-          const { embedding } = await embed({ model: embeddingModel, value: finalContent });
-          await supabase.from('muel_memory_embeddings').insert({ memory_id: newEntry.id, embedding, embedding_model: 'text-embedding-004' });
-        } catch (embErr) {
-          console.error('[memory] Failed to insert embedding', embErr);
-        }
+        await supabase.from('muel_memory_embeddings').insert({ memory_id: newEntry.id, embedding, embedding_model: 'text-embedding-004' });
       }
     }
   }
