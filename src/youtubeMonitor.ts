@@ -58,6 +58,18 @@ const formatUnknownError = (error: unknown): string => {
   return String(error);
 };
 
+const getDiscordErrorCode = (error: unknown): number | null => {
+  if (!error || typeof error !== 'object') return null;
+  const candidate = error as { code?: unknown; rawError?: { code?: unknown } };
+  const code = candidate.code ?? candidate.rawError?.code;
+  return typeof code === 'number' ? code : null;
+};
+
+const isOrphanedDiscordDestination = (error: unknown): boolean => {
+  const code = getDiscordErrorCode(error);
+  return code === 50001 || code === 50013 || code === 10003 || code === 10004;
+};
+
 const decodeXml = (value: string): string => {
   return value
     .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
@@ -266,10 +278,10 @@ const getAiModel = () => {
 };
 
 const CommunityPostSchema = z.object({
-  title: z.string().describe('Faithful card title, max 50 characters.'),
-  subtitle: z.string().optional().describe('Optional one-line context, max 100 characters. Omit if there is no useful context.'),
-  body: z.string().describe('Edited body for a Discord card. Preserve all facts, numbers, dates, links, and proper nouns from the source. Do not invent or modify claims.'),
-  highlights: z.array(z.string()).optional().describe('Optional important bullets such as dates, links, or schedule items. Omit if there are none.'),
+  title: z.string().describe('한국어 Discord 카드 제목. 최대 50자. 원문 핵심을 충실히 요약한다.'),
+  subtitle: z.string().optional().describe('선택 한국어 한 줄 설명. 최대 100자. 유용한 맥락이 없으면 생략한다.'),
+  body: z.string().describe('한국어 본문. 원문의 사실, 숫자, 날짜, 링크, 고유명사는 보존하고 없는 내용을 만들지 않는다.'),
+  highlights: z.array(z.string()).optional().describe('선택 한국어 bullet 항목. 날짜, 링크, 보상, 일정처럼 중요한 항목만 포함한다.'),
 });
 export type EditedCommunityPost = z.infer<typeof CommunityPostSchema>;
 
@@ -283,13 +295,16 @@ export const editCommunityPost = async (authorName: string, rawContent: string):
     const { object } = await generateObject({
       model,
       schema: CommunityPostSchema,
-      prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card.
+      prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card for Korean Discord users.
 
 Rules:
+- Write the title, subtitle, body, and highlights in natural Korean by default.
+- If the source is English, Japanese, or another language, translate the meaning into Korean.
 - Preserve every fact, number, date, link, event name, game title, person name, and proper noun that you include.
 - Do not add, infer, or rewrite facts that are not present in the source.
 - If a source detail is ambiguous, keep the original wording instead of guessing.
-- Keep the tone neutral and editorial. Do not turn the post into marketing copy.
+- Keep official titles, URLs, character names, and product names unchanged when translating them would be misleading.
+- Keep the tone neutral and editorial. Do not turn the post into exaggerated marketing copy.
 - Use Markdown only when it improves readability.
 
 Source post:
@@ -380,11 +395,15 @@ const updateRowNoLatest = async (row: SourceRow): Promise<void> => {
 
 const updateRowError = async (row: SourceRow, error: unknown): Promise<void> => {
   const message = formatUnknownError(error);
+  const orphanedDestination = isOrphanedDiscordDestination(error);
   await getSupabaseClient()
     .from('sources')
     .update({
-      last_check_status: 'error',
-      last_check_error: message.slice(0, 1000),
+      is_active: orphanedDestination ? false : row.is_active,
+      last_check_status: orphanedDestination ? 'disabled_orphaned_discord_destination' : 'error',
+      last_check_error: orphanedDestination
+        ? `Disabled source because Discord destination is inaccessible: ${message}`.slice(0, 1000)
+        : message.slice(0, 1000),
       last_check_at: new Date().toISOString(),
     })
     .eq('id', row.id);
