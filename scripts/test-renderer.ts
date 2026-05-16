@@ -43,7 +43,7 @@ function runTests() {
   }];
   const res3 = renderDiscordMessage(postLongBody);
   const embedDesc = (res3.embeds?.[0] as any)?.data.description || '';
-  assert('Long body is truncated to <= 4000 chars', embedDesc.length <= 4000 && embedDesc.includes('[원문에서 계속 보기]'));
+  assert('Long body is truncated to <= 4000 chars', embedDesc.length <= 4000 && embedDesc.includes('[continue in source]'));
 
   const postMentions: MuelRenderablePart[] = [{
     type: 'text',

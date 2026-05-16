@@ -1,16 +1,13 @@
 import 'dotenv/config';
 import { getSupabaseClient } from '../src/supabase.js';
 import { prepareChatTurn, saveAssistantMessage } from '../src/muelConversationStore.js';
-import { generateText, streamText, tool } from 'ai';
-import { z } from 'zod';
-import * as crypto from 'crypto';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { config } from '../src/config.js';
+import { convertToModelMessages, type UIMessage } from 'ai';
 
 async function verify() {
   const supabase = getSupabaseClient();
   const testChannelId = 'test-channel-id-' + Date.now();
-  const testMessageId = 'test-msg-' + Date.now();
+  const testMessageId = crypto.randomUUID();
+  const externalMessageId = 'discord-test-' + Date.now();
 
   console.log('1. Verify prepareChatTurn ...');
   const res = await prepareChatTurn(supabase, {
@@ -24,6 +21,7 @@ async function verify() {
       discordChannelId: testChannelId,
       discordMessageId: testMessageId,
       discordUserId: 'test-user',
+      externalMessageId,
     }
   });
 
@@ -43,16 +41,19 @@ async function verify() {
   console.log('2. Verify assistant onFinish ...');
   const assistantMsgId = 'assistant-msg-' + Date.now();
   
-  await saveAssistantMessage(supabase, res.chatId, assistantMsgId, [
+  const assistantParts: UIMessage['parts'] = [
     { type: 'text', text: 'Im dummy assistant' },
-    { type: 'tool-call', toolCallId: 'call_123', toolName: 'dummy_tool', args: { a: 1 } }
-  ], { role: 'assistant', provider: 'test' });
+    { type: 'tool-dummy_tool', toolCallId: 'call_123', state: 'output-available', input: { a: 1 }, output: { ok: true } }
+  ];
+
+  await convertToModelMessages([{ id: assistantMsgId, role: 'assistant', parts: assistantParts }]);
+  await saveAssistantMessage(supabase, res.chatId, assistantMsgId, assistantParts, { role: 'assistant', provider: 'test' });
 
   // verify we can fetch it
   const { data: fetchAssistant } = await supabase.from('muel_messages_v2').select('*').eq('id', assistantMsgId).single();
   if (!fetchAssistant) throw new Error('Assistant message not saved');
   
-  if (fetchAssistant.parts[1].type !== 'tool-call') throw new Error('Tool call not saved correctly');
+  if (fetchAssistant.parts[1].type !== 'tool-dummy_tool') throw new Error('Tool part was not saved in AI SDK UIMessage format');
   if (fetchAssistant.role !== 'assistant') throw new Error('Role is incorrect');
 
   console.log('✔ assistant onFinish parts jsonb storage passed.');
@@ -63,13 +64,14 @@ async function verify() {
     source: 'discord',
     sourceChannelId: testChannelId,
     sourceThreadId: testChannelId,
-    userMessageId: testMessageId + '-2',
+    userMessageId: crypto.randomUUID(),
     userParts: [{ type: 'text', text: 'Second message' }],
-    metadata: {}
+    metadata: { discordGuildId: 'test-guild', externalMessageId }
   });
 
   if (res2.chatId !== res.chatId) throw new Error('Chat ID changed for same thread!');
-  if (res2.messages.length !== 3) throw new Error(`Expected 3 messages (user, assistant, user), got ${res2.messages.length}`);
+  const duplicateMessages = res2.messages.filter((message) => message.metadata?.externalMessageId === externalMessageId);
+  if (duplicateMessages.length !== 1) throw new Error(`Expected idempotent insert for externalMessageId, got ${duplicateMessages.length}`);
 
   console.log('✔ unique constraint passed.');
 

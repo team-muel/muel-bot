@@ -266,12 +266,11 @@ const getAiModel = () => {
 };
 
 const CommunityPostSchema = z.object({
-  title: z.string().describe("게시글의 핵심을 요약한 강렬한 제목 (최대 50자)"),
-  subtitle: z.string().optional().describe("시선을 끄는 한 줄 요약 (최대 100자). 없다면 생략"),
-  body: z.string().describe("본문 내용. 원문에 없는 사실(숫자, 날짜, 고유명사)을 절대로 추가하거나 변형하지 말 것. 단순 잡담은 과도하게 뉴스처럼 포장하지 말 것. 마크다운 사용."),
-  highlights: z.array(z.string()).optional().describe("요약할 만한 핵심 항목이나 일정, 링크 등 (bullet point 용). 없다면 생략"),
+  title: z.string().describe('Faithful card title, max 50 characters.'),
+  subtitle: z.string().optional().describe('Optional one-line context, max 100 characters. Omit if there is no useful context.'),
+  body: z.string().describe('Edited body for a Discord card. Preserve all facts, numbers, dates, links, and proper nouns from the source. Do not invent or modify claims.'),
+  highlights: z.array(z.string()).optional().describe('Optional important bullets such as dates, links, or schedule items. Omit if there are none.'),
 });
-
 export type EditedCommunityPost = z.infer<typeof CommunityPostSchema>;
 
 export const editCommunityPost = async (authorName: string, rawContent: string): Promise<{ data: EditedCommunityPost, modelId: string } | null> => {
@@ -284,7 +283,17 @@ export const editCommunityPost = async (authorName: string, rawContent: string):
     const { object } = await generateObject({
       model,
       schema: CommunityPostSchema,
-      prompt: `다음은 유튜브 채널 '${authorName}'의 새 커뮤니티 게시글 원문입니다.\n이 원문을 읽기 편하고 시각적으로 깔끔한 Discord Embed 카드용으로 편집(Edit)해주세요.\n\n[중요 제약사항]\n- 원문에 없는 사실, 숫자, 날짜, 고유명사를 절대 추가하거나 변경하지 마세요.\n- 추측을 섞지 마세요. 불확실하면 원문 표현을 그대로 유지하세요.\n- 원문의 톤을 과도하게 광고나 뉴스처럼 바꾸지 마세요.\n\n원문:\n${rawContent}`,
+      prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card.
+
+Rules:
+- Preserve every fact, number, date, link, event name, game title, person name, and proper noun that you include.
+- Do not add, infer, or rewrite facts that are not present in the source.
+- If a source detail is ambiguous, keep the original wording instead of guessing.
+- Keep the tone neutral and editorial. Do not turn the post into marketing copy.
+- Use Markdown only when it improves readability.
+
+Source post:
+${rawContent}`,
       temperature: 0.1, // Lower temperature for faithfulness
     });
     return { data: object, modelId: model.modelId || 'unknown' };

@@ -86,9 +86,18 @@ async function runTests() {
   console.log('✅ Stale lock successfully recovered.');
   
   await supabase.rpc('complete_job', { p_job_id: staleJobId });
+  const { data: completedCheck } = await supabase
+    .from('muel_jobs')
+    .select('status')
+    .eq('id', staleJobId)
+    .single();
+  if (completedCheck?.status !== 'done') throw new Error(`Completed job status is ${completedCheck?.status}, expected 'done'`);
   console.log('✅ Cleanup complete.');
   
   console.log('\nAll advanced Job Queue tests passed!');
 }
 
-runTests().catch(console.error);
+runTests().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

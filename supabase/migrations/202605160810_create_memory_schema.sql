@@ -1,70 +1,72 @@
--- 1. Create the core memory facts table
+-- Live memory schema boundary only.
+-- Do not backfill legacy_archive memory here, and do not implement retrieval tooling in this migration.
+
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+
 CREATE TABLE IF NOT EXISTS public.muel_memory_entries (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_chat_id text NOT NULL, -- e.g. discord channel ID, or user ID for global context
-    source_message_id uuid REFERENCES public.muel_messages_v2(id) ON DELETE SET NULL,
-    topic text,
-    content text NOT NULL,
-    importance integer DEFAULT 1, -- 1-5 scale for pruning or weighting
-    created_at timestamptz DEFAULT now(),
-    updated_at timestamptz DEFAULT now()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chat_id uuid NULL REFERENCES public.muel_chats(id) ON DELETE SET NULL,
+  message_id text NULL REFERENCES public.muel_messages_v2(id) ON DELETE SET NULL,
+  kind text NOT NULL CHECK (kind IN ('fact', 'preference', 'project', 'decision', 'summary')),
+  content text NOT NULL,
+  importance smallint NOT NULL DEFAULT 3 CHECK (importance BETWEEN 1 AND 5),
+  confidence real NULL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.muel_memory_embeddings (
+  memory_id uuid PRIMARY KEY REFERENCES public.muel_memory_entries(id) ON DELETE CASCADE,
+  embedding extensions.vector(1536) NOT NULL,
+  embedding_model text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.muel_memory_entries ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow service role full access to muel_memory_entries"
-    ON public.muel_memory_entries
-    FOR ALL
-    USING (auth.role() = 'service_role');
-
--- 2. Create the embeddings table (one-to-one with entries)
-CREATE TABLE IF NOT EXISTS public.muel_memory_embeddings (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    memory_id uuid REFERENCES public.muel_memory_entries(id) ON DELETE CASCADE,
-    embedding extensions.vector(1536) NOT NULL,
-    created_at timestamptz DEFAULT now()
-);
-
 ALTER TABLE public.muel_memory_embeddings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow service role full access to muel_memory_entries" ON public.muel_memory_entries;
+CREATE POLICY "Allow service role full access to muel_memory_entries"
+  ON public.muel_memory_entries
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+DROP POLICY IF EXISTS "Allow service role full access to muel_memory_embeddings" ON public.muel_memory_embeddings;
 CREATE POLICY "Allow service role full access to muel_memory_embeddings"
-    ON public.muel_memory_embeddings
-    FOR ALL
-    USING (auth.role() = 'service_role');
+  ON public.muel_memory_embeddings
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
 
--- 3. HNSW index for fast similarity search
-CREATE INDEX IF NOT EXISTS muel_memory_embeddings_hnsw_idx 
-    ON public.muel_memory_embeddings 
-    USING hnsw (embedding extensions.vector_cosine_ops);
+REVOKE ALL ON TABLE public.muel_memory_entries FROM anon, authenticated;
+REVOKE ALL ON TABLE public.muel_memory_embeddings FROM anon, authenticated;
+GRANT ALL ON TABLE public.muel_memory_entries TO service_role;
+GRANT ALL ON TABLE public.muel_memory_embeddings TO service_role;
 
--- 4. Search RPC for retrieving relevant memories
-CREATE OR REPLACE FUNCTION public.search_memory_entries(
-    query_embedding extensions.vector(1536),
-    match_threshold double precision DEFAULT 0.7,
-    match_count int DEFAULT 5,
-    filter_chat_id text DEFAULT NULL
-)
-RETURNS TABLE (
-    id uuid,
-    source_chat_id text,
-    topic text,
-    content text,
-    importance integer,
-    similarity double precision
-)
-LANGUAGE sql
-STABLE
-SET search_path = public, extensions
+CREATE INDEX IF NOT EXISTS muel_memory_entries_chat_created_idx
+  ON public.muel_memory_entries(chat_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS muel_memory_entries_kind_created_idx
+  ON public.muel_memory_entries(kind, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.set_muel_memory_entries_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
 AS $$
-    SELECT 
-        e.id,
-        e.source_chat_id,
-        e.topic,
-        e.content,
-        e.importance,
-        1 - (em.embedding <=> query_embedding) as similarity
-    FROM public.muel_memory_embeddings em
-    JOIN public.muel_memory_entries e ON e.id = em.memory_id
-    WHERE 1 - (em.embedding <=> query_embedding) > match_threshold
-        AND (filter_chat_id IS NULL OR e.source_chat_id = filter_chat_id)
-    ORDER BY em.embedding <=> query_embedding
-    LIMIT match_count;
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
 $$;
+
+DROP TRIGGER IF EXISTS set_muel_memory_entries_updated_at ON public.muel_memory_entries;
+CREATE TRIGGER set_muel_memory_entries_updated_at
+  BEFORE UPDATE ON public.muel_memory_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_muel_memory_entries_updated_at();
+
+REVOKE EXECUTE ON FUNCTION public.set_muel_memory_entries_updated_at() FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_muel_memory_entries_updated_at() TO service_role;

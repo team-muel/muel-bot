@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Message } from 'discord.js';
+import type { UIMessage as AiUIMessage } from 'ai';
 
 export type MuelConversation = {
   id: string;
@@ -11,10 +12,7 @@ export type MuelStoredMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool';
 };
 
-export type UIMessage = {
-  id: string;
-  role: 'system' | 'user' | 'assistant' | 'tool' | 'data';
-  parts: Array<{ type: string; text?: string; [key: string]: any }>;
+export type UIMessage = Omit<AiUIMessage, 'createdAt' | 'metadata'> & {
   metadata?: Record<string, unknown>;
   createdAt?: string;
 };

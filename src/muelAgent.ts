@@ -132,7 +132,7 @@ export const generateMuelReply = async (
   ];
 
   for (const msg of history) {
-    if (msg.role === 'system' || msg.role === 'data') continue;
+    if (msg.role === 'system') continue;
     
     let content = msg.parts || [];
     if (msg.role === 'user') {
