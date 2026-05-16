@@ -1,4 +1,4 @@
-import { streamText, tool } from 'ai';
+import { stepCountIs, streamText, tool } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
@@ -127,9 +127,8 @@ export const generateMuelReply = async (
   const mentionedSection = formatMentionedUsers(mentionedUsers ?? []);
   if (mentionedSection) systemParts.push('', mentionedSection);
 
-  const messages: Array<any> = [
-    { role: 'system', content: systemParts.join('\n') },
-  ];
+  const system = systemParts.join('\n');
+  const messages: Array<any> = [];
 
   for (const msg of history) {
     if (msg.role === 'system') continue;
@@ -186,17 +185,26 @@ export const generateMuelReply = async (
   const tryGenerate = async (aiModel: any, provider: 'gemini' | 'nvidia', modelName: string) => {
     const result = streamText({
       model: aiModel,
+      system,
       messages,
       tools,
+      stopWhen: stepCountIs(3),
       temperature: 0.7,
       maxOutputTokens: 1200,
     });
 
-    const text = await result.text;
+    const text = (await result.text).trim();
+    if (!text) {
+      throw new Error(`${provider} returned an empty response`);
+    }
 
     void result.response.then((response) => {
       if (response && response.messages) {
         for (const msg of response.messages) {
+          if (msg.role !== 'assistant') {
+            continue;
+          }
+
           const parts = typeof msg.content === 'string' 
             ? [{ type: 'text', text: msg.content }] 
             : msg.content;
@@ -210,7 +218,7 @@ export const generateMuelReply = async (
             { role: msg.role, provider, model: modelName }
           ).then(() => {
             // Only enqueue if the text response is somewhat long, to save resources
-            if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.length > 50) {
+            if (typeof msg.content === 'string' && msg.content.length > 50) {
               void enqueueMemoryExtractionJob(supabase, {
                 chatId,
                 messageId: assistantMessageId,
@@ -227,7 +235,7 @@ export const generateMuelReply = async (
       console.error('[muel] failed to await result.response', error);
     });
 
-    return { text: text.trim(), model: modelName, provider };
+    return { text, model: modelName, provider };
   };
 
   // Primary: Gemini
