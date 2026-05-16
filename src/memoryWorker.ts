@@ -30,7 +30,8 @@ const extractMemorySchema = z.object({
       'working_style',
       'product_design_principle',
       'communication_preference',
-      'long_term_tool_preference'
+      'long_term_tool_preference',
+      'information_diet'
     ]).describe("The specific classification of this memory."),
     importance: z.number().int().min(1).max(5).describe("Scale 1-5. Must be >= 4 to be saved."),
   })).describe("List of profound facts. Empty if nothing profound is found.")
@@ -120,8 +121,9 @@ export async function processMemoryJob(job: any) {
 
   const { data: userMemories } = await supabase
     .from('muel_memory_entries')
-    .select('id, content, importance, kind')
-    .in('chat_id', userChatIds);
+    .select('id, content, importance, kind, status, created_at')
+    .in('chat_id', userChatIds)
+    .eq('status', 'active');
 
   // 4. Process each candidate memory
   for (const memory of object.memories) {
@@ -170,31 +172,56 @@ Task:
 
     if (finalAction === 'merge' && targetId) {
       console.log(`[memory] Merging with ${targetId}: ${finalContent}`);
-      await supabase
-        .from('muel_memory_entries')
-        .update({
-          content: finalContent,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', targetId);
-
-      await supabase.from('muel_memory_embeddings').upsert({ memory_id: targetId, embedding, embedding_model: 'text-embedding-004' });
+      await supabase.rpc('update_muel_memory_atomic', {
+        p_entry_id: targetId,
+        p_content: finalContent,
+        p_embedding: embedding,
+        p_embedding_model: 'text-embedding-004'
+      });
     } else {
       console.log(`[memory] Inserting new: ${finalContent}`);
-      const { data: newEntry } = await supabase
-        .from('muel_memory_entries')
-        .insert({
-          chat_id: chatId,
-          message_id: messageId,
-          kind: memory.kind || 'preference',
+      
+      // HARD CAP: If inserting, check active memory count
+      if (userMemories && userMemories.length >= 12) {
+        // Find memory to archive (lowest importance, oldest)
+        const toArchive = [...userMemories].sort((a, b) => {
+          if (a.importance !== b.importance) return a.importance - b.importance;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        })[0];
+        
+        console.log(`[memory] Hard cap reached. Archiving lowest importance memory: ${toArchive.id}`);
+        await supabase
+          .from('muel_memory_entries')
+          .update({ status: 'archived', updated_at: new Date().toISOString() })
+          .eq('id', toArchive.id);
+          
+        // Remove from current list to keep accurate count if multiple inserts happen
+        const idx = userMemories.findIndex(m => m.id === toArchive.id);
+        if (idx > -1) userMemories.splice(idx, 1);
+      }
+
+      const { data: newEntryId, error: insertError } = await supabase.rpc('insert_muel_memory_atomic', {
+        p_chat_id: chatId,
+        p_message_id: messageId,
+        p_kind: memory.kind || 'preference',
+        p_content: finalContent,
+        p_importance: memory.importance,
+        p_embedding: embedding,
+        p_embedding_model: 'text-embedding-004'
+      });
+      
+      if (insertError) {
+        console.error('[memory] Failed atomic insert', insertError);
+      } else if (newEntryId) {
+        // Add to our list so if this job produces >1 memory, it counts towards the cap
+        userMemories?.push({
+          id: newEntryId,
           content: finalContent,
           importance: memory.importance,
-        })
-        .select('id')
-        .single();
-
-      if (newEntry) {
-        await supabase.from('muel_memory_embeddings').insert({ memory_id: newEntry.id, embedding, embedding_model: 'text-embedding-004' });
+          kind: memory.kind || 'preference',
+          status: 'active',
+          created_at: new Date().toISOString()
+        });
       }
     }
   }
