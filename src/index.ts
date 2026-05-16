@@ -14,6 +14,7 @@ import {
 import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 import { handleMuelMention } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
+import { runMemoryWorkerLoop } from './memoryWorker.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -110,6 +111,11 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
 
   startYouTubeMonitor(readyClient);
+  
+  // Start the background memory extraction worker
+  runMemoryWorkerLoop().catch(err => {
+    console.error('[memory] worker loop crashed', err);
+  });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
