@@ -12,14 +12,35 @@ import {
   SUBSCRIBE_COMMAND_NAME,
 } from './subscribe.js';
 import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
+import { handleDiscordInteractions } from './discordInteractions.js';
 import { handleMuelMention } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
-import { runMemoryWorkerLoop } from './memoryWorker.js';
+import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
 let gomdoriReadyAt: string | null = null;
 let gomdoriLoginError: string | null = null;
+
+const getRuntimeStatus = () => {
+  const youtubeMonitor = getYouTubeMonitorStatus();
+  const jobWorker = getJobWorkerStatus();
+  const degradedReasons: string[] = [];
+
+  if (loginError) degradedReasons.push(`muel_login:${loginError}`);
+  if (gomdoriClient && config.gomdoriBotToken && gomdoriLoginError) degradedReasons.push(`gomdori_login:${gomdoriLoginError}`);
+  if (!client.isReady()) degradedReasons.push('muel_not_ready');
+  if (jobWorker.lastError) degradedReasons.push(`job_worker:${jobWorker.lastError}`);
+  if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
+  if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');
+
+  return {
+    ok: degradedReasons.length === 0,
+    degradedReasons,
+    youtubeMonitor,
+    jobWorker,
+  };
+};
 
 const pingCommand = new SlashCommandBuilder()
   .setName('ping')
@@ -95,6 +116,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
 client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
+  configureJobWorker(readyClient);
 
   try {
     await registerCommands(readyClient);
@@ -103,59 +125,64 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('[discord] command registration failed', error);
   }
 
-  startYouTubeMonitor(readyClient);
-  
-  // Start the background memory extraction worker
-  runMemoryWorkerLoop().catch(err => {
-    console.error('[memory] worker loop crashed', err);
-  });
+  if (config.enableYoutubeMonitor) {
+    startYouTubeMonitor(readyClient);
+  }
+
+  if (config.enableJobWorker) {
+    runJobWorkerLoop().catch(err => {
+      console.error('[jobs] worker loop crashed', err);
+    });
+  }
 });
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
+if (!config.enableHttpInteractions) {
+  client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
 
-  if (interaction.commandName === 'ping') {
-    await interaction.reply({ content: 'pong', flags: [MessageFlags.Ephemeral] });
-    return;
-  }
+    if (interaction.commandName === 'ping') {
+      await interaction.reply({ content: 'pong', flags: [MessageFlags.Ephemeral] });
+      return;
+    }
 
-  if (interaction.commandName === '도움말') {
+    if (interaction.commandName === '도움말') {
+      await interaction.reply({
+        content: [
+          '**Muel에서 사용할 수 있는 입구**',
+          '',
+          `Muel Hub: <${config.hubUrl}>`,
+          `일기: <${config.hubUrl}/weave>`,
+          '',
+          '**명령어**',
+          '/구독 — YouTube 영상/게시글 자동 구독 관리',
+          '/도움말 — 이 안내 보기',
+          '',
+          '**활동**',
+          '앱 런처에서 일기 — 꿈을 기록하고 연결하기',
+          '',
+          'Gomdori는 준비 중입니다.',
+        ].join('\n'),
+        flags: [MessageFlags.Ephemeral],
+      });
+      return;
+    }
+
+    if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
+      await handleFlatSubscribeCommand(interaction);
+      return;
+    }
+
     await interaction.reply({
       content: [
-        '**Muel에서 사용할 수 있는 입구**',
-        '',
+        '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
         `Muel Hub: <${config.hubUrl}>`,
-        `일기: <${config.hubUrl}/weave>`,
-        '',
-        '**명령어**',
-        '/구독 — YouTube 영상/게시글 자동 구독 관리',
-        '/도움말 — 이 안내 보기',
-        '',
-        '**활동**',
-        '앱 런처에서 일기 — 꿈을 기록하고 연결하기',
-        '',
-        'Gomdori는 준비 중입니다.',
       ].join('\n'),
       flags: [MessageFlags.Ephemeral],
     });
-    return;
-  }
-
-  if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
-    await handleFlatSubscribeCommand(interaction);
-    return;
-  }
-
-  await interaction.reply({
-    content: [
-      '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
-      `Muel Hub: <${config.hubUrl}>`,
-    ].join('\n'),
-    flags: [MessageFlags.Ephemeral],
   });
-});
+}
 
 client.on(Events.MessageCreate, async (message) => {
   if (!client.isReady()) {
@@ -222,28 +249,29 @@ if (gomdoriClient) {
     }
   });
 
-  gomdoriClient.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+  if (!config.enableHttpInteractions) {
+    gomdoriClient.on(Events.InteractionCreate, async (interaction) => {
+      if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === 'ping') {
-      await interaction.reply({ content: 'pong 🐻', flags: [MessageFlags.Ephemeral] });
-      return;
-    }
+      if (interaction.commandName === 'ping') {
+        await interaction.reply({ content: 'pong 🐻', flags: [MessageFlags.Ephemeral] });
+        return;
+      }
 
-    if (interaction.commandName === '게임') {
-      await interaction.reply({
-        content: [
-          '🐻 Gomdori — 마피아 게임',
-          '',
-          `${config.hubUrl}/game`,
-          '',
-          '준비 중입니다.',
-        ].join('\n'),
-        ephemeral: false,
-      });
-      return;
-    }
-  });
+      if (interaction.commandName === '게임') {
+        await interaction.reply({
+          content: [
+            '🐻 Gomdori — 마피아 게임',
+            '',
+            `${config.hubUrl}/game`,
+            '',
+            '준비 중입니다.',
+          ].join('\n'),
+        });
+        return;
+      }
+    });
+  }
 
   gomdoriClient.on(Events.Error, (error) => {
     console.error('[gomdori] client error', error);
@@ -259,9 +287,23 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (request.url === '/ready') {
+    const runtime = getRuntimeStatus();
+    response.writeHead(runtime.ok ? 200 : 503, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(runtime));
+    return;
+  }
+
+  if (request.url === '/discord/interactions' && request.method === 'POST') {
+    void handleDiscordInteractions(request, response);
+    return;
+  }
+
+  const runtime = getRuntimeStatus();
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({
-    ok: true,
+    ok: runtime.ok,
+    degradedReasons: runtime.degradedReasons,
     muel: {
       bot: client.user?.tag ?? null,
       readyAt,
@@ -284,7 +326,14 @@ const server = http.createServer((request, response) => {
         }
       : null,
     uptimeSeconds: Math.floor(process.uptime()),
-    youtubeMonitor: getYouTubeMonitorStatus(),
+    youtubeMonitor: runtime.youtubeMonitor,
+    jobWorker: runtime.jobWorker,
+    runtime: {
+      enableJobWorker: config.enableJobWorker,
+      enableYoutubeMonitor: config.enableYoutubeMonitor,
+      mentionReplyTimeoutMs: config.mentionReplyTimeoutMs,
+      enableHttpInteractions: config.enableHttpInteractions,
+    },
   }));
 });
 

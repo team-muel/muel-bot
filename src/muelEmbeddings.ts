@@ -7,8 +7,7 @@ export type SemanticMemory = {
   similarity: number;
 };
 
-let canStoreMessageEmbeddings = true;
-let canSearchSemanticMemory = true;
+let canSearchUserMemory = true;
 
 type GeminiEmbeddingResponse = {
   embedding?: {
@@ -65,22 +64,9 @@ export const storeMessageEmbedding = async (
   messageId: string,
   content: string,
 ): Promise<void> => {
-  if (!canStoreMessageEmbeddings) return;
-
-  const embedding = await embedMuelText(`title: Discord message | text: ${content}`);
-  if (!embedding) return;
-
-  const { error } = await supabase
-    .from('muel_messages')
-    .update({ embedding: toVectorLiteral(embedding) })
-    .eq('id', messageId);
-
-  if (error) {
-    if (error.code === '42703') {
-      canStoreMessageEmbeddings = false;
-    }
-    throw error;
-  }
+  void supabase;
+  void messageId;
+  void content;
 };
 
 export const listSemanticMemories = async (
@@ -92,36 +78,48 @@ export const listSemanticMemories = async (
     limit?: number;
   },
 ): Promise<SemanticMemory[]> => {
-  if (!canSearchSemanticMemory) return [];
+  if (!canSearchUserMemory) return [];
 
   const embedding = await embedMuelText(`task: question answering | query: ${input.query}`);
   if (!embedding) return [];
 
-  const { data, error } = await supabase.rpc('match_muel_messages', {
-    query_embedding: toVectorLiteral(embedding),
-    match_guild_id: input.guildId ?? null,
-    match_user_ids: input.userIds ?? [],
-    match_count: input.limit ?? 8,
-  });
+  const userIds = [...new Set((input.userIds ?? []).filter(Boolean))];
+  if (userIds.length === 0) return [];
 
-  if (error) {
-    if (error.code === 'PGRST202' || error.code === '42883') {
-      canSearchSemanticMemory = false;
+  const results = await Promise.all(userIds.slice(0, 5).map(async (userId) => {
+    const { data, error } = await supabase.rpc('match_user_memories', {
+      p_user_id: userId,
+      p_query_embedding: toVectorLiteral(embedding),
+      p_match_threshold: 0.45,
+      p_match_count: input.limit ?? 8,
+    });
+
+    if (error) {
+      throw error;
     }
-    throw error;
-  }
 
-  return ((data ?? []) as Array<{
-    discord_username: string | null;
-    content: string;
-    similarity: number;
-  }>)
-    .filter((item) => item.content && item.similarity >= 0.45)
-    .map((item) => ({
-      author: item.discord_username ?? 'unknown',
-      content: item.content,
-      similarity: item.similarity,
-    }));
+    return ((data ?? []) as Array<{
+      content: string;
+      similarity: number;
+    }>)
+      .filter((item) => item.content && item.similarity >= 0.45)
+      .map((item) => ({
+        author: userId,
+        content: item.content,
+        similarity: item.similarity,
+      }));
+  }));
+
+  return results
+    .flat()
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, input.limit ?? 8);
+};
+
+export const disableUserMemorySearch = (error: { code?: string } | null | undefined): void => {
+  if (error?.code === 'PGRST202' || error?.code === '42883') {
+    canSearchUserMemory = false;
+  }
 };
 
 export const formatSemanticMemories = (memories: SemanticMemory[]): string => {

@@ -2,10 +2,8 @@ services:
   - type: web
     name: muel-bot
     runtime: node
-    # Current no-cost operating mode uses UptimeRobot to hit /health every
-    # 5 minutes. Move this to starter or higher only when paid always-on
-    # hosting is intentionally selected.
-    plan: free
+    # Production target: keep the Discord gateway always-on.
+    plan: starter
     buildCommand: npm ci && npm run build
     startCommand: npm start
     autoDeployTrigger: commit
@@ -14,6 +12,8 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_APPLICATION_PUBLIC_KEY
         sync: false
       - key: SUPABASE_URL
         sync: false
@@ -24,12 +24,26 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: MUEL_AI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-1.5-flash
+      - key: MUEL_EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: MUEL_EMBEDDING_DIMENSIONS
+        value: "768"
       - key: HUB_URL
         value: https://muel-tree.vercel.app
       - key: NVIDIA_API_KEY
         sync: false
       - key: NVIDIA_MODEL
-        value: deepseek-ai/deepseek-v4-pro
+        value: meta/llama-3.3-70b-instruct
       - key: GOMDORI_BOT_TOKEN
         sync: false
+      - key: GOMDORI_APPLICATION_PUBLIC_KEY
+        sync: false
+      - key: ENABLE_JOB_WORKER
+        value: "true"
+      - key: ENABLE_YOUTUBE_MONITOR
+        value: "true"
+      - key: ENABLE_HTTP_INTERACTIONS
+        value: "false"
+      - key: MENTION_REPLY_TIMEOUT_MS
+        value: "15000"

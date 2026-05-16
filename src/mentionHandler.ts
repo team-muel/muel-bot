@@ -10,8 +10,35 @@ import {
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
+import { config } from './config.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
+const RECENT_REQUEST_TTL_MS = 20_000;
+const RECENT_REQUEST_SWEEP_INTERVAL_MS = 60_000;
+
+let lastRecentRequestSweepAt = 0;
+
+const TOOLISH_TEXT_RE =
+  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정)/iu;
+
+const isLightweightTurn = (userText: string): boolean => {
+  const normalized = userText.trim();
+  return normalized.length > 0 && normalized.length <= 24 && !TOOLISH_TEXT_RE.test(normalized);
+};
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+};
 
 const stripBotMention = (content: string, botId: string): string => {
   return content
@@ -20,13 +47,24 @@ const stripBotMention = (content: string, botId: string): string => {
     .trim();
 };
 
+const sweepRecentRequests = (now: number): void => {
+  if (now - lastRecentRequestSweepAt < RECENT_REQUEST_SWEEP_INTERVAL_MS) return;
+  lastRecentRequestSweepAt = now;
+
+  for (const [key, value] of recentRequests.entries()) {
+    if (now - value.at > RECENT_REQUEST_TTL_MS) {
+      recentRequests.delete(key);
+    }
+  }
+};
+
 const shouldMuelRespond = async (message: Message, client: Client<true>): Promise<boolean> => {
   if (message.author.bot) return false;
   if (!client.user) return false;
 
   const isDM = message.channel.isDMBased?.() ?? false;
   const explicitlyMentioned = message.mentions.users.has(client.user.id);
-  
+
   let isReplyToMuel = false;
   if (message.reference?.messageId) {
     try {
@@ -62,9 +100,10 @@ export const handleMuelMention = async (
   }
 
   const requestKey = `${message.channelId}:${message.author.id}`;
-  const previous = recentRequests.get(requestKey);
   const now = Date.now();
-  if (previous && previous.content === userText && now - previous.at < 20_000) {
+  sweepRecentRequests(now);
+  const previous = recentRequests.get(requestKey);
+  if (previous && previous.content === userText && now - previous.at < RECENT_REQUEST_TTL_MS) {
     previous.at = now;
     await message.reply({
       content: '방금 본 내용이야. 너무 연속으로 보내면 곤란해.',
@@ -76,6 +115,7 @@ export const handleMuelMention = async (
 
   const supabase = getSupabaseClient();
   let inboundMessageId: string | null = null;
+  const lightweightTurn = isLightweightTurn(userText);
 
   try {
     const typingChannel = message.channel as { sendTyping?: () => Promise<void> };
@@ -83,7 +123,10 @@ export const handleMuelMention = async (
       await typingChannel.sendTyping();
     }
 
-    const profileId = await upsertDiscordMuelProfile(supabase, message.author);
+    void upsertDiscordMuelProfile(supabase, message.author).catch((profileError) => {
+      console.warn('[muel] profile upsert failed', profileError);
+    });
+
     const userMessageId = crypto.randomUUID();
     const { chatId, messages: history } = await prepareChatTurn(supabase, {
       source: 'discord',
@@ -102,7 +145,6 @@ export const handleMuelMention = async (
     });
     inboundMessageId = userMessageId;
 
-    // Enqueue job safely without awaiting the outcome or blocking the hot-path
     void enqueueMemoryExtractionJob(supabase, {
       chatId,
       messageId: userMessageId,
@@ -111,26 +153,33 @@ export const handleMuelMention = async (
     });
 
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
-    const relevantUserIds = mentionedUsers.size > 0
-      ? mentionedUsers.map((u) => u.id)
-      : [message.author.id];
-    const mentionedHistoryPromises = mentionedUsers.map((u) =>
-      getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
-        name: u.displayName ?? u.username,
-        summary,
-      })),
-    );
+    const relevantUserIds = mentionedUsers.size > 0 ? mentionedUsers.map((u) => u.id) : [message.author.id];
 
-    const [userHistory, ...mentionedHistories] = await Promise.all([
-      getUserHistorySummary(supabase, message.author.id).catch(() => null),
-      ...mentionedHistoryPromises,
-    ]);
+    let userHistory = null;
+    let mentionedHistories: Array<{ name: string; summary: Awaited<ReturnType<typeof getUserHistorySummary>> }> = [];
+    let channelActivity = '';
+    let guildTopology = '';
 
-    const channelActivity = formatForContext(message.channelId, client.user.id);
-    const guildTopology = message.guild ? formatGuildTopology(message.guild) : '';
+    if (!lightweightTurn) {
+      const mentionedHistoryPromises = mentionedUsers.map((u) =>
+        getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
+          name: u.displayName ?? u.username,
+          summary,
+        })),
+      );
+
+      [userHistory, ...mentionedHistories] = await Promise.all([
+        getUserHistorySummary(supabase, message.author.id).catch(() => null),
+        ...mentionedHistoryPromises,
+      ]);
+
+      channelActivity = formatForContext(message.channelId, client.user.id, 6);
+      guildTopology = message.guild ? formatGuildTopology(message.guild) : '';
+    }
+
     const authorName = message.author.displayName ?? message.author.username;
-    
-    const reply = await generateMuelReply(
+    const replyStartedAt = Date.now();
+    const reply = await withTimeout(generateMuelReply(
       supabase,
       chatId,
       userText,
@@ -143,7 +192,8 @@ export const handleMuelMention = async (
       mentionedHistories,
       guildTopology,
       message.author.id,
-    );
+    ), config.mentionReplyTimeoutMs, 'generateMuelReply');
+
     const sent = await message.reply({
       content: toDiscordReply(reply.text),
       allowedMentions: {
@@ -152,33 +202,25 @@ export const handleMuelMention = async (
       },
     });
 
-    // Embeddings generation is now skipped from this synchronous path, as it will be handled async via a queue/webhook later.
-    // storeMessageEmbedding(supabase, inboundMessageId, userText).catch((error) => {
-    //   console.warn('[muel] message embedding skipped', error);
-    // });
-
-    // The assistant message is now saved by the AI SDK stream onFinish hook. 
-    // We pass the chatId to generateMuelReply to do this.
-
-
     console.log('[muel] mention replied', {
       event: 'mention_replied',
       chatId,
       messageId: inboundMessageId,
       model: reply.model,
       provider: reply.provider,
+      latencyMs: Date.now() - replyStartedAt,
+      lightweightTurn,
       discordMessageId: message.id,
       discordReplyId: sent.id,
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    console.error('[muel] mention handling failed!', error);
-    console.error(`[muel] context: user=${message.author.username}, text="${userText}"`);
+    console.error('[muel] mention handling failed', error);
     console.warn('[muel] mention failed metadata', {
       event: 'mention_failed',
       messageId: inboundMessageId,
       reason,
-      stack: error instanceof Error ? error.stack : undefined
+      stack: error instanceof Error ? error.stack : undefined,
     });
 
     await message.reply({

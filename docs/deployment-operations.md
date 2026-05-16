@@ -23,12 +23,12 @@ process that must keep a Discord websocket open indefinitely.
 Render Free web services spin down after idle time, which disconnects the
 Discord Gateway clients unless an external monitor keeps the service warm.
 
-Current no-cost operating mode is Render Free plus UptimeRobot hitting
-`https://muel-bot.onrender.com/health` every 5 minutes. That interval is short
-enough to prevent the normal idle spin-down path when the monitor is healthy.
+Current no-cost operating mode used Render Free plus UptimeRobot hitting
+`https://muel-bot.onrender.com/health` every 5 minutes. That is an MVP keep-warm
+workaround, not the production target.
 
-For production-grade operation, use an always-on Render instance type, currently
-declared as `plan: starter` in `render.yaml`.
+For production-grade operation, use an always-on Render instance type.
+`render.yaml` now targets `plan: starter`.
 
 ## Required Render Service Settings
 
@@ -40,11 +40,13 @@ declared as `plan: starter` in `render.yaml`.
 - Start command: `npm start`
 - Instance type: `starter` or higher
 - Health check path: `/health`
+- Readiness check: `/ready`
 - Auto deploy: commit-triggered deploys from the linked Git branch
 
 Required environment variables:
 
 - `DISCORD_BOT_TOKEN`
+- `DISCORD_APPLICATION_PUBLIC_KEY`
 - `GOMDORI_BOT_TOKEN`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -55,9 +57,16 @@ Required environment variables:
 Optional tuning variables:
 
 - `MUEL_AI_MODEL`
+- `MUEL_EMBEDDING_MODEL`
+- `MUEL_EMBEDDING_DIMENSIONS`
 - `NVIDIA_MODEL`
 - `YOUTUBE_MONITOR_INTERVAL_MS`
 - `YOUTUBE_FETCH_TIMEOUT_MS`
+- `ENABLE_JOB_WORKER`
+- `ENABLE_YOUTUBE_MONITOR`
+- `ENABLE_HTTP_INTERACTIONS`
+- `MENTION_REPLY_TIMEOUT_MS`
+- `GOMDORI_APPLICATION_PUBLIC_KEY`
 
 Never print raw token values in chat, docs, logs, or screenshots.
 
@@ -67,6 +76,7 @@ Use these checks after every deploy:
 
 ```powershell
 Invoke-RestMethod https://muel-bot.onrender.com/health
+Invoke-RestMethod https://muel-bot.onrender.com/ready | ConvertTo-Json -Depth 6
 Invoke-RestMethod https://muel-bot.onrender.com/ | ConvertTo-Json -Depth 6
 npm run typecheck
 ```
@@ -74,6 +84,8 @@ npm run typecheck
 Expected runtime shape:
 
 - `/health` returns `OK`.
+- `/ready` returns `200` when ready, `503` with `degradedReasons` when not.
+- `/discord/interactions` is configured only when HTTP interactions are intentionally enabled.
 - JSON root has `ok: true`.
 - `muel.wsStatus` is `0` after warmup.
 - `gomdori.wsStatus` is `0` after warmup when `GOMDORI_BOT_TOKEN` is set.

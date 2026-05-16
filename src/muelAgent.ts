@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
 import { fetchServerContext } from './muelContext.js';
-import { listSemanticMemories, formatSemanticMemories } from './muelEmbeddings.js';
+import { listSemanticMemories, formatSemanticMemories, disableUserMemorySearch } from './muelEmbeddings.js';
 import { retrieveRelevantMemories } from './memoryRetriever.js';
 
 export type MuelAgentResult = {
@@ -16,6 +16,11 @@ export type MuelAgentResult = {
   model: string;
   provider: 'gemini' | 'nvidia' | 'none';
 };
+
+const MAX_CONTEXT_MESSAGES = 12;
+const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
+const TOOL_TRIGGER_RE =
+  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정)/iu;
 
 const describeError = (error: unknown): string => {
   if (!(error instanceof Error)) return String(error);
@@ -54,6 +59,16 @@ const getLocalFallbackReply = (userText: string): string | null => {
   }
   return null;
 };
+
+const isLightweightTurn = (userText: string): boolean => {
+  const normalized = userText.trim();
+  if (!normalized) return true;
+  if (normalized.length > LIGHTWEIGHT_TURN_MAX_CHARS) return false;
+  if (TOOL_TRIGGER_RE.test(normalized)) return false;
+  return true;
+};
+
+const shouldEnableTools = (userText: string): boolean => TOOL_TRIGGER_RE.test(userText);
 
 const BASE_SYSTEM_PROMPT = [
   'You are Muel (뮤엘). You are not a chatbot or a utility. You are a character who lives in this Discord server.',
@@ -148,6 +163,8 @@ export const generateMuelReply = async (
     };
   }
 
+  const lightweightTurn = isLightweightTurn(userText);
+
   // Build System Message
   const systemParts = [BASE_SYSTEM_PROMPT];
   if (guildTopology) systemParts.push('', guildTopology);
@@ -157,7 +174,7 @@ export const generateMuelReply = async (
   if (mentionedSection) systemParts.push('', mentionedSection);
 
   // Retrieve relevant long-term memories (silent on failure)
-  if (sourceUserId) {
+  if (sourceUserId && !lightweightTurn) {
     try {
       const memoryContext = await retrieveRelevantMemories(supabase, {
         userId: sourceUserId,
@@ -172,7 +189,7 @@ export const generateMuelReply = async (
   const system = systemParts.join('\n');
   const messages: Array<any> = [];
 
-  for (const msg of history) {
+  for (const msg of history.slice(-MAX_CONTEXT_MESSAGES)) {
     if (msg.role === 'system') continue;
     
     let content = msg.parts || [];
@@ -217,12 +234,15 @@ export const generateMuelReply = async (
         try {
           const results = await listSemanticMemories(supabase, { query, guildId, userIds: relevantUserIds, limit: 8 });
           return formatSemanticMemories(results) || '관련된 기억이 없습니다.';
-        } catch {
+        } catch (error) {
+          disableUserMemorySearch(error as { code?: string });
           return '기억을 검색하는 데 실패했어.';
         }
       },
     }),
   };
+
+  const activeTools = shouldEnableTools(userText) ? tools : {};
 
   const providerFailures: string[] = [];
 
@@ -287,7 +307,7 @@ export const generateMuelReply = async (
          }
       }
 
-      return await tryGenerate(googleModel, 'gemini', config.muelAiModel, agentTools);
+      return await tryGenerate(googleModel, 'gemini', config.muelAiModel, shouldEnableTools(userText) ? agentTools : {});
     } catch (error) {
       const reason = describeError(error);
       providerFailures.push(`gemini:${config.muelAiModel}:${reason}`);
@@ -305,7 +325,7 @@ export const generateMuelReply = async (
         baseURL: 'https://integrate.api.nvidia.com/v1',
         apiKey: config.nvidiaApiKey,
       });
-      return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`, tools);
+      return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`, activeTools);
     } catch (error) {
       const reason = describeError(error);
       providerFailures.push(`nvidia:${config.nvidiaModel}:${reason}`);

@@ -1,21 +1,9 @@
-import { embed } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { config } from './config.js';
+import { embedMuelText } from './muelEmbeddings.js';
 
 // Hardcoded initial values — tune after observing real logs
 const MEMORY_RETRIEVAL_LIMIT = 3;
 const MEMORY_MIN_SIMILARITY = 0.72;
-
-let embeddingModel: ReturnType<ReturnType<typeof createGoogleGenerativeAI>['textEmbeddingModel']> | null = null;
-
-function getEmbeddingModel() {
-  if (!embeddingModel && config.googleGenerativeAiApiKey) {
-    const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
-    embeddingModel = google.textEmbeddingModel(config.muelEmbeddingModel);
-  }
-  return embeddingModel;
-}
 
 /**
  * Retrieve relevant long-term memories for a user based on the current message.
@@ -34,11 +22,9 @@ export async function retrieveRelevantMemories(
 ): Promise<string> {
   const { userId, query } = opts;
 
-  const model = getEmbeddingModel();
-  if (!model) return '';
-
   // 1. Embed the current user message
-  const { embedding } = await embed({ model, value: query });
+  const embedding = await embedMuelText(query);
+  if (!embedding) return '';
 
   // 2. Call the DB-side similarity search RPC
   const { data: matches, error } = await supabase.rpc('match_user_memories', {

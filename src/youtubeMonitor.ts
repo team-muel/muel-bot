@@ -11,6 +11,7 @@ import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
+import { enqueueJob } from './muelJobs.js';
 
 type SourceRow = {
   id: number;
@@ -571,9 +572,32 @@ export const startYouTubeMonitor = (client: Client): void => {
     return;
   }
 
-  void runYouTubeMonitorTick(client);
-  timer = setInterval(() => {
+  const supabase = getSupabaseClient();
+  const runDirectTick = () => {
     void runYouTubeMonitorTick(client);
+  };
+
+  if (!config.enableJobWorker) {
+    runDirectTick();
+    timer = setInterval(runDirectTick, config.youtubeMonitorIntervalMs);
+    return;
+  }
+
+  const enqueueTick = () => {
+    const bucket = Math.floor(Date.now() / Math.max(config.youtubeMonitorIntervalMs, 1));
+    void enqueueJob(
+      supabase,
+      'sync_youtube_sources',
+      { requestedAt: new Date().toISOString() },
+      `sync_youtube_sources:${bucket}`,
+    ).catch((error) => {
+      console.warn('[youtube] failed to enqueue sync job', error);
+    });
+  };
+
+  enqueueTick();
+  timer = setInterval(() => {
+    enqueueTick();
   }, config.youtubeMonitorIntervalMs);
 };
 

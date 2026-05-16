@@ -1,6 +1,6 @@
 -- 202605170300_fix_embedding_dimension_768.sql
--- text-embedding-004 outputs 768 dimensions by default.
--- All memory RPCs and tables must match this.
+-- Muel stores Gemini embeddings at 768 dimensions.
+-- The configured embedding model must honor that output dimensionality.
 
 -- 1. Alter the embeddings table to use vector(768)
 ALTER TABLE public.muel_memory_embeddings

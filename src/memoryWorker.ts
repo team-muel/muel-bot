@@ -1,12 +1,40 @@
-import { generateObject, embed } from 'ai';
+import { generateObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
+import { embedMuelText } from './muelEmbeddings.js';
 
 const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey || '' });
 const model = google(config.muelAiModel);
-const embeddingModel = google.textEmbeddingModel(config.muelEmbeddingModel);
+
+type MemoryWorkerStatus = {
+  enabled: boolean;
+  running: boolean;
+  pollIntervalMs: number;
+  lastLoopStartedAt: string | null;
+  lastLoopFinishedAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  lastClaimedJobs: number;
+  lastProcessedJobId: string | null;
+};
+
+const POLL_INTERVAL_MS = 60_000;
+
+const workerStatus: MemoryWorkerStatus = {
+  enabled: config.enableJobWorker,
+  running: false,
+  pollIntervalMs: POLL_INTERVAL_MS,
+  lastLoopStartedAt: null,
+  lastLoopFinishedAt: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastClaimedJobs: 0,
+  lastProcessedJobId: null,
+};
 
 const extractMemorySchema = z.object({
   memories: z.array(z.object({
@@ -150,7 +178,10 @@ Task:
 
     // Generate embedding FIRST so if it fails, the job retries safely without partial inserts
     console.log(`[memory] Generating embedding for action=${finalAction}...`);
-    const { embedding } = await embed({ model: embeddingModel, value: finalContent });
+    const embedding = await embedMuelText(finalContent);
+    if (!embedding) {
+      throw new Error('Embedding generation unavailable');
+    }
 
     if (finalAction === 'merge' && targetId) {
       console.log(`[memory] Merging with ${targetId}: ${finalContent}`);
@@ -158,7 +189,7 @@ Task:
         p_entry_id: targetId,
         p_content: finalContent,
         p_embedding: embedding,
-        p_embedding_model: 'text-embedding-004'
+        p_embedding_model: config.muelEmbeddingModel,
       });
     } else {
       console.log(`[memory] Inserting new: ${finalContent}`);
@@ -189,7 +220,7 @@ Task:
         p_content: finalContent,
         p_importance: memory.importance,
         p_embedding: embedding,
-        p_embedding_model: 'text-embedding-004'
+        p_embedding_model: config.muelEmbeddingModel,
       });
       
       if (insertError) {
@@ -211,8 +242,10 @@ Task:
 
 export async function runMemoryWorkerLoop() {
   const supabase = getSupabaseClient();
+  workerStatus.running = true;
   console.log('[memory] Worker started');
   while (true) {
+    workerStatus.lastLoopStartedAt = new Date().toISOString();
     try {
       const { data: jobs, error } = await supabase.rpc('claim_pending_jobs', {
         p_worker_id: 'memory-worker-node',
@@ -220,8 +253,12 @@ export async function runMemoryWorkerLoop() {
       });
 
       if (error) {
+        workerStatus.lastErrorAt = new Date().toISOString();
+        workerStatus.lastError = error.message || String(error);
+        workerStatus.lastClaimedJobs = 0;
         console.error('[memory] claim_pending_jobs error', error);
       } else if (jobs && jobs.length > 0) {
+        workerStatus.lastClaimedJobs = jobs.length;
         for (const job of jobs) {
           try {
             if (job.type === 'extract_memory') {
@@ -229,7 +266,12 @@ export async function runMemoryWorkerLoop() {
             }
             // Complete job
             await supabase.rpc('complete_job', { p_job_id: job.id });
+            workerStatus.lastProcessedJobId = job.id;
+            workerStatus.lastSuccessAt = new Date().toISOString();
+            workerStatus.lastError = null;
           } catch (jobErr: any) {
+            workerStatus.lastErrorAt = new Date().toISOString();
+            workerStatus.lastError = jobErr?.message || 'Unknown error';
             console.error(`[memory] job ${job.id} failed`, jobErr);
             await supabase.rpc('fail_job', {
               p_job_id: job.id,
@@ -238,12 +280,22 @@ export async function runMemoryWorkerLoop() {
             });
           }
         }
+      } else {
+        workerStatus.lastClaimedJobs = 0;
+        workerStatus.lastSuccessAt = new Date().toISOString();
+        workerStatus.lastError = null;
       }
     } catch (err) {
+      workerStatus.lastErrorAt = new Date().toISOString();
+      workerStatus.lastError = err instanceof Error ? err.message : String(err);
       console.error('[memory] worker loop error', err);
+    } finally {
+      workerStatus.lastLoopFinishedAt = new Date().toISOString();
     }
 
     // Wait before polling again (60s — jobs have a 30min delay anyway)
-    await new Promise(resolve => setTimeout(resolve, 60_000));
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 }
+
+export const getMemoryWorkerStatus = (): MemoryWorkerStatus => ({ ...workerStatus });
