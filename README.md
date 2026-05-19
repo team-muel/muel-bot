@@ -35,7 +35,7 @@ Optional:
 
 - `HUB_URL` — defaults to `https://muel-tree.vercel.app`
 - `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` — enables AI mention replies
-- `MUEL_AI_MODEL` — defaults to `gemini-1.5-flash`
+- `MUEL_AI_MODEL` — defaults to `gemini-2.5-flash`
 - `MUEL_EMBEDDING_MODEL` — defaults to `gemini-embedding-001`
 - `MUEL_EMBEDDING_DIMENSIONS` — defaults to `768`
 - `NVIDIA_API_KEY` and `NVIDIA_MODEL` — optional fallback provider, default model `meta/llama-3.3-70b-instruct`

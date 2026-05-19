@@ -27,7 +27,7 @@ export const config = {
   supabaseUrl: optionalEnv('SUPABASE_URL'),
   supabaseServiceRoleKey: optionalEnv('SUPABASE_SERVICE_ROLE_KEY') ?? optionalEnv('SUPABASE_KEY'),
   googleGenerativeAiApiKey: optionalEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? optionalEnv('GEMINI_API_KEY'),
-  muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? 'gemini-1.5-flash',
+  muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? 'gemini-2.5-flash',
   muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-001',
   muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 768),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),

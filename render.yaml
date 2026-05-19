@@ -24,7 +24,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: MUEL_AI_MODEL
-        value: gemini-1.5-flash
+        value: gemini-2.5-flash
       - key: MUEL_EMBEDDING_MODEL
         value: gemini-embedding-001
       - key: MUEL_EMBEDDING_DIMENSIONS

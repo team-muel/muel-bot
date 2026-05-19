@@ -1,7 +1,7 @@
 /**
  * Memory extraction & retrieval integration tests.
  *
- * These tests call the real Gemini API (gemini-embedding-001 + gemini-1.5-flash)
+ * These tests call the real Gemini API (gemini-embedding-001 + gemini-2.5-flash)
  * to verify the full pipeline produces correct results.
  *
  * Run: GOOGLE_GENERATIVE_AI_API_KEY=xxx npx tsx tests/memory/memory.integration.test.ts
@@ -21,7 +21,7 @@ if (!apiKey) {
 }
 
 const google = createGoogleGenerativeAI({ apiKey });
-const model = google('gemini-1.5-flash');
+const model = google('gemini-2.5-flash');
 const embeddingModel = google.textEmbeddingModel('gemini-embedding-001');
 
 // -- Schemas (copied from memoryWorker to keep test self-contained) --
