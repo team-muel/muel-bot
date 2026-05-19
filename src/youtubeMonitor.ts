@@ -286,6 +286,36 @@ const CommunityPostSchema = z.object({
 });
 export type EditedCommunityPost = z.infer<typeof CommunityPostSchema>;
 
+const PRESERVED_LITERAL_RES = [
+  /https?:\/\/\S+/g,
+  /\b\d{4}-\d{2}-\d{2}\b/g,
+  /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\b/g,
+  /\b\d{1,3}(?:,\d{3})+\b/g,
+  /\b\d+(?:\.\d+)?%/g,
+  /\b\d{1,2}\s?(?:AM|PM|am|pm)\b/g,
+  /\b[A-Z][A-Za-z]+:\s*[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\b/g,
+  /\b[A-Z][A-Z0-9]{2,}\b/g,
+];
+
+const preserveSourceLiterals = (rawContent: string, data: EditedCommunityPost): EditedCommunityPost => {
+  const literals = [...new Set(PRESERVED_LITERAL_RES.flatMap((re) => rawContent.match(re) ?? []))];
+  if (literals.length === 0) return data;
+
+  const rendered = [
+    data.title,
+    data.subtitle ?? '',
+    data.body,
+    ...(data.highlights ?? []),
+  ].join('\n');
+  const missing = literals.filter((literal) => !rendered.includes(literal));
+  if (missing.length === 0) return data;
+
+  return {
+    ...data,
+    body: [data.body, `원문 표기: ${missing.join(', ')}`].filter(Boolean).join('\n'),
+  };
+};
+
 export const editCommunityPost = async (authorName: string, rawContent: string): Promise<{ data: EditedCommunityPost, modelId: string } | null> => {
   const model = getAiModel();
   if (!model) {
@@ -305,6 +335,7 @@ Rules:
 - Do not add, infer, or rewrite facts that are not present in the source.
 - If a source detail is ambiguous, keep the original wording instead of guessing.
 - Keep official titles, URLs, character names, and product names unchanged when translating them would be misleading.
+- Preserve exact URL and time expressions such as "8 PM"; do not translate or normalize them.
 - Keep the tone neutral and editorial. Do not turn the post into exaggerated marketing copy.
 - Use Markdown only when it improves readability.
 
@@ -312,7 +343,7 @@ Source post:
 ${rawContent}`,
       temperature: 0.1, // Lower temperature for faithfulness
     });
-    return { data: object, modelId: model.modelId || 'unknown' };
+    return { data: preserveSourceLiterals(rawContent, object), modelId: model.modelId || 'unknown' };
   } catch (error) {
     console.warn('[youtube] failed to edit community post with AI', error);
     return null;

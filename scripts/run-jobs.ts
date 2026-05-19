@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { getSupabaseClient } from '../src/supabase.js';
+import { summarizeCommunityFlowJob } from '../src/communityFlow.js';
 
 const WORKER_ID = `worker-${process.pid}-${Math.random().toString(36).slice(2, 7)}`;
 const POLL_INTERVAL_MS = 5000;
@@ -22,6 +23,11 @@ async function processJob(job: any) {
       if (error) throw error;
       console.log(`[worker ${WORKER_ID}] Completed job ${job.id}`);
       
+    } else if (job.type === 'summarize_community_flow') {
+      await summarizeCommunityFlowJob(supabase, job.payload as { signalId: string });
+      const { error } = await supabase.rpc('complete_job', { p_job_id: job.id });
+      if (error) throw error;
+      console.log(`[worker ${WORKER_ID}] Completed community flow job ${job.id}`);
     } else {
       throw new Error(`Unknown job type: ${job.type}`);
     }

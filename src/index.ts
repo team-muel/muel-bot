@@ -16,6 +16,9 @@ import { handleDiscordInteractions } from './discordInteractions.js';
 import { handleMuelMention } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
+import { getSupabaseClient } from './supabase.js';
+import { observeCommunityMessage } from './communityFlow.js';
+import { renderDiscordMessage } from './rendering/discordRenderer.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -113,6 +116,31 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   console.log('[discord] replaced global commands');
 };
 
+const buildHelpMessage = () => renderDiscordMessage([{
+  type: 'info-card',
+  tone: 'muel',
+  title: 'Muel',
+  body: '커뮤니티 안에 상주하면서 대화, 외부 피드 큐레이션, 기억 파이프라인, Weave 연결을 맡습니다. Gomdori는 별도의 게임/Activity 실행체입니다.',
+  fields: [
+    {
+      name: '명령어',
+      value: [
+        '/구독 - YouTube 영상/게시글 자동 구독 관리',
+        '/도움말 - 이 안내 보기',
+        '/ping - 온라인 확인',
+      ].join('\n'),
+    },
+    {
+      name: 'Activity',
+      value: [
+        `일기: ${config.hubUrl}/weave`,
+        `Gomdori 게임: ${config.hubUrl}/game`,
+      ].join('\n'),
+    },
+  ],
+  footer: 'Muel = community AI / Gomdori = game Activity',
+}]);
+
 client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
@@ -148,24 +176,7 @@ if (!config.enableHttpInteractions) {
     }
 
     if (interaction.commandName === '도움말') {
-      await interaction.reply({
-        content: [
-          '**Muel에서 사용할 수 있는 입구**',
-          '',
-          `Muel Hub: <${config.hubUrl}>`,
-          `일기: <${config.hubUrl}/weave>`,
-          '',
-          '**명령어**',
-          '/구독 — YouTube 영상/게시글 자동 구독 관리',
-          '/도움말 — 이 안내 보기',
-          '',
-          '**활동**',
-          '앱 런처에서 일기 — 꿈을 기록하고 연결하기',
-          '',
-          'Gomdori는 준비 중입니다.',
-        ].join('\n'),
-        flags: [MessageFlags.Ephemeral],
-      });
+      await interaction.reply({ ...buildHelpMessage(), flags: [MessageFlags.Ephemeral] });
       return;
     }
 
@@ -175,10 +186,12 @@ if (!config.enableHttpInteractions) {
     }
 
     await interaction.reply({
-      content: [
-        '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
-        `Muel Hub: <${config.hubUrl}>`,
-      ].join('\n'),
+      ...renderDiscordMessage([{
+        type: 'info-card',
+        tone: 'warning',
+        title: '알 수 없는 명령어',
+        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
+      }]),
       flags: [MessageFlags.Ephemeral],
     });
   });
@@ -198,6 +211,11 @@ client.on(Events.MessageCreate, async (message) => {
       content: message.content,
       timestamp: message.createdTimestamp,
     });
+    try {
+      observeCommunityMessage(getSupabaseClient(), message);
+    } catch (error) {
+      console.warn('[community-flow] skipped observe', error);
+    }
   }
 });
 

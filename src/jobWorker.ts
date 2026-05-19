@@ -3,6 +3,7 @@ import { ChannelType } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { processMemoryJob } from './memoryWorker.js';
 import { runYouTubeMonitorTick } from './youtubeMonitor.js';
+import { summarizeCommunityFlowJob } from './communityFlow.js';
 import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
@@ -162,6 +163,11 @@ const processJob = async (job: JobRow) => {
 
   if (job.type === 'discord_interaction_subscribe') {
     await handleSubscribeInteraction(job.payload as SubscribeInteractionPayload);
+    return;
+  }
+
+  if (job.type === 'summarize_community_flow') {
+    await summarizeCommunityFlowJob(getSupabaseClient(), job.payload as { signalId: string });
     return;
   }
 

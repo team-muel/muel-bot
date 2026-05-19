@@ -1,5 +1,13 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions } from 'discord.js';
-import type { MuelRenderablePart } from './types.js';
+import type { MuelRenderablePart, RenderTone } from './types.js';
+
+function toneColor(tone?: RenderTone): number | null {
+  if (tone === 'muel') return 0xa2e61d;
+  if (tone === 'warning') return 0xff3b30;
+  if (tone === 'success') return 0x34c759;
+  if (tone === 'game') return 0x8e7cff;
+  return null;
+}
 
 function parseRelativeTimeToUnix(text: string): number | null {
   if (!text) return null;
@@ -8,7 +16,7 @@ function parseRelativeTimeToUnix(text: string): number | null {
   if (!match) return null;
   const val = parseInt(match[1], 10);
   const unit = match[2].toLowerCase();
-  
+
   if (unit.includes('초') || unit.includes('second')) return now - val;
   if (unit.includes('분') || unit.includes('minute')) return now - val * 60;
   if (unit.includes('시간') || unit.includes('hour')) return now - val * 3600;
@@ -31,6 +39,11 @@ function truncateTitle(text: string, max = 256): string {
   return `${text.slice(0, Math.max(1, max - 3)).trimEnd()}...`;
 }
 
+function applyTone(embed: EmbedBuilder, tone?: RenderTone): EmbedBuilder {
+  const color = toneColor(tone);
+  return color == null ? embed : embed.setColor(color);
+}
+
 export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreateOptions {
   const embeds: EmbedBuilder[] = [];
   const options: MessageCreateOptions = {
@@ -47,6 +60,24 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
   for (const part of parts) {
     if (part.type === 'text') {
       textContents.push(part.text);
+    } else if (part.type === 'info-card') {
+      const embed = applyTone(
+        new EmbedBuilder()
+          .setTitle(truncateTitle(part.title, 256))
+          .setDescription(part.body ? truncate(part.body, 3900) : null),
+        part.tone ?? 'muel',
+      );
+
+      if (part.fields?.length) {
+        embed.addFields(part.fields.slice(0, 25).map((field) => ({
+          name: truncateTitle(field.name, 256),
+          value: truncate(field.value, 1024),
+          inline: field.inline ?? false,
+        })));
+      }
+      if (part.footer) embed.setFooter({ text: part.footer.slice(0, 2048) });
+      if (part.sourceUrl) embed.setURL(part.sourceUrl);
+      embeds.push(embed);
     } else if (part.type === 'youtube-community-post-card') {
       const imageUrl = part.imageUrls?.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url));
       const maxDescLength = imageUrl ? 800 : 1200;
@@ -63,36 +94,32 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
       const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
 
-      const embed = new EmbedBuilder()
-        .setDescription(descriptionParts.join('\n') || null)
-        .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' | ').slice(0, 2048) });
+      const embed = applyTone(
+        new EmbedBuilder()
+          .setDescription(descriptionParts.join('\n') || null)
+          .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' | ').slice(0, 2048) }),
+        part.tone,
+      );
 
-      if (part.tone === 'muel') embed.setColor(0xa2e61d);
-      else if (part.tone === 'warning') embed.setColor(0xff3b30);
-      else if (part.tone === 'success') embed.setColor(0x34c759);
-
-      if (part.title) {
-        embed.setTitle(truncateTitle(part.title, 256));
-      }
-
-      if (imageUrl) {
-        embed.setImage(imageUrl);
-      }
+      if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (imageUrl) embed.setImage(imageUrl);
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setLabel('원문')
           .setStyle(ButtonStyle.Link)
-          .setURL(part.sourceUrl || 'https://youtube.com')
+          .setURL(part.sourceUrl || 'https://youtube.com'),
       );
 
       embeds.push(embed);
       options.components = [...(options.components || []), row];
     } else if (part.type === 'announcement-card') {
-      const embed = new EmbedBuilder()
-        .setColor(0x2f80ed)
-        .setDescription(part.body ? truncate(part.body, 3900) : null)
-        .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) });
+      const embed = applyTone(
+        new EmbedBuilder()
+          .setDescription(part.body ? truncate(part.body, 3900) : null)
+          .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) }),
+        'muel',
+      );
 
       if (part.title) embed.setTitle(truncateTitle(part.title, 256));
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
@@ -100,16 +127,18 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
 
       embeds.push(embed);
     } else if (part.type === 'release-note-card') {
-      const embed = new EmbedBuilder()
-        .setColor(0x00c853)
-        .setTitle(truncateTitle(`${part.product} ${part.version ? `v${part.version}` : ''} 업데이트`, 256))
-        .setDescription(truncate(part.highlights.map((highlight) => `- ${highlight}`).join('\n'), 3900))
-        .setFooter({ text: 'Release Note' });
+      const embed = applyTone(
+        new EmbedBuilder()
+          .setTitle(truncateTitle(`${part.product} ${part.version ? `v${part.version}` : ''} 업데이트`, 256))
+          .setDescription(truncate(part.highlights.map((highlight) => `- ${highlight}`).join('\n'), 3900))
+          .setFooter({ text: 'Release Note' }),
+        'success',
+      );
 
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
     } else if (part.type === 'video-card') {
-      textContents.push(`**${part.author}** 새 YouTube ${part.isShorts ? '쇼츠' : '영상'} 업로드\n${part.title}\n${part.url}`);
+      textContents.push(`**${part.author}** - YouTube ${part.isShorts ? '쇼츠' : '영상'} 업로드\n${part.title}\n${part.url}`);
     }
   }
 

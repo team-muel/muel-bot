@@ -1,0 +1,161 @@
+import { generateObject } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { z } from 'zod';
+import type { Message } from 'discord.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { config } from './config.js';
+import { enqueueJob } from './muelJobs.js';
+import { getRecentMessages } from './channelBuffer.js';
+
+const BUCKET_MS = 10 * 60_000;
+const MIN_MESSAGES_PER_BUCKET = 12;
+const MAX_SAMPLE_MESSAGES = 20;
+const recentCounts = new Map<string, { bucketStart: number; count: number; fired: boolean }>();
+
+type CommunityFlowPayload = {
+  signalId: string;
+};
+
+const digestSchema = z.object({
+  title: z.string().max(80),
+  summary: z.string().max(800),
+  highlights: z.array(z.string().max(160)).max(5),
+});
+
+const bucketStartFor = (timestamp: number): number => Math.floor(timestamp / BUCKET_MS) * BUCKET_MS;
+
+const getBucketKey = (guildId: string, channelId: string, bucketStart: number): string =>
+  `${guildId}:${channelId}:${bucketStart}`;
+
+const sampleChannelMessages = (channelId: string) =>
+  getRecentMessages(channelId, MAX_SAMPLE_MESSAGES).map((msg) => ({
+    authorId: msg.authorId,
+    authorName: msg.authorName,
+    content: msg.content.slice(0, 500),
+    timestamp: new Date(msg.timestamp).toISOString(),
+  }));
+
+export const observeCommunityMessage = (
+  supabase: SupabaseClient,
+  message: Message,
+): void => {
+  if (!message.guildId || message.author.bot || !message.content.trim()) return;
+
+  const bucketStart = bucketStartFor(message.createdTimestamp);
+  const bucketEnd = bucketStart + BUCKET_MS;
+  const key = getBucketKey(message.guildId, message.channelId, bucketStart);
+  const current = recentCounts.get(key) ?? { bucketStart, count: 0, fired: false };
+  current.count += 1;
+  recentCounts.set(key, current);
+
+  if (current.fired || current.count < MIN_MESSAGES_PER_BUCKET) return;
+  current.fired = true;
+
+  void (async () => {
+    const sampleMessages = sampleChannelMessages(message.channelId);
+    const { data, error } = await supabase
+      .from('muel_community_signals')
+      .upsert({
+        guild_id: message.guildId,
+        channel_id: message.channelId,
+        signal_type: 'volume_spike',
+        bucket_start: new Date(bucketStart).toISOString(),
+        bucket_end: new Date(bucketEnd).toISOString(),
+        message_count: current.count,
+        sample_messages: sampleMessages,
+        status: 'pending',
+        metadata: {
+          threshold: MIN_MESSAGES_PER_BUCKET,
+          detector: 'volume_bucket_v1',
+        },
+      }, {
+        onConflict: 'guild_id,channel_id,signal_type,bucket_start',
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.warn('[community-flow] signal insert failed', error);
+      return;
+    }
+
+    await enqueueJob(
+      supabase,
+      'summarize_community_flow',
+      { signalId: data.id } satisfies CommunityFlowPayload,
+      `summarize_community_flow:${data.id}`,
+      new Date(Date.now() + 2 * 60_000).toISOString(),
+    );
+  })().catch((error) => {
+    console.warn('[community-flow] observe failed', error);
+  });
+};
+
+export const summarizeCommunityFlowJob = async (
+  supabase: SupabaseClient,
+  payload: CommunityFlowPayload,
+): Promise<void> => {
+  const { data: signal, error } = await supabase
+    .from('muel_community_signals')
+    .select('*')
+    .eq('id', payload.signalId)
+    .single();
+
+  if (error) throw error;
+  if (!signal || signal.status === 'summarized') return;
+
+  const samples = Array.isArray(signal.sample_messages) ? signal.sample_messages : [];
+  if (samples.length === 0) {
+    await supabase.from('muel_community_signals').update({ status: 'ignored' }).eq('id', signal.id);
+    return;
+  }
+
+  if (!config.googleGenerativeAiApiKey) {
+    await supabase.from('muel_community_signals').update({
+      status: 'error',
+      metadata: {
+        ...(signal.metadata ?? {}),
+        error: 'GEMINI_API_KEY not configured',
+      },
+    }).eq('id', signal.id);
+    return;
+  }
+
+  const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
+  const transcript = samples
+    .map((msg: any) => `${msg.authorName ?? msg.authorId}: ${String(msg.content ?? '').slice(0, 300)}`)
+    .join('\n');
+
+  const result = await generateObject({
+    model: google(config.muelAiModel),
+    schema: digestSchema,
+    temperature: 0.2,
+    prompt: [
+      '너는 Discord 서버 흐름을 관찰하는 Muel의 큐레이터 모듈이다.',
+      '아래 샘플은 짧은 시간에 대화량이 증가한 채널의 메시지다.',
+      '원문에 없는 사실, 날짜, 숫자, 고유명사를 추가하지 말고, 서버 운영자가 흐름을 파악할 수 있게 한국어로 요약해라.',
+      '장난/잡담이면 과장하지 말고 잡담이라고 말해라.',
+      '',
+      transcript,
+    ].join('\n'),
+  });
+
+  const { title, summary, highlights } = result.object;
+  await supabase.from('muel_community_digests').insert({
+    signal_id: signal.id,
+    guild_id: signal.guild_id,
+    channel_id: signal.channel_id,
+    window_start: signal.bucket_start,
+    window_end: signal.bucket_end,
+    title,
+    summary,
+    highlights,
+    metadata: {
+      model: config.muelAiModel,
+      source: 'volume_spike',
+      messageCount: signal.message_count,
+    },
+  });
+
+  await supabase.from('muel_community_signals').update({ status: 'summarized' }).eq('id', signal.id);
+};

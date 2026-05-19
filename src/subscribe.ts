@@ -1,4 +1,4 @@
-import { ChannelType, EmbedBuilder, type ChatInputCommandInteraction, MessageFlags } from 'discord.js';
+import { ChannelType, type ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
@@ -6,6 +6,8 @@ import {
   type YouTubeSubscription,
   type YouTubeSubscriptionKind,
 } from './youtubeSubscriptionStore.js';
+import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import type { RenderTone } from './rendering/types.js';
 
 export const SUBSCRIBE_COMMAND_NAME = '\uad6c\ub3c5';
 export const OPTION_ACTION = '\ub3d9\uc791';
@@ -15,23 +17,17 @@ export const SUBSCRIBE_ACTION_LIST = 'list';
 export const SUBSCRIBE_ACTION_ADD = 'add';
 export const SUBSCRIBE_ACTION_REMOVE = 'remove';
 
-const EMBED_INFO = 0x2f80ed;
-const EMBED_WARN = 0xf2c94c;
-const EMBED_ERROR = 0xeb5757;
-const EMBED_SUCCESS = 0x27ae60;
-
 const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
-const buildSimpleEmbed = (title: string, description: string, color: number) => ({
-  embeds: [
-    new EmbedBuilder()
-      .setTitle(title)
-      .setDescription(description.slice(0, 4096))
-      .setColor(color),
-  ],
-});
+const buildSimpleEmbed = (title: string, description: string, tone: RenderTone = 'muel') =>
+  renderDiscordMessage([{
+    type: 'info-card',
+    tone,
+    title,
+    body: description,
+  }]) as any;
 
 const getChannelTypeLabel = (channelType: number): string => {
   const mapped = ChannelType[channelType];
@@ -93,7 +89,7 @@ export const handleSubscribeYouTubeCommand = async (
   kind: YouTubeSubscriptionKind,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('구독 오류', '이 명령어는 서버에서만 사용할 수 있어요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('구독 오류', '이 명령어는 서버에서만 사용할 수 있어요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -101,12 +97,12 @@ export const handleSubscribeYouTubeCommand = async (
   const targetChannel = interaction.channel;
 
   if (!channelInput) {
-    await interaction.reply({ ...buildSimpleEmbed('입력 오류', 'YouTube 채널 URL 또는 UC 채널 ID를 입력해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('입력 오류', 'YouTube 채널 URL 또는 UC 채널 ID를 입력해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
-    await interaction.reply({ ...buildSimpleEmbed('채널 오류', '텍스트, 공지, 스레드 채널에서만 사용할 수 있어요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('채널 오류', '텍스트, 공지, 스레드 채널에서만 사용할 수 있어요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -124,10 +120,10 @@ export const handleSubscribeYouTubeCommand = async (
     await interaction.editReply(buildSimpleEmbed(
       'YouTube 구독',
       `${state}: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`,
-      result.created ? EMBED_SUCCESS : EMBED_INFO,
+      result.created ? 'success' : 'muel',
     ));
   } catch (error) {
-    await interaction.editReply(buildSimpleEmbed('구독 실패', getErrorMessage(error), EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed('구독 실패', getErrorMessage(error), 'warning'));
   }
 };
 
@@ -135,7 +131,7 @@ export const handleSubscriptionListCommand = async (
   interaction: ChatInputCommandInteraction,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('구독 목록', '이 명령어는 서버에서만 사용할 수 있어요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('구독 목록', '이 명령어는 서버에서만 사용할 수 있어요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -144,7 +140,7 @@ export const handleSubscriptionListCommand = async (
   try {
     const rows = await listYouTubeSubscriptions({ guildId: interaction.guildId });
     if (rows.length === 0) {
-      await interaction.editReply(buildSimpleEmbed('구독 목록', '등록된 YouTube 구독이 없어요.', EMBED_INFO));
+      await interaction.editReply(buildSimpleEmbed('구독 목록', '등록된 YouTube 구독이 없어요.', 'muel'));
       return;
     }
 
@@ -156,9 +152,9 @@ export const handleSubscriptionListCommand = async (
     }));
     const suffix = rows.length > 20 ? `\n...(${rows.length - 20}개 더 있음)` : '';
 
-    await interaction.editReply(buildSimpleEmbed('구독 목록', [...lines, suffix].filter(Boolean).join('\n'), EMBED_INFO));
+    await interaction.editReply(buildSimpleEmbed('구독 목록', [...lines, suffix].filter(Boolean).join('\n'), 'muel'));
   } catch (error) {
-    await interaction.editReply(buildSimpleEmbed('목록 조회 실패', getErrorMessage(error), EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed('목록 조회 실패', getErrorMessage(error), 'warning'));
   }
 };
 
@@ -167,7 +163,7 @@ export const handleUnsubscribeCommand = async (
   forcedKind?: YouTubeSubscriptionKind,
 ): Promise<void> => {
   if (!interaction.guildId) {
-    await interaction.reply({ ...buildSimpleEmbed('구독 제거', '이 명령어는 서버에서만 사용할 수 있어요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('구독 제거', '이 명령어는 서버에서만 사용할 수 있어요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -176,17 +172,17 @@ export const handleUnsubscribeCommand = async (
   const targetChannel = interaction.channel;
 
   if (!kind) {
-    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!channelInput) {
-    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '제거할 YouTube 채널을 입력해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '제거할 YouTube 채널을 입력해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
   if (!targetChannel || !isValidSubscribeChannelType(targetChannel.type)) {
-    await interaction.reply({ ...buildSimpleEmbed('채널 오류', '텍스트, 공지, 스레드 채널에서만 사용할 수 있어요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('채널 오류', '텍스트, 공지, 스레드 채널에서만 사용할 수 있어요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -205,10 +201,10 @@ export const handleUnsubscribeCommand = async (
       result.deleted
         ? `제거했어: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`
         : `제거할 항목이 없어: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`,
-      result.deleted ? EMBED_SUCCESS : EMBED_WARN,
+      result.deleted ? 'success' : 'warning',
     ));
   } catch (error) {
-    await interaction.editReply(buildSimpleEmbed('구독 제거 실패', getErrorMessage(error), EMBED_ERROR));
+    await interaction.editReply(buildSimpleEmbed('구독 제거 실패', getErrorMessage(error), 'warning'));
   }
 };
 
@@ -225,7 +221,7 @@ export const handleGroupedSubscribeCommand = async (
   if (subcommand === 'add') {
     const kind = getKindOption(interaction);
     if (!kind) {
-      await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+      await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
       return;
     }
     await handleSubscribeYouTubeCommand(interaction, kind);
@@ -252,7 +248,7 @@ export const handleFlatSubscribeCommand = async (
 
   const kind = getKindOption(interaction);
   if (!kind) {
-    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+    await interaction.reply({ ...buildSimpleEmbed('입력 오류', '영상 또는 게시글을 선택해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
     return;
   }
 
@@ -266,5 +262,5 @@ export const handleFlatSubscribeCommand = async (
     return;
   }
 
-  await interaction.reply({ ...buildSimpleEmbed('입력 오류', '조회, 추가, 제거 중 하나를 선택해주세요.', EMBED_WARN), flags: [MessageFlags.Ephemeral] });
+  await interaction.reply({ ...buildSimpleEmbed('입력 오류', '조회, 추가, 제거 중 하나를 선택해주세요.', 'warning'), flags: [MessageFlags.Ephemeral] });
 };

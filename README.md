@@ -7,6 +7,9 @@
 - **Muel Platform**: the overall brand and product system.
 - **Muel Discord Bot**: this repository, deployed on Render.
 - **Muel Web App**: the separate `muel-tree` repository, deployed on Vercel.
+- **Muel**: the community AI, curation, memory, Weave, and assistant surface.
+- **Gomdori**: a separate game/Activity product that can share Muel
+  infrastructure without becoming the same product.
 - **Hub**: the public `/` page in `muel-tree`.
 - **Activity**: a Discord Activity route in `muel-tree`, such as `/weave` (user command: `/일기`).
 - **Product**: an individual service such as Muel, Black or White, or 세계수.
@@ -16,6 +19,9 @@
 - Connects the bot user to Discord.
 - Registers the public slash commands: `/도움말`, `/일기`, `/구독`, and `/ping`.
 - Replies when users mention the bot in Discord, using the Muel conversation spine.
+- Logs AI turn outcomes to `muel_ai_events` for regression debugging.
+- Watches lightweight community-volume signals and queues LLM summarization
+  outside the Discord hot path.
 - Shows the Muel hub, 일기 Activity, and Server invite from `/도움말`.
 - Clears guild-scoped legacy commands on startup so Discord does not show duplicate command entries.
 - Keeps `/구독` as the Muel utility for YouTube video/community post procurement.

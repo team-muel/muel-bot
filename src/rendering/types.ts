@@ -16,6 +16,19 @@ export type MuelRenderablePart =
       text: string;
     }
   | {
+      type: 'info-card';
+      tone?: RenderTone;
+      title: string;
+      body?: string;
+      fields?: Array<{
+        name: string;
+        value: string;
+        inline?: boolean;
+      }>;
+      footer?: string;
+      sourceUrl?: string;
+    }
+  | {
       type: 'youtube-community-post-card';
       id?: string;
       tone?: RenderTone;

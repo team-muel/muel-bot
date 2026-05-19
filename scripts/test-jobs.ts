@@ -4,6 +4,7 @@ import { getSupabaseClient } from '../src/supabase.js';
 async function runTests() {
   const supabase = getSupabaseClient();
   const workerId = 'test-worker-1';
+  const claimLimit = 100;
   
   // Clean up old test data if any
   const dedupeKey = `test_dedupe_${Date.now()}`;
@@ -32,7 +33,7 @@ async function runTests() {
   console.log('Testing Claim...');
   const { data: claimed, error: claimError } = await supabase.rpc('claim_pending_jobs', {
     p_worker_id: workerId,
-    p_limit: 10
+    p_limit: claimLimit
   });
   if (claimError) throw claimError;
   
@@ -46,7 +47,7 @@ async function runTests() {
   for (let i = 1; i <= 4; i++) {
     // Fail with 0 delay so we can claim it immediately
     await supabase.rpc('fail_job', { p_job_id: jobId, p_error: 'Test fail', p_retry_delay_seconds: 0, p_max_attempts: 5 });
-    const { data: retryClaimed } = await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: 10 });
+    const { data: retryClaimed } = await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: claimLimit });
     const retryJob = retryClaimed?.find((j: any) => j.id === jobId);
     if (!retryJob) throw new Error(`Failed to claim on attempt ${i+1}`);
   }
@@ -71,7 +72,7 @@ async function runTests() {
   });
   
   // Claim it
-  await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: 10 });
+  await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: claimLimit });
   
   // Artificially change locked_at to 15 minutes ago
   await supabase.from('muel_jobs').update({
@@ -79,7 +80,7 @@ async function runTests() {
   }).eq('id', staleJobId);
   
   // Try to claim again
-  const { data: reclaimed } = await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: 10 });
+  const { data: reclaimed } = await supabase.rpc('claim_pending_jobs', { p_worker_id: workerId, p_limit: claimLimit });
   const reclaimedJob = reclaimed?.find((j: any) => j.id === staleJobId);
   if (!reclaimedJob) throw new Error('Stale job was not reclaimed!');
   if (reclaimedJob.attempts !== 2) throw new Error('Attempts should be 2 after reclaim');

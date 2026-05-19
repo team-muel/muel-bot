@@ -11,6 +11,7 @@ import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
+import { logMuelAiEvent } from './muelAiEvents.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -115,7 +116,9 @@ export const handleMuelMention = async (
 
   const supabase = getSupabaseClient();
   let inboundMessageId: string | null = null;
+  let chatId: string | null = null;
   const lightweightTurn = isLightweightTurn(userText);
+  const replyStartedAt = Date.now();
 
   try {
     const typingChannel = message.channel as { sendTyping?: () => Promise<void> };
@@ -128,7 +131,7 @@ export const handleMuelMention = async (
     });
 
     const userMessageId = crypto.randomUUID();
-    const { chatId, messages: history } = await prepareChatTurn(supabase, {
+    const prepared = await prepareChatTurn(supabase, {
       source: 'discord',
       sourceChannelId: message.channelId,
       sourceThreadId: message.channelId,
@@ -143,6 +146,8 @@ export const handleMuelMention = async (
         externalMessageId: message.id,
       },
     });
+    chatId = prepared.chatId;
+    const history = prepared.messages;
     inboundMessageId = userMessageId;
 
     void enqueueMemoryExtractionJob(supabase, {
@@ -178,7 +183,6 @@ export const handleMuelMention = async (
     }
 
     const authorName = message.author.displayName ?? message.author.username;
-    const replyStartedAt = Date.now();
     const reply = await withTimeout(generateMuelReply(
       supabase,
       chatId,
@@ -213,6 +217,23 @@ export const handleMuelMention = async (
       discordMessageId: message.id,
       discordReplyId: sent.id,
     });
+
+    void logMuelAiEvent(supabase, {
+      status: reply.provider === 'none' ? 'fallback' : 'success',
+      chatId,
+      messageId: inboundMessageId,
+      responseMessageId: sent.id,
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      provider: reply.provider,
+      model: reply.model,
+      latencyMs: Date.now() - replyStartedAt,
+      lightweightTurn,
+      metadata: {
+        discordMessageId: message.id,
+      },
+    });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error('[muel] mention handling failed', error);
@@ -227,5 +248,21 @@ export const handleMuelMention = async (
       content: '지금은 대답하기 어려워. 잠시 뒤에 다시 불러줘.',
       allowedMentions: { parse: [], repliedUser: false },
     }).catch(() => {});
+
+    void logMuelAiEvent(supabase, {
+      status: 'error',
+      chatId,
+      messageId: inboundMessageId,
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      latencyMs: Date.now() - replyStartedAt,
+      lightweightTurn,
+      errorClass: error instanceof Error ? error.name : typeof error,
+      errorMessage: reason,
+      metadata: {
+        discordMessageId: message.id,
+      },
+    });
   }
 };
