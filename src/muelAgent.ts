@@ -10,6 +10,8 @@ import { saveAssistantMessage } from './muelConversationStore.js';
 import { fetchServerContext } from './muelContext.js';
 import { listSemanticMemories, formatSemanticMemories, disableUserMemorySearch } from './muelEmbeddings.js';
 import { retrieveRelevantMemories } from './memoryRetriever.js';
+import { formatCapabilityRegistryForPrompt, getPreflightGuard } from './capabilities.js';
+import { sanitizeModelOutput } from './responseSanitizer.js';
 
 export type MuelAgentResult = {
   text: string;
@@ -98,12 +100,16 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'WHAT YOU KNOW & TOOLS:',
   '- This server tracks YouTube subscriptions and community posts.',
+  '- You do not browse arbitrary YouTube videos or recommend random current videos.',
   '- Weave is for dream records. Gomdori is a separate game-facing product.',
   '- Use tools only when the user asks for specific recent news, posts, dreams, or past conversations.',
   '- Do not use tools for greetings or simple back-and-forth.',
+  '- Never expose tool calls, tool names, stack traces, raw JSON, channel IDs, guild IDs, or internal function names to Discord users.',
   '',
   'BOUNDARIES:',
   '- Do not expose secrets, tokens, raw credentials, or internal logs.',
+  '- For security threats or bypass requests, set a short boundary. Do not joke about hacking or escalation.',
+  '- For realtime finance or market questions, do not invent prices, dates, rates, or predictions without a live source.',
   '- If tools return empty, be honest in one sentence.',
 ].join('\n');
 
@@ -150,6 +156,7 @@ const saveGeneratedReply = async (
   finalText: string,
   provider: MuelAgentResult['provider'],
   modelName: string,
+  options?: { enqueueMemory?: boolean },
 ): Promise<void> => {
   const assistantMessageId = crypto.randomUUID();
   await saveAssistantMessage(
@@ -162,7 +169,7 @@ const saveGeneratedReply = async (
     console.error('[muel] failed to save generated message', err);
   });
 
-  if (finalText.length > 50) {
+  if ((options?.enqueueMemory ?? true) && finalText.length > 50) {
     void enqueueMemoryExtractionJob(supabase, {
       chatId,
       messageId: assistantMessageId,
@@ -187,6 +194,18 @@ export const generateMuelReply = async (
   sourceUserId?: string,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
+  const preflightGuard = getPreflightGuard(userText);
+  if (preflightGuard) {
+    await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
+      enqueueMemory: false,
+    });
+    return {
+      text: preflightGuard.reply,
+      model: `policy:${preflightGuard.reason}`,
+      provider: 'none',
+    };
+  }
+
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
     return {
       text: localFallback ?? 'AI 응답 엔진이 아직 연결되지 않았어. GEMINI_API_KEY 또는 NVIDIA_API_KEY를 설정해야 해.',
@@ -196,7 +215,7 @@ export const generateMuelReply = async (
   }
 
   const lightweightTurn = isLightweightTurn(userText);
-  const systemParts = [BASE_SYSTEM_PROMPT];
+  const systemParts = [BASE_SYSTEM_PROMPT, formatCapabilityRegistryForPrompt()];
   if (guildTopology) systemParts.push('', guildTopology);
   if (channelActivity) systemParts.push('', channelActivity);
   systemParts.push('', formatUserHistory(userHistory, authorName));
@@ -286,9 +305,9 @@ export const generateMuelReply = async (
       maxOutputTokens: 1200,
     });
 
-    const finalText = text.trim();
+    const finalText = sanitizeModelOutput(text);
     if (!finalText) {
-      throw new Error(`${provider} returned an empty response`);
+      throw new Error(`${provider} returned an empty or unsafe response`);
     }
 
     await saveGeneratedReply(supabase, chatId, finalText, provider, modelName);
@@ -366,6 +385,7 @@ export const generateMuelReply = async (
 };
 
 export const toDiscordReply = (text: string): string => {
-  if (text.length <= 1900) return text;
-  return `${text.slice(0, 1890).trimEnd()}\n...`;
+  const sanitized = sanitizeModelOutput(text) || '응답을 정리하는 중 문제가 생겼어. 다시 짧게 물어봐줘.';
+  if (sanitized.length <= 1900) return sanitized;
+  return `${sanitized.slice(0, 1890).trimEnd()}\n...`;
 };
