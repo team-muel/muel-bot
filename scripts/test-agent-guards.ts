@@ -29,6 +29,12 @@ const finance = getPreflightGuard('삼성전자 현재 주가랑 52주 최고가
 assert('guards realtime finance', finance?.reason === 'realtime_finance');
 assert('finance guard avoids made-up price', !finance?.reply.includes('원입니다'));
 
+const companyNews = getPreflightGuard('최신 삼성전자 뉴스 몇개 알려줘');
+assert('allows company news through tools', companyNews === null);
+
+const forecast = getPreflightGuard('삼성전자 목표가 전망 알려줘');
+assert('guards company forecast finance intent', forecast?.reason === 'realtime_finance');
+
 const youtube = getPreflightGuard('현재 유튜브 영상 아무거나 추천해봐');
 assert('guards unsupported YouTube recommendation', youtube?.reason === 'unsupported_youtube_recommendation');
 assert('youtube guard says not provided', youtube?.reply.includes('제공하지 않아'));

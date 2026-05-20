@@ -68,8 +68,9 @@ export type PreflightGuard = {
 };
 
 const YOUTUBE_RECOMMEND_RE = /(유튜브|youtube).*(추천|아무거나|볼\s*만한|영상\s*추천)|(?:추천|아무거나).*(유튜브|youtube|영상)/iu;
-const FINANCE_RE =
-  /(주가|시세|현재가|등락률|52주|코스피|코스닥|나스닥|s&p|삼성전자|비트코인|환율|달러|엔화|stock|ticker|price|crypto|forex)/iu;
+const NEWS_RE = /(뉴스|소식|기사|보도|최신|최근|latest|news|headlines?)/iu;
+const FINANCE_MARKET_RE =
+  /(주가|시세|현재가|등락률|52주|코스피|코스닥|나스닥|s&p|비트코인|환율|달러|엔화|stock|ticker|price|crypto|forex)/iu;
 const FINANCE_FORECAST_RE = /(예측|전망|오를|내릴|살까|팔까|투자|매수|매도|목표가)/iu;
 const SECURITY_THREAT_RE =
   /(해킹할|해킹해|뚫어|침입|권한\s*우회|권한상승|탈취|secret\s*key|api\s*key|토큰.*훔|bypass|exploit|exfiltrate|credential)/iu;
@@ -146,7 +147,7 @@ export const getPreflightGuard = (userText: string): PreflightGuard | null => {
     };
   }
 
-  if (FINANCE_RE.test(text)) {
+  if ((FINANCE_MARKET_RE.test(text) || FINANCE_FORECAST_RE.test(text)) && !NEWS_RE.test(text)) {
     return {
       reason: 'realtime_finance',
       reply: FINANCE_FORECAST_RE.test(text)
