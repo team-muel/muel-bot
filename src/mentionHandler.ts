@@ -12,6 +12,7 @@ import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
 import { logMuelAiEvent } from './muelAiEvents.js';
+import { shouldEnqueueUserMemoryExtraction } from './capabilities.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -150,12 +151,14 @@ export const handleMuelMention = async (
     const history = prepared.messages;
     inboundMessageId = userMessageId;
 
-    void enqueueMemoryExtractionJob(supabase, {
-      chatId,
-      messageId: userMessageId,
-      source: 'discord',
-      createdAt: new Date().toISOString(),
-    });
+    if (shouldEnqueueUserMemoryExtraction(userText)) {
+      void enqueueMemoryExtractionJob(supabase, {
+        chatId,
+        messageId: userMessageId,
+        source: 'discord',
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
     const relevantUserIds = mentionedUsers.size > 0 ? mentionedUsers.map((u) => u.id) : [message.author.id];
