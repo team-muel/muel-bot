@@ -249,8 +249,27 @@ Deno.serve((req: Request) => {
         nextPhaseType = "night_resolve";
         nextDurationSec = 3;
       } else if (phase.phase_type === "night_resolve") {
-        nextPhaseType = "day";
-        nextDurationSec = 180;
+        // Check win conditions after night actions resolved
+        const { data: players } = await supabase
+          .from("match_players")
+          .select("faction, alive")
+          .eq("match_id", matchId);
+          
+        const aliveAngels = players?.filter(p => p.alive && p.faction === "angel").length || 0;
+        const aliveDemons = players?.filter(p => p.alive && p.faction === "demon").length || 0;
+        
+        if (aliveDemons === 0) {
+          nextPhaseType = "ended";
+          await supabase.from("matches").update({ winner: "angels", status: "ended", ended_at: new Date().toISOString() }).eq("id", matchId);
+          await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "game_ended", visibility: "public", payload: { winner: "angels" } });
+        } else if (aliveDemons >= aliveAngels) {
+          nextPhaseType = "ended";
+          await supabase.from("matches").update({ winner: "demons", status: "ended", ended_at: new Date().toISOString() }).eq("id", matchId);
+          await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "game_ended", visibility: "public", payload: { winner: "demons" } });
+        } else {
+          nextPhaseType = "day";
+          nextDurationSec = 180;
+        }
       } else if (phase.phase_type === "day") {
         nextPhaseType = "vote";
         nextDurationSec = 60;
@@ -271,9 +290,11 @@ Deno.serve((req: Request) => {
         if (aliveDemons === 0) {
           nextPhaseType = "ended";
           await supabase.from("matches").update({ winner: "angels", status: "ended", ended_at: new Date().toISOString() }).eq("id", matchId);
+          await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "game_ended", visibility: "public", payload: { winner: "angels" } });
         } else if (aliveDemons >= aliveAngels) {
           nextPhaseType = "ended";
           await supabase.from("matches").update({ winner: "demons", status: "ended", ended_at: new Date().toISOString() }).eq("id", matchId);
+          await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "game_ended", visibility: "public", payload: { winner: "demons" } });
         } else {
           nextPhaseType = "night";
           nextDurationSec = 60;
@@ -296,11 +317,12 @@ Deno.serve((req: Request) => {
           .select()
           .single();
 
-        // Update match status (only if we didn't end it)
+        // Update match status (only if we didn't end it above).
+        // Note: current_phase_number is NOT a column in the schema; omit it here.
         if (nextPhaseType !== "ended") {
           await supabase
             .from("matches")
-            .update({ status: nextPhaseType, current_phase_number: nextPhaseNumber })
+            .update({ status: nextPhaseType })
             .eq("id", matchId);
         }
 

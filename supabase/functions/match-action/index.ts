@@ -76,24 +76,7 @@ Deno.serve((req: Request) => {
       throw conflict("invalid_phase", "지금은 행동을 할 수 없는 페이즈입니다.");
     }
 
-    // 3. Insert or update action
-    // Upsert so players can change their mind before the phase ends
-    const { error: actionError } = await supabase
-      .from("match_actions")
-      .upsert({
-        phase_id: currentPhase.id,
-        match_id: matchId,
-        actor_user_id: claims.sub,
-        action_type: actionType,
-        target_user_id: targetUserId,
-        submitted_at: new Date().toISOString()
-      }, { onConflict: 'phase_id, actor_user_id, action_type' });
-
-    if (actionError) throw actionError;
-
-    // 4. Return instant result if police investigation (or handle it in resolve phase)
-    // To match Mafia convention, police sees result instantly or at the end of night?
-    // Let's do instant for police to make UI responsive.
+    // 3. Calculate instant result if police investigation
     let investigationResult = null;
     if (actionType === "police_investigate" && targetUserId) {
       const { data: target } = await supabase
@@ -108,6 +91,22 @@ Deno.serve((req: Request) => {
         investigationResult = target.role === "demon" ? "demon" : "angel";
       }
     }
+
+    // 4. Insert or update action
+    // Upsert so players can change their mind before the phase ends
+    const { error: actionError } = await supabase
+      .from("match_actions")
+      .upsert({
+        phase_id: currentPhase.id,
+        match_id: matchId,
+        actor_user_id: claims.sub,
+        action_type: actionType,
+        target_user_id: targetUserId,
+        result: investigationResult ? { investigationResult } : null,
+        submitted_at: new Date().toISOString()
+      }, { onConflict: 'phase_id, actor_user_id, action_type' });
+
+    if (actionError) throw actionError;
 
     return jsonResponse({ success: true, investigationResult }, { origin });
   });
