@@ -5,12 +5,19 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   i integer;
+  target_url text;
 BEGIN
+  -- mafia.supabase_url 설정이 있으면 사용하고, 없으면 기존 하드코딩된 프로젝트 URL로 폴백
+  target_url := coalesce(
+    nullif(current_setting('mafia.supabase_url', true), ''),
+    'https://pqzmehtuwnxyspfhyucd.supabase.co'
+  );
+
   -- 1분에 12번 실행 (5초 간격)
   FOR i IN 1..12 LOOP
     -- URL은 현재 프로젝트의 Edge Function 주소 (권한 체크가 없으므로 헤더 생략 가능)
     PERFORM net.http_post(
-      url:='https://pqzmehtuwnxyspfhyucd.supabase.co/functions/v1/phase-advance',
+      url:= target_url || '/functions/v1/phase-advance',
       headers:='{"Content-Type": "application/json"}'::jsonb
     );
     
