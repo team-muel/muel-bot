@@ -1,36 +1,35 @@
-import { generateText, tool } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { z } from 'zod';
+import { generateText } from 'ai';
 import { config } from './config.js';
 import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
-import { fetchServerContext } from './muelContext.js';
-import { listSemanticMemories, formatSemanticMemories, disableUserMemorySearch } from './muelEmbeddings.js';
 import { retrieveRelevantMemories } from './memoryRetriever.js';
 import { formatCapabilityRegistryForPrompt, getPreflightGuard } from './capabilities.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
+import {
+  getFallbackTextModel,
+  getGeminiTextModel,
+  getGoogleSearchTool,
+  type MuelModelTask,
+} from './modelRegistry.js';
+import { buildAgentTools } from './agentTools.js';
 
 export type MuelAgentResult = {
   text: string;
   model: string;
   provider: 'gemini' | 'nvidia' | 'none';
+  metadata?: Record<string, unknown>;
 };
 
 const MAX_CONTEXT_MESSAGES = 12;
 const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
-const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+const CHAT_MODEL_TASK: MuelModelTask = 'chat';
 
 const TOOL_TRIGGER_RE =
-  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정)/iu;
+  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약)/iu;
 const CASUAL_GREETING_RE = /^(?:안녕|안뇽|ㅎㅇ|하이|hello|hi|hey|yo)[!.?~\s]*$/iu;
 const HEALTH_CHECK_RE = /^(?:대답\s*가능\??|응답\s*가능\??|살아\s*있(?:어|냐)\??|잘\s*돼\??|작동\s*해\??)$/iu;
-
-const unique = <T>(values: T[]): T[] => [...new Set(values.filter(Boolean))];
-
-const normalizeGeminiModelName = (modelName: string): string => modelName.replace(/^models\//, '').trim();
 
 const describeError = (error: unknown): string => {
   if (!(error instanceof Error)) return String(error);
@@ -102,8 +101,9 @@ const BASE_SYSTEM_PROMPT = [
   '- This server tracks YouTube subscriptions and community posts.',
   '- You do not browse arbitrary YouTube videos or recommend random current videos.',
   '- Weave is for dream records. Gomdori is a separate game-facing product.',
-  '- Use tools only when the user asks for specific recent news, posts, dreams, or past conversations.',
-  '- Do not use tools for greetings or simple back-and-forth.',
+  '- Use tools only when the user asks for a specific fact or summary. Do not call tools just to look busy.',
+  '- All tools are READ-ONLY. You cannot post messages, edit messages, or change Discord state.',
+  '- Available tools when triggered: get_server_context, search_semantic_memory, get_recent_messages, get_thread, get_user_profile, search_community_docs.',
   '- Never expose tool calls, tool names, stack traces, raw JSON, channel IDs, guild IDs, or internal function names to Discord users.',
   '',
   'BOUNDARIES:',
@@ -179,6 +179,26 @@ const saveGeneratedReply = async (
   }
 };
 
+type GenerateTextUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+};
+
+const normalizeUsage = (usage: GenerateTextUsage | undefined | null) => {
+  if (!usage) {
+    return { inputTokens: null as number | null, outputTokens: null as number | null, totalTokens: null as number | null };
+  }
+  const inputTokens = usage.inputTokens ?? usage.promptTokens ?? null;
+  const outputTokens = usage.outputTokens ?? usage.completionTokens ?? null;
+  const totalTokens = usage.totalTokens ?? (
+    inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null
+  );
+  return { inputTokens, outputTokens, totalTokens };
+};
+
 export const generateMuelReply = async (
   supabase: SupabaseClient,
   chatId: string,
@@ -192,6 +212,7 @@ export const generateMuelReply = async (
   mentionedUsers?: MentionedUserContext[],
   guildTopology?: string,
   sourceUserId?: string,
+  currentChannelId: string | null = null,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
   const preflightGuard = getPreflightGuard(userText);
@@ -203,6 +224,11 @@ export const generateMuelReply = async (
       text: preflightGuard.reply,
       model: `policy:${preflightGuard.reason}`,
       provider: 'none',
+      metadata: {
+        taskType: 'chat',
+        modelLane: CHAT_MODEL_TASK,
+        fallbackReason: preflightGuard.reason,
+      },
     };
   }
 
@@ -211,6 +237,11 @@ export const generateMuelReply = async (
       text: localFallback ?? 'AI 응답 엔진이 아직 연결되지 않았어. GEMINI_API_KEY 또는 NVIDIA_API_KEY를 설정해야 해.',
       model: localFallback ? 'local-fallback' : 'not-configured',
       provider: 'none',
+      metadata: {
+        taskType: 'chat',
+        modelLane: CHAT_MODEL_TASK,
+        fallbackReason: localFallback ? 'local-fallback' : 'not-configured',
+      },
     };
   }
 
@@ -249,58 +280,29 @@ export const generateMuelReply = async (
       return { role: msg.role, content };
     });
 
-  const tools: Record<string, any> = {
-    get_server_context: tool({
-      description: 'Fetch recent YouTube news, community posts, and dream records. Use this only for recent news, posts, or dream context.',
-      parameters: z.object({}),
-      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
-      execute: async () => {
-        try {
-          const context = await fetchServerContext();
-          return [
-            `[YouTube 구독] ${context.youtubeSourcesSummary}`,
-            `[꿈 네트워크] ${context.recentDreams}`,
-            context.recentPosts || '',
-          ].filter(Boolean).join('\n\n');
-        } catch {
-          return '데이터를 가져오는 데 실패했어.';
-        }
-      },
-    }),
-    search_semantic_memory: tool({
-      description: 'Search past important conversations with the user. Use this when the user refers to past discussions or asks if you remember something.',
-      parameters: z.object({
-        query: z.string().describe('The search query or topic to look up in past conversations.'),
-      }),
-      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
-      execute: async ({ query }: { query: string }) => {
-        try {
-          const results = await listSemanticMemories(supabase, { query, guildId, userIds: relevantUserIds, limit: 8 });
-          return formatSemanticMemories(results) || '관련된 기억이 없습니다.';
-        } catch (error) {
-          disableUserMemorySearch(error as { code?: string });
-          return '기억을 검색하는 데 실패했어.';
-        }
-      },
-    }),
-  };
+  const tools = buildAgentTools({
+    supabase,
+    currentChannelId,
+    currentGuildId: guildId,
+    relevantUserIds,
+  });
 
   const activeTools = shouldEnableTools(userText) ? tools : {};
   const providerFailures: string[] = [];
 
   const tryGenerate = async (
     aiModel: any,
-    provider: MuelAgentResult['provider'],
+    provider: 'gemini' | 'nvidia',
     modelName: string,
     modelTools: Record<string, any>,
   ): Promise<MuelAgentResult> => {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: aiModel,
       system: systemParts.join('\n'),
       messages,
       tools: modelTools,
       // @ts-ignore Kept for current AI SDK compatibility in this project.
-      maxSteps: 3,
+      maxSteps: 4,
       temperature: 0.7,
       maxOutputTokens: 1200,
     });
@@ -310,58 +312,68 @@ export const generateMuelReply = async (
       throw new Error(`${provider} returned an empty or unsafe response`);
     }
 
+    const tokens = normalizeUsage(usage as GenerateTextUsage | undefined);
+
     await saveGeneratedReply(supabase, chatId, finalText, provider, modelName);
-    return { text: finalText, model: modelName, provider };
+    return {
+      text: finalText,
+      model: modelName,
+      provider,
+      metadata: {
+        taskType: 'chat',
+        modelLane: CHAT_MODEL_TASK,
+        inputTokens: tokens.inputTokens,
+        outputTokens: tokens.outputTokens,
+        totalTokens: tokens.totalTokens,
+      },
+    };
   };
 
+  // 1. Primary: single-shot Gemini on the chat lane.
   if (config.googleGenerativeAiApiKey) {
-    const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
-    const geminiCandidates = unique([
-      normalizeGeminiModelName(config.muelAiModel),
-      ...GEMINI_FALLBACK_MODELS,
-    ]);
-
-    for (const modelName of geminiCandidates) {
+    const gemini = getGeminiTextModel(CHAT_MODEL_TASK);
+    if (gemini) {
       try {
-        const agentTools = { ...tools };
-        try {
-          // @ts-ignore Optional provider helper exists only in some @ai-sdk/google versions.
-          if (google.tools?.googleSearch) {
-            // @ts-ignore Optional provider helper exists only in some @ai-sdk/google versions.
-            agentTools.googleSearch = google.tools.googleSearch({});
-          }
-        } catch (error) {
-          console.warn('[muel-agent] failed to attach googleSearch tool', error);
+        const agentTools: Record<string, any> = { ...tools };
+        const googleSearch = getGoogleSearchTool();
+        if (googleSearch) {
+          agentTools.googleSearch = googleSearch;
         }
-
-        return await tryGenerate(
-          google(modelName),
-          'gemini',
-          modelName,
+        const result = await tryGenerate(
+          gemini.model,
+          gemini.provider,
+          gemini.modelId,
           shouldEnableTools(userText) ? agentTools : {},
         );
+        return result;
       } catch (error) {
         const reason = describeError(error);
-        providerFailures.push(`gemini:${modelName}:${reason}`);
-        console.warn('[muel-agent] Gemini candidate failed:', modelName, reason);
+        providerFailures.push(`gemini:${gemini.modelId}:${reason}`);
+        console.warn('[muel-agent] Gemini failed, escalating to fallback:', gemini.modelId, reason);
       }
+    } else {
+      providerFailures.push('gemini:provider-unavailable');
     }
   } else {
     providerFailures.push('gemini:not-configured');
   }
 
+  // 2. Fallback: NVIDIA single attempt. Verification deferred (key currently inactive).
   if (config.nvidiaApiKey) {
-    try {
-      const nvidia = createOpenAICompatible({
-        name: 'nvidia',
-        baseURL: 'https://integrate.api.nvidia.com/v1',
-        apiKey: config.nvidiaApiKey,
-      });
-      return await tryGenerate(nvidia(config.nvidiaModel), 'nvidia', `nvidia:${config.nvidiaModel}`, activeTools);
-    } catch (error) {
-      const reason = describeError(error);
-      providerFailures.push(`nvidia:${config.nvidiaModel}:${reason}`);
-      console.warn('[muel-agent] NVIDIA NIM failed:', reason);
+    const fallback = getFallbackTextModel(CHAT_MODEL_TASK);
+    if (fallback) {
+      try {
+        const result = await tryGenerate(fallback.model, fallback.provider, fallback.modelId, activeTools);
+        result.metadata = {
+          ...result.metadata,
+          fallbackReason: providerFailures.join(' | '),
+        };
+        return result;
+      } catch (error) {
+        const reason = describeError(error);
+        providerFailures.push(`nvidia:${config.nvidiaModel}:${reason}`);
+        console.warn('[muel-agent] NVIDIA NIM failed:', reason);
+      }
     }
   } else {
     providerFailures.push('nvidia:not-configured');
@@ -378,6 +390,11 @@ export const generateMuelReply = async (
       text: localFallback,
       model: 'local-fallback',
       provider: 'none',
+      metadata: {
+        taskType: 'chat',
+        modelLane: CHAT_MODEL_TASK,
+        fallbackReason: providerFailures.join(' | '),
+      },
     };
   }
 
