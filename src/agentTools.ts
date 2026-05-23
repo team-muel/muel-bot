@@ -1,0 +1,230 @@
+import { tool } from 'ai';
+import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { fetchServerContext } from './muelContext.js';
+import { getRecentMessages as getChannelBufferMessages } from './channelBuffer.js';
+import {
+  listSemanticMemories,
+  formatSemanticMemories,
+  disableUserMemorySearch,
+} from './muelEmbeddings.js';
+
+/**
+ * Stage 4.1 — Read-only Discord tools.
+ *
+ * All tools here are read-only. Write actions (post_message, add_reaction,
+ * edit_message) stay deferred to Stage 5+. Each tool returns a compact string
+ * the LLM can quote — never a structured object that requires further parsing
+ * inside the assistant.
+ *
+ * Tool surface intentionally narrow:
+ *   - get_server_context: cross-product snapshot (existing, retained).
+ *   - search_semantic_memory: per-user long-term memory (existing, retained).
+ *   - get_recent_messages: latest N messages from this channel's in-memory buffer.
+ *   - get_thread: read messages stored by muel-bot for a given thread context.
+ *   - get_user_profile: Muel profile + last interaction summary for a Discord user.
+ *   - search_community_docs: text-match against muel_community_digests.
+ *
+ * No tool here accesses the Discord client directly. Anything that needs live
+ * Discord API calls (e.g. reading arbitrary thread history beyond what Muel
+ * has seen) is out of scope until Stage 5 lands write authority too — that's
+ * where extra Discord scopes should be justified.
+ */
+
+export type AgentToolContext = {
+  supabase: SupabaseClient;
+  currentChannelId: string | null;
+  currentGuildId: string | null;
+  relevantUserIds: string[];
+};
+
+const truncateText = (text: string, max = 200): string => {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
+};
+
+const summarizeMessages = (messages: Array<{ authorName: string; content: string }>, limit = 12): string => {
+  return messages
+    .slice(-limit)
+    .map((m) => `${m.authorName}: ${truncateText(m.content, 240)}`)
+    .join('\n');
+};
+
+export const buildAgentTools = (ctx: AgentToolContext) => {
+  return {
+    get_server_context: tool({
+      description:
+        'Fetch a cross-product snapshot: YouTube subscriptions, recent dreams (Weave), and the latest community post cache. Use this only when the user asks about recent news, posts, or dream context broadly.',
+      parameters: z.object({}),
+      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
+      execute: async () => {
+        try {
+          const context = await fetchServerContext();
+          return [
+            `[YouTube 구독] ${context.youtubeSourcesSummary}`,
+            `[꿈 네트워크] ${context.recentDreams}`,
+            context.recentPosts || '',
+          ].filter(Boolean).join('\n\n');
+        } catch {
+          return '데이터를 가져오는 데 실패했어.';
+        }
+      },
+    }),
+
+    search_semantic_memory: tool({
+      description:
+        'Search past important conversations with the relevant Discord users. Use only when the user refers to a past discussion or explicitly asks if you remember something.',
+      parameters: z.object({
+        query: z.string().describe('The search query or topic to look up in past conversations.'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
+      execute: async ({ query }: { query: string }) => {
+        try {
+          const results = await listSemanticMemories(ctx.supabase, {
+            query,
+            guildId: ctx.currentGuildId,
+            userIds: ctx.relevantUserIds,
+            limit: 8,
+          });
+          return formatSemanticMemories(results) || '관련된 기억이 없습니다.';
+        } catch (error) {
+          disableUserMemorySearch(error as { code?: string });
+          return '기억을 검색하는 데 실패했어.';
+        }
+      },
+    }),
+
+    get_recent_messages: tool({
+      description:
+        'Read the latest messages in THIS channel that Muel has buffered. Use only when the user asks about what was just said in this channel. Returns at most 12 message lines.',
+      parameters: z.object({
+        limit: z.number().int().min(1).max(15).default(10).describe('How many recent messages to retrieve. Default 10, max 15.'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ limit }: { limit: number }) => {
+        if (!ctx.currentChannelId) {
+          return '현재 채널 컨텍스트가 없어. 이 도구는 채널 안에서만 쓸 수 있어.';
+        }
+        const buffered = getChannelBufferMessages(ctx.currentChannelId, limit);
+        if (buffered.length === 0) {
+          return '이 채널 버퍼에 최근 메시지가 없어.';
+        }
+        return summarizeMessages(buffered, Math.min(limit, 12));
+      },
+    }),
+
+    get_thread: tool({
+      description:
+        'Read the messages Muel has stored for a particular Discord thread (only threads where someone interacted with Muel). Useful when the user asks "what did we discuss in that thread".',
+      parameters: z.object({
+        threadId: z.string().describe('Discord thread/channel ID. Must be a 17–20 digit Discord snowflake.'),
+        limit: z.number().int().min(1).max(20).default(12).describe('How many messages to retrieve. Default 12, max 20.'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ threadId, limit }: { threadId: string; limit: number }) => {
+        if (!/^\d{17,20}$/.test(threadId)) {
+          return '쓰레드 ID 형식이 이상해. Discord snowflake (17~20자리 숫자)가 필요해.';
+        }
+        const { data, error } = await ctx.supabase
+          .from('muel_chats')
+          .select('id, source_thread_id')
+          .eq('source_thread_id', threadId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) return '쓰레드 조회에 실패했어.';
+        if (!data?.id) return '내가 본 적 없는 쓰레드야.';
+
+        const { data: messages, error: msgError } = await ctx.supabase
+          .from('muel_messages_v2')
+          .select('role, parts, metadata, created_at')
+          .eq('chat_id', data.id)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (msgError) return '쓰레드 메시지 조회에 실패했어.';
+        if (!messages || messages.length === 0) return '이 쓰레드에 저장된 메시지가 없어.';
+
+        const lines = messages.reverse().map((m: any) => {
+          const text = Array.isArray(m.parts)
+            ? m.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join(' ')
+            : '';
+          const speaker = m.role === 'assistant' ? 'Muel' : (m.metadata?.discordUsername ?? m.role);
+          return `${speaker}: ${truncateText(text, 240)}`;
+        });
+        return lines.join('\n');
+      },
+    }),
+
+    get_user_profile: tool({
+      description:
+        'Look up a Muel profile and recent interaction summary for a specific Discord user. Use only when the user asks about themselves or another user by Discord ID.',
+      parameters: z.object({
+        userId: z.string().describe('Discord user ID (17–20 digit snowflake).'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ userId }: { userId: string }) => {
+        if (!/^\d{17,20}$/.test(userId)) {
+          return '사용자 ID 형식이 이상해.';
+        }
+        const { data: identity, error: identityError } = await ctx.supabase
+          .from('muel_profile_identities')
+          .select('profile_id, username, metadata')
+          .eq('provider', 'discord')
+          .eq('provider_user_id', userId)
+          .maybeSingle();
+        if (identityError) return '프로필 조회에 실패했어.';
+        if (!identity?.profile_id) return '이 사용자의 Muel 프로필이 아직 만들어지지 않았어.';
+
+        const { data: profile } = await ctx.supabase
+          .from('muel_profiles')
+          .select('display_name, created_at, updated_at')
+          .eq('id', identity.profile_id)
+          .maybeSingle();
+
+        const { count: messageCount } = await ctx.supabase
+          .from('muel_messages_v2')
+          .select('id', { count: 'exact', head: true })
+          .eq('metadata->>discordUserId', userId);
+
+        const lines = [
+          `Muel 프로필: ${profile?.display_name ?? identity.username ?? userId}`,
+          `Discord 사용자명: ${identity.username ?? '알 수 없음'}`,
+          profile?.created_at ? `최초 기록: ${profile.created_at.slice(0, 10)}` : '',
+          typeof messageCount === 'number' ? `Muel과 주고받은 메시지: ${messageCount}개` : '',
+        ].filter(Boolean);
+
+        return lines.join('\n');
+      },
+    }),
+
+    search_community_docs: tool({
+      description:
+        'Search summarized community digests (muel_community_digests) by keyword. Use when the user asks about a past channel surge, recap, or summary topic.',
+      parameters: z.object({
+        query: z.string().min(1).describe('Keyword or phrase to match against digest titles and summaries.'),
+        limit: z.number().int().min(1).max(8).default(5),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ query, limit }: { query: string; limit: number }) => {
+        const ilike = `%${query.replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+        const { data, error } = await ctx.supabase
+          .from('muel_community_digests')
+          .select('title, summary, highlights, created_at, channel_id')
+          .or(`title.ilike.${ilike},summary.ilike.${ilike}`)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) return '커뮤니티 다이제스트 검색에 실패했어.';
+        if (!data || data.length === 0) return '관련된 다이제스트가 없어.';
+
+        return data.map((row: any) => {
+          const headline = `${row.created_at.slice(0, 10)} · ${row.title}`;
+          const summary = truncateText(row.summary ?? '', 220);
+          const highlights = Array.isArray(row.highlights) && row.highlights.length > 0
+            ? `  highlights: ${row.highlights.slice(0, 3).map((h: string) => truncateText(h, 100)).join(' / ')}`
+            : '';
+          return [headline, `  ${summary}`, highlights].filter(Boolean).join('\n');
+        }).join('\n\n');
+      },
+    }),
+  };
+};
