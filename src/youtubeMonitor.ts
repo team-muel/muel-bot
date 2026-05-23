@@ -1,7 +1,5 @@
 import { Client, ThreadAutoArchiveDuration, Message } from 'discord.js';
 import { generateObject } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
@@ -12,6 +10,8 @@ import { cachePost } from './youtubePostCache.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 import { enqueueJob } from './muelJobs.js';
+import { getPrimaryTextModel } from './modelRegistry.js';
+import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 
 type SourceRow = {
   id: number;
@@ -262,22 +262,6 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
   return fetchLatestVideo(channelId);
 };
 
-const getAiModel = () => {
-  if (config.googleGenerativeAiApiKey) {
-    const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
-    return google(config.muelAiModel);
-  }
-  if (config.nvidiaApiKey) {
-    const nvidia = createOpenAICompatible({
-      name: 'nvidia',
-      baseURL: 'https://integrate.api.nvidia.com/v1',
-      apiKey: config.nvidiaApiKey,
-    });
-    return nvidia(config.nvidiaModel);
-  }
-  return null;
-};
-
 const CommunityPostSchema = z.object({
   title: z.string().describe('한국어 Discord 카드 제목. 최대 50자. 원문 핵심을 충실히 요약한다.'),
   subtitle: z.string().optional().describe('선택 한국어 한 줄 설명. 최대 100자. 유용한 맥락이 없으면 생략한다.'),
@@ -317,14 +301,17 @@ const preserveSourceLiterals = (rawContent: string, data: EditedCommunityPost): 
 };
 
 export const editCommunityPost = async (authorName: string, rawContent: string): Promise<{ data: EditedCommunityPost, modelId: string } | null> => {
-  const model = getAiModel();
-  if (!model) {
+  const resolvedModel = getPrimaryTextModel('summary');
+  if (!resolvedModel) {
     return null;
   }
 
+  const supabase = getSupabaseClient();
+  const startedAt = Date.now();
+
   try {
-    const { object } = await generateObject({
-      model,
+    const { object, usage } = await generateObject({
+      model: resolvedModel.model,
       schema: CommunityPostSchema,
       prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card for Korean Discord users.
 
@@ -343,8 +330,27 @@ Source post:
 ${rawContent}`,
       temperature: 0.1, // Lower temperature for faithfulness
     });
-    return { data: preserveSourceLiterals(rawContent, object), modelId: model.modelId || 'unknown' };
+    void logMuelBackgroundAiEvent(supabase, {
+      source: 'youtube_monitor',
+      status: 'success',
+      taskType: 'summary',
+      resolvedModel: { provider: resolvedModel.provider, modelId: resolvedModel.modelId, task: resolvedModel.task },
+      startedAt,
+      usage,
+      metadata: { step: 'edit_community_post', authorName },
+    });
+    return { data: preserveSourceLiterals(rawContent, object), modelId: resolvedModel.modelId };
   } catch (error) {
+    void logMuelBackgroundAiEvent(supabase, {
+      source: 'youtube_monitor',
+      status: 'error',
+      taskType: 'summary',
+      resolvedModel: { provider: resolvedModel.provider, modelId: resolvedModel.modelId, task: resolvedModel.task },
+      startedAt,
+      errorClass: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      metadata: { step: 'edit_community_post', authorName },
+    });
     console.warn('[youtube] failed to edit community post with AI', error);
     return null;
   }
