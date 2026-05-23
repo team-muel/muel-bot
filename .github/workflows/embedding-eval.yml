@@ -1,0 +1,31 @@
+name: Embedding Eval
+
+on:
+  schedule:
+    # Mondays at 12:00 UTC — adjust if needed.
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+# Requires a GitHub repo secret named GOOGLE_GENERATIVE_AI_API_KEY with a valid
+# Gemini API key. The eval makes ~36 embedContent calls per run (12 anchors ×
+# 3 row roles), well within free-tier limits but produces a small chargeable
+# volume on paid keys.
+
+jobs:
+  eval:
+    name: weekly embedding eval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run embedding eval
+        env:
+          DISCORD_BOT_TOKEN: eval-dummy
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          MUEL_EMBEDDING_MODEL: gemini-embedding-001
+          MUEL_EMBEDDING_DIMENSIONS: '768'
+        run: npm run eval:embeddings

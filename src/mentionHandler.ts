@@ -13,6 +13,9 @@ import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
 import { logMuelAiEvent } from './muelAiEvents.js';
 import { shouldEnqueueUserMemoryExtraction } from './capabilities.js';
+import { classifyMentionIntent } from './muelRouter.js';
+import { acquireMentionSlot, formatLimitReplyMessage } from './mentionRateLimit.js';
+import { logMuelAgentAction } from './agentActions.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -60,7 +63,7 @@ const sweepRecentRequests = (now: number): void => {
   }
 };
 
-const shouldMuelRespond = async (message: Message, client: Client<true>): Promise<boolean> => {
+export const shouldMuelRespond = async (message: Message, client: Client<true>): Promise<boolean> => {
   if (message.author.bot) return false;
   if (!client.user) return false;
 
@@ -82,6 +85,25 @@ const shouldMuelRespond = async (message: Message, client: Client<true>): Promis
     message.content.startsWith('/muel');
 
   return isDM || explicitlyMentioned || isReplyToMuel || startsWithCommand;
+};
+
+const pickStringField = (record: Record<string, unknown> | undefined, key: string): string | null => {
+  if (!record) return null;
+  const value = record[key];
+  if (typeof value === 'string' && value.length > 0) return value;
+  return null;
+};
+
+const pickNumberField = (record: Record<string, unknown> | undefined, key: string): number | null => {
+  if (!record) return null;
+  const value = record[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return null;
+};
+
+const pickUnknownField = (record: Record<string, unknown> | undefined, key: string): unknown => {
+  if (!record) return undefined;
+  return record[key];
 };
 
 export const handleMuelMention = async (
@@ -116,6 +138,45 @@ export const handleMuelMention = async (
   recentRequests.set(requestKey, { content: userText, at: now });
 
   const supabase = getSupabaseClient();
+
+  // Rate limit / concurrency guard. Runs before any LLM work.
+  const limitDecision = acquireMentionSlot({ userId: message.author.id, channelId: message.channelId });
+  if (!limitDecision.allowed) {
+    await message.reply({
+      content: formatLimitReplyMessage(limitDecision),
+      allowedMentions: { parse: [], repliedUser: false },
+    }).catch(() => {});
+
+    const aiEventId = await logMuelAiEvent(supabase, {
+      status: 'fallback',
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      lightweightTurn: isLightweightTurn(userText),
+      taskType: 'chat',
+      modelLane: 'chat',
+      fallbackReason: limitDecision.reason,
+      latencyMs: 0,
+      metadata: {
+        discordMessageId: message.id,
+        retryHintSeconds: limitDecision.retryHintSeconds,
+      },
+    });
+
+    void logMuelAgentAction(supabase, {
+      triggerSource: 'mention',
+      triggerDetail: 'rate_limit',
+      status: 'rate_limited',
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      targetMessageId: message.id,
+      aiEventId,
+      metadata: { reason: limitDecision.reason, retryHintSeconds: limitDecision.retryHintSeconds },
+    });
+    return;
+  }
+
   let inboundMessageId: string | null = null;
   let chatId: string | null = null;
   const lightweightTurn = isLightweightTurn(userText);
@@ -160,6 +221,60 @@ export const handleMuelMention = async (
       });
     }
 
+    // Router classification is awaited so the spam gate can short-circuit.
+    // Even when the gate doesn't fire, the router row still lands in
+    // muel_ai_events with task_type='router' inside classifyMentionIntent.
+    const routerDecision = await classifyMentionIntent(supabase, {
+      chatId,
+      userText,
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+    });
+
+    if (
+      config.spamBlockEnabled &&
+      routerDecision &&
+      routerDecision.intent === 'spam' &&
+      routerDecision.confidence >= config.spamBlockMinConfidence
+    ) {
+      // Silently drop. No Discord reply (per "응답 생략" decision). Audit row
+      // captures the denial with router metadata for review.
+      const aiEventId = await logMuelAiEvent(supabase, {
+        status: 'fallback',
+        chatId,
+        messageId: inboundMessageId,
+        discordGuildId: message.guildId,
+        discordChannelId: message.channelId,
+        discordUserId: message.author.id,
+        latencyMs: Date.now() - replyStartedAt,
+        lightweightTurn,
+        taskType: 'chat',
+        modelLane: 'chat',
+        fallbackReason: 'spam_intent_blocked',
+        metadata: {
+          discordMessageId: message.id,
+          routerIntent: routerDecision.intent,
+          routerConfidence: routerDecision.confidence,
+        },
+      });
+      void logMuelAgentAction(supabase, {
+        triggerSource: 'mention',
+        triggerDetail: 'spam_intent_blocked',
+        status: 'denied',
+        discordGuildId: message.guildId,
+        discordChannelId: message.channelId,
+        discordUserId: message.author.id,
+        targetMessageId: message.id,
+        aiEventId,
+        metadata: {
+          routerIntent: routerDecision.intent,
+          routerConfidence: routerDecision.confidence,
+        },
+      });
+      return;
+    }
+
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);
     const relevantUserIds = mentionedUsers.size > 0 ? mentionedUsers.map((u) => u.id) : [message.author.id];
 
@@ -199,6 +314,7 @@ export const handleMuelMention = async (
       mentionedHistories,
       guildTopology,
       message.author.id,
+      message.channelId,
     ), config.mentionReplyTimeoutMs, 'generateMuelReply');
 
     const sent = await message.reply({
@@ -209,6 +325,15 @@ export const handleMuelMention = async (
       },
     });
 
+    const meta = (reply.metadata ?? {}) as Record<string, unknown>;
+    const taskType = pickStringField(meta, 'taskType') ?? 'chat';
+    const modelLane = pickStringField(meta, 'modelLane') ?? 'chat';
+    const fallbackReason = pickStringField(meta, 'fallbackReason');
+    const modelCandidates = pickUnknownField(meta, 'modelCandidates');
+    const inputTokens = pickNumberField(meta, 'inputTokens');
+    const outputTokens = pickNumberField(meta, 'outputTokens');
+    const totalTokens = pickNumberField(meta, 'totalTokens');
+
     console.log('[muel] mention replied', {
       event: 'mention_replied',
       chatId,
@@ -217,12 +342,21 @@ export const handleMuelMention = async (
       provider: reply.provider,
       latencyMs: Date.now() - replyStartedAt,
       lightweightTurn,
+      taskType,
+      modelLane,
+      routerIntent: routerDecision?.intent ?? null,
+      inputTokens,
+      outputTokens,
       discordMessageId: message.id,
       discordReplyId: sent.id,
     });
 
-    void logMuelAiEvent(supabase, {
-      status: reply.provider === 'none' ? 'fallback' : 'success',
+    const aiEventId = await logMuelAiEvent(supabase, {
+      status: reply.provider === 'none'
+        ? 'fallback'
+        : fallbackReason
+          ? 'fallback'
+          : 'success',
       chatId,
       messageId: inboundMessageId,
       responseMessageId: sent.id,
@@ -233,8 +367,39 @@ export const handleMuelMention = async (
       model: reply.model,
       latencyMs: Date.now() - replyStartedAt,
       lightweightTurn,
+      taskType,
+      modelLane,
+      fallbackReason,
+      modelCandidates,
+      inputTokens,
+      outputTokens,
+      totalTokens,
       metadata: {
         discordMessageId: message.id,
+        routerIntent: routerDecision?.intent ?? null,
+        routerConfidence: routerDecision?.confidence ?? null,
+      },
+    });
+
+    void logMuelAgentAction(supabase, {
+      triggerSource: 'mention',
+      status: 'responded',
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      targetMessageId: message.id,
+      responseMessageId: sent.id,
+      aiEventId,
+      metadata: {
+        provider: reply.provider,
+        model: reply.model,
+        latencyMs: Date.now() - replyStartedAt,
+        taskType,
+        modelLane,
+        routerIntent: routerDecision?.intent ?? null,
+        inputTokens,
+        outputTokens,
+        totalTokens,
       },
     });
   } catch (error) {
@@ -252,7 +417,7 @@ export const handleMuelMention = async (
       allowedMentions: { parse: [], repliedUser: false },
     }).catch(() => {});
 
-    void logMuelAiEvent(supabase, {
+    const aiEventId = await logMuelAiEvent(supabase, {
       status: 'error',
       chatId,
       messageId: inboundMessageId,
@@ -261,11 +426,26 @@ export const handleMuelMention = async (
       discordUserId: message.author.id,
       latencyMs: Date.now() - replyStartedAt,
       lightweightTurn,
+      taskType: 'chat',
+      modelLane: 'chat',
       errorClass: error instanceof Error ? error.name : typeof error,
       errorMessage: reason,
       metadata: {
         discordMessageId: message.id,
       },
     });
+
+    void logMuelAgentAction(supabase, {
+      triggerSource: 'mention',
+      status: 'error',
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordUserId: message.author.id,
+      targetMessageId: message.id,
+      aiEventId,
+      metadata: { errorMessage: reason.slice(0, 240) },
+    });
+  } finally {
+    limitDecision.release();
   }
 };
