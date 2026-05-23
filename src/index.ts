@@ -18,6 +18,14 @@ import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
 import { observeCommunityMessage } from './communityFlow.js';
+import {
+  buildHubSlashCommand,
+  handleHubSlashInteraction,
+  handleHubChannelMessage,
+  HUB_COMMAND_NAME,
+} from './conciergeHandler.js';
+import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
+import { shouldMuelRespond } from './mentionHandler.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 
 let readyAt: string | null = null;
@@ -103,11 +111,12 @@ const client = new Client({
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const commands = [
+  const commands: any[] = [
     helpCommand.toJSON(),
     subscribeCommand.toJSON(),
     pingCommand.toJSON(),
     diaryEntryPointCommand,
+    buildHubSlashCommand(),
   ];
 
   await rest.put(Routes.applicationCommands(readyClient.application.id), {
@@ -126,6 +135,7 @@ const buildHelpMessage = () => renderDiscordMessage([{
       name: '명령어',
       value: [
         '/구독 - YouTube 영상/게시글 자동 구독 관리',
+        '/허브 - 이 채널에서 뮤엘이 자연어로 응답할지 켜고 끄기 (채널 관리 권한 필요)',
         '/도움말 - 이 안내 보기',
         '/ping - 온라인 확인',
       ].join('\n'),
@@ -185,6 +195,11 @@ if (!config.enableHttpInteractions) {
       return;
     }
 
+    if (interaction.commandName === HUB_COMMAND_NAME) {
+      await handleHubSlashInteraction(interaction);
+      return;
+    }
+
     await interaction.reply({
       ...renderDiscordMessage([{
         type: 'info-card',
@@ -201,10 +216,34 @@ client.on(Events.MessageCreate, async (message) => {
   if (!client.isReady()) {
     return;
   }
+  if (message.author.bot) {
+    return;
+  }
 
-  await handleMuelMention(client, message);
+  let mentionPathHandled = false;
+  try {
+    mentionPathHandled = await shouldMuelRespond(message, client);
+  } catch (error) {
+    console.warn('[muel] shouldMuelRespond check failed', error);
+  }
 
-  if (!message.author.bot && message.content) {
+  if (mentionPathHandled) {
+    await handleMuelMention(client, message);
+  } else if (message.guildId && message.content) {
+    try {
+      const active = await isHubChannelActive(getSupabaseClient(), {
+        guildId: message.guildId,
+        channelId: message.channelId,
+      });
+      if (active) {
+        await handleHubChannelMessage(client, message);
+      }
+    } catch (error) {
+      console.warn('[hub] channel auto-respond failed', error);
+    }
+  }
+
+  if (message.content) {
     pushMessage(message.channelId, {
       authorId: message.author.id,
       authorName: message.author.displayName ?? message.author.username,
@@ -352,6 +391,7 @@ const server = http.createServer((request, response) => {
       mentionReplyTimeoutMs: config.mentionReplyTimeoutMs,
       enableHttpInteractions: config.enableHttpInteractions,
     },
+    hub: getHubChannelStatus(),
   }));
 });
 
