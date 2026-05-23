@@ -1,12 +1,10 @@
 import { generateObject } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 import { embedMuelText } from './muelEmbeddings.js';
-
-const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey || '' });
-const model = google(config.muelAiModel);
+import { getPrimaryTextModel } from './modelRegistry.js';
+import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 
 type MemoryWorkerStatus = {
   enabled: boolean;
@@ -83,6 +81,10 @@ CRITICAL RULES (QUALITY GATES):
 
 export async function processMemoryJob(job: any) {
   const supabase = getSupabaseClient();
+  const extractModel = getPrimaryTextModel('extract');
+  if (!extractModel) {
+    throw new Error('Memory extraction model is not configured');
+  }
   const { payload } = job;
   const { chatId, messageId } = payload;
 
@@ -123,12 +125,41 @@ export async function processMemoryJob(job: any) {
   if (!conversationText.trim()) return; // Nothing to analyze
 
   // 3. Generate Object
-  const { object } = await generateObject({
-    model,
-    schema: extractMemorySchema,
-    prompt: `${SYSTEM_PROMPT}\n\nCONVERSATION:\n${conversationText}`,
+  const extractStartedAt = Date.now();
+  let extractResult;
+  try {
+    extractResult = await generateObject({
+      model: extractModel.model,
+      schema: extractMemorySchema,
+      prompt: `${SYSTEM_PROMPT}\n\nCONVERSATION:\n${conversationText}`,
+    });
+  } catch (aiError) {
+    void logMuelBackgroundAiEvent(supabase, {
+      source: 'memory_worker',
+      status: 'error',
+      taskType: 'extract',
+      resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
+      startedAt: extractStartedAt,
+      chatId,
+      errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
+      errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+      metadata: { step: 'extract', messageId },
+    });
+    throw aiError;
+  }
+
+  void logMuelBackgroundAiEvent(supabase, {
+    source: 'memory_worker',
+    status: 'success',
+    taskType: 'extract',
+    resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
+    startedAt: extractStartedAt,
+    usage: extractResult.usage,
+    chatId,
+    metadata: { step: 'extract', messageId, candidateCount: extractResult.object.memories?.length ?? 0 },
   });
 
+  const object = extractResult.object;
   if (!object.memories || object.memories.length === 0) return;
 
   const sourceUserId = chatData.source_user_id;
@@ -153,10 +184,13 @@ export async function processMemoryJob(job: any) {
 
     if (userMemories && userMemories.length > 0) {
       const existingText = userMemories.map((m: any) => `ID: ${m.id}\nContent: ${m.content}`).join('\n\n');
-      const { object: mergeDecision } = await generateObject({
-        model,
-        schema: mergeMemorySchema,
-        prompt: `You are managing an AI's long-term memory for a user.
+      const mergeStartedAt = Date.now();
+      let mergeResult;
+      try {
+        mergeResult = await generateObject({
+          model: extractModel.model,
+          schema: mergeMemorySchema,
+          prompt: `You are managing an AI's long-term memory for a user.
 A new memory candidate has been extracted:
 "${memory.content}"
 
@@ -167,8 +201,34 @@ Task:
 - Choose "discard" ONLY if the existing memory already covers this exactly and the new info adds NO durable value.
 - Choose "merge" ONLY if the new candidate is on the exact same axis/topic and you can safely update the existing memory's wording to encompass both. Provide 'mergedContent' and 'targetId'.
 - Choose "insert" if the new candidate is related but DISTINCT (e.g. "dislikes AI-branded UX" is distinct from "values technical transparency"), or completely new. DO NOT over-merge independent preferences.`,
+        });
+      } catch (aiError) {
+        void logMuelBackgroundAiEvent(supabase, {
+          source: 'memory_worker',
+          status: 'error',
+          taskType: 'extract',
+          resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
+          startedAt: mergeStartedAt,
+          chatId,
+          errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
+          errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+          metadata: { step: 'merge', messageId },
+        });
+        throw aiError;
+      }
+
+      void logMuelBackgroundAiEvent(supabase, {
+        source: 'memory_worker',
+        status: 'success',
+        taskType: 'extract',
+        resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
+        startedAt: mergeStartedAt,
+        usage: mergeResult.usage,
+        chatId,
+        metadata: { step: 'merge', messageId, action: mergeResult.object.action },
       });
 
+      const mergeDecision = mergeResult.object;
       finalAction = mergeDecision.action;
       finalContent = mergeDecision.mergedContent || memory.content;
       targetId = mergeDecision.targetId;

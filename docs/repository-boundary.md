@@ -51,6 +51,11 @@ version: this repository owns the always-on Discord Gateway process, so
 the current no-cost runtime is Render Free kept warm by UptimeRobot. Vercel
 Functions are not the target runtime for this Gateway bot.
 
+AI runtime planning lives in `docs/ai-sdk-routing-plan.md`. The short version:
+`muel-bot` owns the primary AI SDK provider policy and should move toward
+task-specific model lanes for chat, routing, extraction, summaries, heavy
+fallback, and embeddings.
+
 ## Discord MCP Meaning
 
 If `mcp__muel_discord__` appears in Codex, that means the private Discord MCP server is exposed to the current Codex session.

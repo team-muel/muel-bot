@@ -8,6 +8,7 @@ export type MatchSummary = {
   contextType: string;
   contextId: string | null;
   maxPlayers: number;
+  winner: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -53,6 +54,7 @@ export function toMatchSummary(row: Record<string, unknown>): MatchSummary {
     contextType: String(row.context_type),
     contextId: typeof row.context_id === "string" ? row.context_id : null,
     maxPlayers: Number(row.max_players),
+    winner: typeof row.winner === "string" ? row.winner : null,
     createdAt: String(row.created_at),
     startedAt: typeof row.started_at === "string" ? row.started_at : null,
     endedAt: typeof row.ended_at === "string" ? row.ended_at : null,

@@ -1,11 +1,11 @@
 import { generateObject } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import type { Message } from 'discord.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
 import { getRecentMessages } from './channelBuffer.js';
+import { getPrimaryTextModel } from './modelRegistry.js';
+import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 
 const BUCKET_MS = 10 * 60_000;
 const MIN_MESSAGES_PER_BUCKET = 12;
@@ -110,34 +110,69 @@ export const summarizeCommunityFlowJob = async (
     return;
   }
 
-  if (!config.googleGenerativeAiApiKey) {
+  const summaryModel = getPrimaryTextModel('summary');
+  if (!summaryModel) {
     await supabase.from('muel_community_signals').update({
       status: 'error',
       metadata: {
         ...(signal.metadata ?? {}),
-        error: 'GEMINI_API_KEY not configured',
+        error: 'summary model not configured',
       },
     }).eq('id', signal.id);
     return;
   }
 
-  const google = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
   const transcript = samples
     .map((msg: any) => `${msg.authorName ?? msg.authorId}: ${String(msg.content ?? '').slice(0, 300)}`)
     .join('\n');
 
-  const result = await generateObject({
-    model: google(config.muelAiModel),
-    schema: digestSchema,
-    temperature: 0.2,
-    prompt: [
-      '너는 Discord 서버 흐름을 관찰하는 Muel의 큐레이터 모듈이다.',
-      '아래 샘플은 짧은 시간에 대화량이 증가한 채널의 메시지다.',
-      '원문에 없는 사실, 날짜, 숫자, 고유명사를 추가하지 말고, 서버 운영자가 흐름을 파악할 수 있게 한국어로 요약해라.',
-      '장난/잡담이면 과장하지 말고 잡담이라고 말해라.',
-      '',
-      transcript,
-    ].join('\n'),
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = await generateObject({
+      model: summaryModel.model,
+      schema: digestSchema,
+      temperature: 0.2,
+      prompt: [
+        '너는 Discord 서버 흐름을 관찰하는 Muel의 큐레이터 모듈이다.',
+        '아래 샘플은 짧은 시간에 대화량이 증가한 채널의 메시지다.',
+        '원문에 없는 사실, 날짜, 숫자, 고유명사를 추가하지 말고, 서버 운영자가 흐름을 파악할 수 있게 한국어로 요약해라.',
+        '장난/잡담이면 과장하지 말고 잡담이라고 말해라.',
+        '',
+        transcript,
+      ].join('\n'),
+    });
+  } catch (aiError) {
+    void logMuelBackgroundAiEvent(supabase, {
+      source: 'community_flow',
+      status: 'error',
+      taskType: 'summary',
+      resolvedModel: { provider: summaryModel.provider, modelId: summaryModel.modelId, task: summaryModel.task },
+      startedAt,
+      errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
+      errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+      metadata: {
+        signalId: signal.id,
+        guildId: signal.guild_id,
+        channelId: signal.channel_id,
+      },
+    });
+    throw aiError;
+  }
+
+  void logMuelBackgroundAiEvent(supabase, {
+    source: 'community_flow',
+    status: 'success',
+    taskType: 'summary',
+    resolvedModel: { provider: summaryModel.provider, modelId: summaryModel.modelId, task: summaryModel.task },
+    startedAt,
+    usage: result.usage,
+    metadata: {
+      signalId: signal.id,
+      guildId: signal.guild_id,
+      channelId: signal.channel_id,
+      messageCount: signal.message_count,
+    },
   });
 
   const { title, summary, highlights } = result.object;
@@ -151,7 +186,10 @@ export const summarizeCommunityFlowJob = async (
     summary,
     highlights,
     metadata: {
-      model: config.muelAiModel,
+      model: summaryModel.modelId,
+      provider: summaryModel.provider,
+      taskType: 'summary',
+      modelLane: summaryModel.task,
       source: 'volume_spike',
       messageCount: signal.message_count,
     },
