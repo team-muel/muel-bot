@@ -517,6 +517,11 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
       }
     }
 
+    if (config.aiqEnabled) {
+      (intentBase as any).actionButtons = [
+        { label: '이 소식 더 알아보기', customId: `research:enrich:youtube_post:${latest.id}`, style: 'secondary' as const },
+      ];
+    }
     const intent: MuelRenderablePart[] = [intentBase];
 
     const sentMessage = await channel.send(renderDiscordMessage(intent));
@@ -534,6 +539,9 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
         isShorts: isShortsEntry(latest),
         videoId: latest.id,
         publishedAt: latest.published,
+        actionButtons: config.aiqEnabled
+          ? [{ label: '이 소식 더 알아보기', customId: `research:enrich:youtube_video:${latest.id}`, style: 'secondary' as const }]
+          : undefined,
       }
     ];
     

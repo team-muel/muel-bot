@@ -54,6 +54,12 @@ Optional:
 - `ENABLE_YOUTUBE_MONITOR` — defaults to `true`
 - `ENABLE_HTTP_INTERACTIONS` — defaults to `false`
 - `MENTION_REPLY_TIMEOUT_MS` — defaults to `15000`
+- `AIQ_ENABLED` — toggles the "이 소식 더 알아보기" enrichment button. Default `true`.
+- `AIQ_SERVER_URL` — base URL of the AI-Q research backend (e.g. https://aiq-...run.app). Button replies with "backend not configured" when unset.
+- `AIQ_AUTH_TOKEN` — shared bearer token forwarded to the AI-Q proxy front. Set to whatever the front-proxy checks.
+- `AIQ_POLL_INTERVAL_MS` / `AIQ_POLL_TIMEOUT_MS` — worker polling cadence for AI-Q job status. Defaults: 5s / 600s.
+- `AIQ_DEFAULT_AGENT_TYPE` — `deep_researcher` (default) or `shallow_researcher`.
+- `AIQ_TOPIC_MAX_CHARS` — cap on topic string sent to AI-Q. Default 500.
 - `DISCORD_APPLICATION_PUBLIC_KEY` — required when `ENABLE_HTTP_INTERACTIONS=true`
 - `GOMDORI_APPLICATION_PUBLIC_KEY` — optional second signature key for Gomdori HTTP interactions
 

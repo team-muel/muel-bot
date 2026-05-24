@@ -53,4 +53,14 @@ export const config = {
   enableJobWorker: booleanEnv('ENABLE_JOB_WORKER', booleanEnv('ENABLE_MEMORY_WORKER', true)),
   enableYoutubeMonitor: booleanEnv('ENABLE_YOUTUBE_MONITOR', true),
   enableHttpInteractions: booleanEnv('ENABLE_HTTP_INTERACTIONS', false),
+  // AI-Q research backend (GCP Cloud Run). When AIQ_SERVER_URL is unset, the
+  // enrichment button responds with a "backend not configured" message and
+  // does not enqueue a job.
+  aiqServerUrl: optionalEnv('AIQ_SERVER_URL'),
+  aiqAuthToken: optionalEnv('AIQ_AUTH_TOKEN'),
+  aiqPollIntervalMs: Number(process.env.AIQ_POLL_INTERVAL_MS ?? 5_000),
+  aiqPollTimeoutMs: Number(process.env.AIQ_POLL_TIMEOUT_MS ?? 10 * 60_000),
+  aiqDefaultAgentType: optionalEnv('AIQ_DEFAULT_AGENT_TYPE') ?? 'deep_researcher',
+  aiqTopicMaxChars: Number(process.env.AIQ_TOPIC_MAX_CHARS ?? 500),
+  aiqEnabled: booleanEnv('AIQ_ENABLED', true),
 };
