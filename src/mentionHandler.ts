@@ -16,6 +16,7 @@ import { shouldEnqueueUserMemoryExtraction } from './capabilities.js';
 import { classifyMentionIntent } from './muelRouter.js';
 import { acquireMentionSlot, formatLimitReplyMessage } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
+import { REACTION_DONE, tagMessage } from './agentReactions.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -324,6 +325,8 @@ export const handleMuelMention = async (
         repliedUser: false,
       },
     });
+
+    void tagMessage(message, REACTION_DONE);
 
     const meta = (reply.metadata ?? {}) as Record<string, unknown>;
     const taskType = pickStringField(meta, 'taskType') ?? 'chat';

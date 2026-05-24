@@ -13,11 +13,12 @@ import {
 } from './subscribe.js';
 import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
 import { handleDiscordInteractions } from './discordInteractions.js';
-import { handleMuelMention } from './mentionHandler.js';
+import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
 import { observeCommunityMessage } from './communityFlow.js';
+import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
   buildHubSlashCommand,
   handleHubSlashInteraction,
@@ -25,13 +26,15 @@ import {
   HUB_COMMAND_NAME,
 } from './conciergeHandler.js';
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
-import { shouldMuelRespond } from './mentionHandler.js';
-import { renderDiscordMessage } from './rendering/discordRenderer.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
 let gomdoriReadyAt: string | null = null;
 let gomdoriLoginError: string | null = null;
+
+let lastRegisteredAt: string | null = null;
+let lastRegisteredCommandNames: string[] = [];
+let lastRegistrationError: string | null = null;
 
 const getRuntimeStatus = () => {
   const youtubeMonitor = getYouTubeMonitorStatus();
@@ -44,6 +47,7 @@ const getRuntimeStatus = () => {
   if (jobWorker.lastError) degradedReasons.push(`job_worker:${jobWorker.lastError}`);
   if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');
+  if (lastRegistrationError) degradedReasons.push(`command_registration:${lastRegistrationError}`);
 
   return {
     ok: degradedReasons.length === 0,
@@ -119,10 +123,35 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     buildHubSlashCommand(),
   ];
 
-  await rest.put(Routes.applicationCommands(readyClient.application.id), {
-    body: commands,
-  });
-  console.log('[discord] replaced global commands');
+  const intendedNames = commands.map((c: any) => c.name);
+  console.log('[discord] registering global commands', { count: commands.length, names: intendedNames });
+
+  try {
+    const result = await rest.put(Routes.applicationCommands(readyClient.application.id), {
+      body: commands,
+    });
+    const registeredNames = Array.isArray(result)
+      ? (result as Array<{ name?: string }>).map((row) => row?.name ?? '?').filter(Boolean)
+      : [];
+    lastRegisteredAt = new Date().toISOString();
+    lastRegisteredCommandNames = registeredNames.length > 0 ? registeredNames : intendedNames;
+    lastRegistrationError = null;
+    console.log('[discord] replaced global commands', {
+      attempted: intendedNames,
+      registered: registeredNames,
+      note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const responseBody = (error as { rawError?: unknown }).rawError;
+    lastRegistrationError = detail;
+    console.error('[discord] command registration failed', {
+      attempted: intendedNames,
+      detail,
+      responseBody,
+    });
+    throw error;
+  }
 };
 
 const buildHelpMessage = () => renderDiscordMessage([{
@@ -205,7 +234,7 @@ if (!config.enableHttpInteractions) {
         type: 'info-card',
         tone: 'warning',
         title: '알 수 없는 명령어',
-        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 입니다.',
+        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /허브, /ping 입니다.',
       }]),
       flags: [MessageFlags.Ephemeral],
     });
@@ -356,6 +385,40 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (request.url?.startsWith('/admin/reregister-commands') && request.method === 'POST') {
+    void (async () => {
+      const adminToken = process.env.MUEL_ADMIN_TOKEN?.trim();
+      const urlObj = new URL(request.url ?? '/', 'http://localhost');
+      const provided = urlObj.searchParams.get('token');
+      if (!adminToken || provided !== adminToken) {
+        response.writeHead(403, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: 'forbidden' }));
+        return;
+      }
+      if (!client.isReady()) {
+        response.writeHead(503, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: 'client not ready' }));
+        return;
+      }
+      try {
+        await registerCommands(client as Client<true>);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          ok: true,
+          lastRegisteredAt,
+          lastRegisteredCommandNames,
+        }));
+      } catch (err) {
+        response.writeHead(500, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    })();
+    return;
+  }
+
   const runtime = getRuntimeStatus();
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({
@@ -392,6 +455,11 @@ const server = http.createServer((request, response) => {
       enableHttpInteractions: config.enableHttpInteractions,
     },
     hub: getHubChannelStatus(),
+    commands: {
+      lastRegisteredAt,
+      registered: lastRegisteredCommandNames,
+      lastError: lastRegistrationError,
+    },
   }));
 });
 

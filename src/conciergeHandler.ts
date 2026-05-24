@@ -12,6 +12,7 @@ import { logMuelAiEvent } from './muelAiEvents.js';
 import { classifyMentionIntent, type MuelRouterIntent } from './muelRouter.js';
 import { acquireMentionSlot } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
+import { REACTION_DONE, REACTION_QUESTION, REACTION_SEEN, tagMessage } from './agentReactions.js';
 import {
   activateHubChannel,
   deactivateHubChannel,
@@ -317,6 +318,11 @@ export const handleHubChannelMessage = async (
       return;
     }
 
+    void tagMessage(message, REACTION_SEEN);
+    if (decision.intent === 'cs_help' || decision.intent === 'memory_query') {
+      void tagMessage(message, REACTION_QUESTION);
+    }
+
     void upsertDiscordMuelProfile(supabase, message.author).catch((profileError) => {
       console.warn('[hub] profile upsert failed', profileError);
     });
@@ -381,6 +387,8 @@ export const handleHubChannelMessage = async (
       console.warn('[hub] message.reply failed', err);
       return null;
     });
+
+    if (sent) void tagMessage(message, REACTION_DONE);
 
     const meta = (reply.metadata ?? {}) as Record<string, unknown>;
     const taskType = pickStringField(meta, 'taskType') ?? 'chat';
