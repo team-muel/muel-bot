@@ -20,6 +20,21 @@ export type CardSection = {
   inline?: boolean;
 };
 
+/**
+ * Interactive (custom_id) action buttons attached to a card. Distinct from
+ * the existing per-card link buttons ("원문 보기", "영상 보기" etc.) — these
+ * carry a custom_id that an InteractionCreate handler routes to.
+ *
+ * Convention: customId is `<feature>:<action>:<...args>`. Example:
+ *   research:enrich:youtube_post:Ug...   → triggers AI-Q enrichment for that post.
+ */
+export type CardActionButton = {
+  label: string;
+  customId: string;
+  style?: 'primary' | 'secondary' | 'success' | 'danger';
+  emoji?: string;
+};
+
 export type MuelRenderablePart =
   | {
       type: 'text';
@@ -37,6 +52,7 @@ export type MuelRenderablePart =
       }>;
       footer?: string;
       sourceUrl?: string;
+      actionButtons?: CardActionButton[];
     }
   | {
       type: 'youtube-community-post-card';
@@ -55,6 +71,7 @@ export type MuelRenderablePart =
         editorModel?: string;
         editedAt?: string;
       };
+      actionButtons?: CardActionButton[];
     }
   | {
       type: 'announcement-card';
@@ -65,6 +82,7 @@ export type MuelRenderablePart =
       author?: string;
       publishedAt?: string;
       sections?: CardSection[];
+      actionButtons?: CardActionButton[];
     }
   | {
       type: 'release-note-card';
@@ -72,6 +90,7 @@ export type MuelRenderablePart =
       version?: string;
       highlights: string[];
       sourceUrl?: string;
+      actionButtons?: CardActionButton[];
     }
   | {
       type: 'video-card';
@@ -81,6 +100,7 @@ export type MuelRenderablePart =
       isShorts?: boolean;
       videoId?: string;
       publishedAt?: string;
+      actionButtons?: CardActionButton[];
     }
   | {
       type: 'rich-card';
@@ -94,4 +114,5 @@ export type MuelRenderablePart =
       footer?: string;
       sourceUrl?: string;
       linkButton?: { label: string; url: string };
+      actionButtons?: CardActionButton[];
     };

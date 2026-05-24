@@ -26,6 +26,7 @@ import {
   HUB_COMMAND_NAME,
 } from './conciergeHandler.js';
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
+import { handleResearchEnrichButton, isResearchEnrichButton } from './researchEnrich.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -205,6 +206,13 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 if (!config.enableHttpInteractions) {
   client.on(Events.InteractionCreate, async (interaction) => {
+    // Button interactions (e.g., 'research:enrich:...' enrichment trigger).
+    if (interaction.isButton()) {
+      if (isResearchEnrichButton(interaction.customId)) {
+        await handleResearchEnrichButton(client as Client<true>, interaction);
+      }
+      return;
+    }
     if (!interaction.isChatInputCommand()) {
       return;
     }

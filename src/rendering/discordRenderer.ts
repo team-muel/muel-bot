@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
-import type { MuelRenderablePart, RenderTone, CardSection } from './types.js';
+import type { MuelRenderablePart, RenderTone, CardSection, CardActionButton } from './types.js';
 
 function toneColor(tone?: RenderTone): number | null {
   if (tone === 'muel') return 0xa2e61d;
@@ -44,10 +44,6 @@ function applyTone(embed: EmbedBuilder, tone?: RenderTone): EmbedBuilder {
   return color == null ? embed : embed.setColor(color);
 }
 
-/**
- * Convert CardSection list into APIEmbedField list with a "▼ " prefix.
- * Discord embeds support up to 25 fields; each name ≤ 256 chars, value ≤ 1024.
- */
 function sectionsToFields(sections: CardSection[] | undefined): APIEmbedField[] {
   if (!sections || sections.length === 0) return [];
   return sections.slice(0, 25).map((section) => ({
@@ -62,6 +58,34 @@ function extractYouTubeVideoId(url: string | undefined, fallbackId?: string): st
   if (!url) return null;
   const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
   return match?.[1] ?? null;
+}
+
+function actionButtonStyleToDiscord(style: CardActionButton['style']): ButtonStyle {
+  switch (style) {
+    case 'primary': return ButtonStyle.Primary;
+    case 'success': return ButtonStyle.Success;
+    case 'danger': return ButtonStyle.Danger;
+    case 'secondary':
+    default: return ButtonStyle.Secondary;
+  }
+}
+
+/**
+ * Build a row of interactive (custom_id) buttons from CardActionButton list.
+ * Discord allows up to 5 buttons per row; returns null if none provided.
+ */
+function buildActionButtonRow(buttons: CardActionButton[] | undefined): ActionRowBuilder<ButtonBuilder> | null {
+  if (!buttons || buttons.length === 0) return null;
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  for (const btn of buttons.slice(0, 5)) {
+    const button = new ButtonBuilder()
+      .setLabel(btn.label.slice(0, 80))
+      .setStyle(actionButtonStyleToDiscord(btn.style))
+      .setCustomId(btn.customId.slice(0, 100));
+    if (btn.emoji) button.setEmoji(btn.emoji);
+    row.addComponents(button);
+  }
+  return row;
 }
 
 export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreateOptions {
@@ -98,10 +122,12 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.footer) embed.setFooter({ text: part.footer.slice(0, 2048) });
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
+
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     } else if (part.type === 'youtube-community-post-card') {
       const imageUrl = part.imageUrls?.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url));
 
-      // Description: subtitle as bold first line (clear visual divider), then body.
       const descriptionLines: string[] = [];
       if (part.subtitle) descriptionLines.push(`**${truncateTitle(part.subtitle, 200)}**`);
       if (part.body) descriptionLines.push(truncate(part.body, imageUrl ? 1400 : 2400));
@@ -121,7 +147,6 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (imageUrl) embed.setImage(imageUrl);
 
-      // Highlights as a separate field with ▼ prefix — Perlica-style section break.
       if (part.highlights?.length) {
         embed.addFields({
           name: '▼ 주요 내용',
@@ -130,7 +155,8 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
         });
       }
 
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      // Link button: 원문 보기 (existing behavior)
+      const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setLabel('원문 보기')
           .setStyle(ButtonStyle.Link)
@@ -138,7 +164,12 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       );
 
       embeds.push(embed);
-      options.components = [...(options.components || []), row];
+      options.components = [...(options.components || []), linkRow];
+
+      // Action buttons (custom_id, e.g., enrichment trigger) go on a separate row
+      // so they don't conflict with the link button. Discord allows up to 5 rows.
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     } else if (part.type === 'announcement-card') {
       const embed = applyTone(
         new EmbedBuilder()
@@ -155,6 +186,9 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (sectionFields.length > 0) embed.addFields(sectionFields);
 
       embeds.push(embed);
+
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     } else if (part.type === 'release-note-card') {
       const embed = applyTone(
         new EmbedBuilder()
@@ -166,10 +200,10 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
 
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
+
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     } else if (part.type === 'video-card') {
-      // Upgraded video card: use a proper embed instead of plain text + auto-unfurl.
-      // Putting the URL on setURL (not in content) suppresses Discord's auto-unfurl,
-      // giving us a single clean embed instead of a duplicated preview.
       const videoId = extractYouTubeVideoId(part.url, part.videoId);
       const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
       const kind = part.isShorts ? '쇼츠' : '영상';
@@ -185,7 +219,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       );
       if (thumbnail) embed.setImage(thumbnail);
 
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setLabel('영상 보기')
           .setStyle(ButtonStyle.Link)
@@ -193,11 +227,11 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       );
 
       embeds.push(embed);
-      options.components = [...(options.components || []), row];
+      options.components = [...(options.components || []), linkRow];
+
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     } else if (part.type === 'rich-card') {
-      // The banner image lives in its own image-only embed so the visual lands
-      // at the TOP of the message (Discord places setImage() below the body
-      // within a single embed). The second embed carries the structured content.
       if (part.bannerImage && /^https?:\/\//i.test(part.bannerImage)) {
         const bannerEmbed = applyTone(new EmbedBuilder().setImage(part.bannerImage), part.tone);
         embeds.push(bannerEmbed);
@@ -221,14 +255,17 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       embeds.push(embed);
 
       if (part.linkButton?.url) {
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder()
             .setLabel(part.linkButton.label.slice(0, 80) || '열기')
             .setStyle(ButtonStyle.Link)
             .setURL(part.linkButton.url),
         );
-        options.components = [...(options.components || []), row];
+        options.components = [...(options.components || []), linkRow];
       }
+
+      const actionRow = buildActionButtonRow(part.actionButtons);
+      if (actionRow) options.components = [...(options.components || []), actionRow];
     }
   }
 
