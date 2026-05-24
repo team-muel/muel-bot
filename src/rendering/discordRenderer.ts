@@ -171,7 +171,6 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       // Putting the URL on setURL (not in content) suppresses Discord's auto-unfurl,
       // giving us a single clean embed instead of a duplicated preview.
       const videoId = extractYouTubeVideoId(part.url, part.videoId);
-      const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
       const kind = part.isShorts ? '쇼츠' : '영상';
       const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
       const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
@@ -183,7 +182,19 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
           .setFooter({ text: ['YouTube', kind, part.author, timeStr].filter(Boolean).join(' · ').slice(0, 2048) }),
         'neutral',
       );
-      if (thumbnail) embed.setImage(thumbnail);
+      // Thumbnail per video kind:
+      //  - Regular (16:9) → big setImage with hq720.jpg (1280x720, exists for
+      //    nearly all videos; cleaner than hqdefault.jpg's 480x360 4:3).
+      //  - Shorts (9:16) → small top-right setThumbnail. Letterboxing into the
+      //    wide bottom slot showed visible black side bars; the small slot hides
+      //    the aspect mismatch and gives body text more room.
+      if (videoId) {
+        if (part.isShorts) {
+          embed.setThumbnail(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+        } else {
+          embed.setImage(`https://i.ytimg.com/vi/${videoId}/hq720.jpg`);
+        }
+      }
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
