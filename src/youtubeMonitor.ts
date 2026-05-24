@@ -545,13 +545,11 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
       }
     ];
     
-    const sentMessage = await channel.send(renderDiscordMessage(intent));
-    
-    if (isShortsEntry(latest)) {
-      await createThreadFromMessage(sentMessage, threadTitle('쇼츠', latest), buildThreadBody('shorts', latest));
-    } else {
-      await createThreadFromMessage(sentMessage, threadTitle('영상', latest), `[영상 보기](${displayLink(latest)})`);
-    }
+    await channel.send(renderDiscordMessage(intent));
+    // No thread on video/shorts cards. The card itself carries title + thumbnail +
+    // "영상 보기" link button — a thread that just re-pastes the same URL forces
+    // Discord to draw a second auto-embed (the duplicate observed in production).
+    // Community-post overflow threads are still created in their own branch above.
   }
 
   // Cache post content for Muel context
