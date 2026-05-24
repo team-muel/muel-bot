@@ -532,6 +532,8 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
         author: latest.author,
         url: displayLink(latest),
         isShorts: isShortsEntry(latest),
+        videoId: latest.id,
+        publishedAt: latest.published,
       }
     ];
     

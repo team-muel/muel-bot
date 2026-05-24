@@ -1,5 +1,5 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions } from 'discord.js';
-import type { MuelRenderablePart, RenderTone } from './types.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
+import type { MuelRenderablePart, RenderTone, CardSection } from './types.js';
 
 function toneColor(tone?: RenderTone): number | null {
   if (tone === 'muel') return 0xa2e61d;
@@ -44,6 +44,26 @@ function applyTone(embed: EmbedBuilder, tone?: RenderTone): EmbedBuilder {
   return color == null ? embed : embed.setColor(color);
 }
 
+/**
+ * Convert CardSection list into APIEmbedField list with a "▼ " prefix.
+ * Discord embeds support up to 25 fields; each name ≤ 256 chars, value ≤ 1024.
+ */
+function sectionsToFields(sections: CardSection[] | undefined): APIEmbedField[] {
+  if (!sections || sections.length === 0) return [];
+  return sections.slice(0, 25).map((section) => ({
+    name: truncateTitle(`▼ ${section.header}`, 256),
+    value: truncate(section.content, 1024),
+    inline: section.inline ?? false,
+  }));
+}
+
+function extractYouTubeVideoId(url: string | undefined, fallbackId?: string): string | null {
+  if (fallbackId) return fallbackId;
+  if (!url) return null;
+  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  return match?.[1] ?? null;
+}
+
 export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreateOptions {
   const embeds: EmbedBuilder[] = [];
   const options: MessageCreateOptions = {
@@ -80,33 +100,39 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       embeds.push(embed);
     } else if (part.type === 'youtube-community-post-card') {
       const imageUrl = part.imageUrls?.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url));
-      const maxDescLength = imageUrl ? 800 : 1200;
-      const highlightText = part.highlights?.length
-        ? `\n---\n**주요 내용**\n${part.highlights.map((highlight) => `- ${highlight}`).join('\n')}`
-        : null;
 
-      const descriptionParts = [
-        part.subtitle ? `**${part.subtitle}**\n` : null,
-        part.body ? truncate(part.body, maxDescLength) : null,
-        highlightText,
-      ].filter((value): value is string => Boolean(value));
+      // Description: subtitle as bold first line (clear visual divider), then body.
+      const descriptionLines: string[] = [];
+      if (part.subtitle) descriptionLines.push(`**${truncateTitle(part.subtitle, 200)}**`);
+      if (part.body) descriptionLines.push(truncate(part.body, imageUrl ? 1400 : 2400));
+      const description = descriptionLines.join('\n\n');
 
       const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
       const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
 
       const embed = applyTone(
         new EmbedBuilder()
-          .setDescription(descriptionParts.join('\n') || null)
-          .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' | ').slice(0, 2048) }),
+          .setDescription(description || null)
+          .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' · ').slice(0, 2048) }),
         part.tone,
       );
 
       if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (imageUrl) embed.setImage(imageUrl);
+
+      // Highlights as a separate field with ▼ prefix — Perlica-style section break.
+      if (part.highlights?.length) {
+        embed.addFields({
+          name: '▼ 주요 내용',
+          value: truncate(part.highlights.map((h) => `- ${h}`).join('\n'), 1024),
+          inline: false,
+        });
+      }
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
-          .setLabel('원문')
+          .setLabel('원문 보기')
           .setStyle(ButtonStyle.Link)
           .setURL(part.sourceUrl || 'https://youtube.com'),
       );
@@ -117,13 +143,16 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       const embed = applyTone(
         new EmbedBuilder()
           .setDescription(part.body ? truncate(part.body, 3900) : null)
-          .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' | ').slice(0, 2048) }),
+          .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' · ').slice(0, 2048) }),
         'muel',
       );
 
       if (part.title) embed.setTitle(truncateTitle(part.title, 256));
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (part.imageUrl) embed.setImage(part.imageUrl);
+
+      const sectionFields = sectionsToFields(part.sections);
+      if (sectionFields.length > 0) embed.addFields(sectionFields);
 
       embeds.push(embed);
     } else if (part.type === 'release-note-card') {
@@ -138,7 +167,68 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
     } else if (part.type === 'video-card') {
-      textContents.push(`**${part.author}** - YouTube ${part.isShorts ? '쇼츠' : '영상'} 업로드\n${part.title}\n${part.url}`);
+      // Upgraded video card: use a proper embed instead of plain text + auto-unfurl.
+      // Putting the URL on setURL (not in content) suppresses Discord's auto-unfurl,
+      // giving us a single clean embed instead of a duplicated preview.
+      const videoId = extractYouTubeVideoId(part.url, part.videoId);
+      const thumbnail = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
+      const kind = part.isShorts ? '쇼츠' : '영상';
+      const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
+      const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
+
+      const embed = applyTone(
+        new EmbedBuilder()
+          .setTitle(truncateTitle(part.title, 256))
+          .setURL(part.url)
+          .setFooter({ text: ['YouTube', kind, part.author, timeStr].filter(Boolean).join(' · ').slice(0, 2048) }),
+        'neutral',
+      );
+      if (thumbnail) embed.setImage(thumbnail);
+
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setLabel('영상 보기')
+          .setStyle(ButtonStyle.Link)
+          .setURL(part.url),
+      );
+
+      embeds.push(embed);
+      options.components = [...(options.components || []), row];
+    } else if (part.type === 'rich-card') {
+      // The banner image lives in its own image-only embed so the visual lands
+      // at the TOP of the message (Discord places setImage() below the body
+      // within a single embed). The second embed carries the structured content.
+      if (part.bannerImage && /^https?:\/\//i.test(part.bannerImage)) {
+        const bannerEmbed = applyTone(new EmbedBuilder().setImage(part.bannerImage), part.tone);
+        embeds.push(bannerEmbed);
+      }
+
+      const descriptionLines: string[] = [];
+      if (part.subtitle) descriptionLines.push(`**${truncateTitle(part.subtitle, 200)}**`);
+      if (part.body) descriptionLines.push(truncate(part.body, 3000));
+      const description = descriptionLines.join('\n\n');
+
+      const embed = applyTone(new EmbedBuilder(), part.tone);
+      if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (description) embed.setDescription(description);
+      if (part.thumbnail && /^https?:\/\//i.test(part.thumbnail)) embed.setThumbnail(part.thumbnail);
+      if (part.sourceUrl) embed.setURL(part.sourceUrl);
+      if (part.footer) embed.setFooter({ text: part.footer.slice(0, 2048) });
+
+      const sectionFields = sectionsToFields(part.sections);
+      if (sectionFields.length > 0) embed.addFields(sectionFields);
+
+      embeds.push(embed);
+
+      if (part.linkButton?.url) {
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel(part.linkButton.label.slice(0, 80) || '열기')
+            .setStyle(ButtonStyle.Link)
+            .setURL(part.linkButton.url),
+        );
+        options.components = [...(options.components || []), row];
+      }
     }
   }
 
