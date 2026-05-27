@@ -186,8 +186,10 @@ export const handleResearchEnrichButton = async (
   }
 
   // Step 5: ephemeral ack (must happen within 3s of click).
+  // 시간 안내 톤: deep_researcher가 보통 10~20분 걸리므로 "1~3분"은 사실과
+  // 다름. 사용자에게는 막연한 안내로 두고 catch에서 분류 안내 분기.
   await interaction.reply({
-    content: '조사 시작했어요. 완료되면 DM으로 결과 보내드릴게요. (보통 1~3분)',
+    content: '조사 시작했어요. 완료되면 DM으로 결과 보내드릴게요. (시간이 좀 걸릴 수 있어요)',
     flags: [MessageFlags.Ephemeral],
   }).catch(() => {});
 
