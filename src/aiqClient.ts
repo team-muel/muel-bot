@@ -88,13 +88,26 @@ const baseUrl = (): string => {
   return config.aiqServerUrl.replace(/\/+$/, '');
 };
 
-const requestJson = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
+// Default 30s timeout for short-lived AI-Q endpoints (health, agents, status,
+// report, state, cancel). `submitJob` overrides with a longer cap because
+// queue intake can stall during AI-Q cold start or backlog, and a hard 30s abort
+// there manifests as immediate "조사 중 문제가 생겼어요" before any external
+// job id is even assigned.
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const SUBMIT_REQUEST_TIMEOUT_MS = 120_000;
+
+const requestJson = async <T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+): Promise<T> => {
   const url = `${baseUrl()}${path}`;
   const response = await fetch(url, {
     method,
     headers: headers(),
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
   let json: unknown = null;
@@ -155,7 +168,12 @@ export const submitJob = async (input: AiqSubmitInput): Promise<AiqJobStatusResp
   if (input.jobId) body.job_id = input.jobId;
   if (input.expirySeconds) body.expiry_seconds = input.expirySeconds;
 
-  const raw = await requestJson<Record<string, unknown>>('POST', '/v1/jobs/async/submit', body);
+  const raw = await requestJson<Record<string, unknown>>(
+    'POST',
+    '/v1/jobs/async/submit',
+    body,
+    SUBMIT_REQUEST_TIMEOUT_MS,
+  );
   return toCamel<AiqJobStatusResponse>(raw);
 };
 
