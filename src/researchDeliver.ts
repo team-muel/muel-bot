@@ -73,7 +73,8 @@ const buildDmRenderable = (args: {
     header: s.header,
     content: s.content,
   }));
-  const footerParts = ['NVIDIA AI-Q · 리서치 결과'];
+  // 사용자는 Muel이 조사한 것으로 인지하므로 외부 시스템(AI-Q) 명칭은 footer에서 제외.
+  const footerParts = ['Muel 리서치'];
   if (typeof args.sourceCited === 'number') footerParts.push(`인용 ${args.sourceCited}개`);
   return [
     {
@@ -268,10 +269,24 @@ export const processResearchUserDmJob = async (
       .eq('id', rowId);
 
     if (payload.interactionApplicationId && payload.interactionToken) {
+      // 오류 분류 안내 — 사용자에게는 외부 시스템(AI-Q) 명칭을 노출하지 않고
+      // 원인 범주만 자연스럽게 전달.
+      let userMsg: string;
+      if (status === 'timeout' || errMsg.includes('timed out')) {
+        // polling timeout: AI-Q가 terminal status를 안 보낸 채 한도 초과. 작중에
+        // 흔히 사용자가 "다시 시도"해도 즉시 풀리지는 않으므로 잠시 후 표현.
+        userMsg = '조사가 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 시도해주세요.';
+      } else if (isClient && (error as AiqClientError).status === 0) {
+        // 네트워크/abort 류 (e.g. submitJob 30s 시절 패턴). PR #7 이후로는
+        // 드물지만 anyway 분기.
+        userMsg = '조사를 시작하지 못했어요. 잠시 뒤에 다시 시도해주세요.';
+      } else {
+        userMsg = '조사 중 문제가 생겼어요. 잠시 뒤에 다시 시도해주세요.';
+      }
       await followUpEphemeral(
         payload.interactionApplicationId,
         payload.interactionToken,
-        '조사 중 문제가 생겼어요. 잠시 뒤에 다시 시도해주세요.',
+        userMsg,
       );
     }
     throw error;
