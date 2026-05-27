@@ -12,6 +12,8 @@ import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 import { enqueueJob } from './muelJobs.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
+import { fetchYouTubeChannelMetadata, fetchYouTubeVideoMetadata, type YouTubeChannelMetadata, type YouTubeVideoMetadata } from './youtubeMetadataClient.js';
+import { buildVideoItemInput, upsertYouTubeItem } from './youtubeItemStore.js';
 
 type SourceRow = {
   id: number;
@@ -32,6 +34,13 @@ type LatestEntry = {
   published: string;
   isShorts?: boolean;
   images?: string[];
+};
+
+type LatestWithMetadata = {
+  latest: LatestEntry;
+  channelId: string;
+  videoMetadata: YouTubeVideoMetadata | null;
+  channelMetadata: YouTubeChannelMetadata | null;
 };
 
 let timer: NodeJS.Timeout | null = null;
@@ -248,7 +257,7 @@ const displayLink = (latest: LatestEntry): string => {
 const threadTitle = (prefix: string, latest: LatestEntry): string =>
   truncate(`${prefix} ${latest.title || latest.author}`, 90);
 
-const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
+const fetchLatest = async (row: SourceRow): Promise<LatestWithMetadata | null> => {
   const channelId = await parseYouTubeChannelId(row.url);
   if (!channelId) {
     return null;
@@ -256,10 +265,30 @@ const fetchLatest = async (row: SourceRow): Promise<LatestEntry | null> => {
 
   if (getMode(row) === 'posts') {
     const post = await scrapeLatestCommunityPostByInnerTube(channelId, config.youtubeFetchTimeoutMs);
-    return post ? toLatestEntry(post) : null;
+    return post
+      ? { latest: toLatestEntry(post), channelId, videoMetadata: null, channelMetadata: null }
+      : null;
   }
 
-  return fetchLatestVideo(channelId);
+  const latest = await fetchLatestVideo(channelId);
+  if (!latest) return null;
+
+  let videoMetadata: YouTubeVideoMetadata | null = null;
+  let channelMetadata: YouTubeChannelMetadata | null = null;
+  if (config.youtubeDataApiKey) {
+    try {
+      videoMetadata = await fetchYouTubeVideoMetadata(latest.id);
+    } catch (error) {
+      console.warn('[youtube] video metadata fetch failed', error);
+    }
+    try {
+      channelMetadata = await fetchYouTubeChannelMetadata(videoMetadata?.channelId ?? channelId);
+    } catch (error) {
+      console.warn('[youtube] channel metadata fetch failed', error);
+    }
+  }
+
+  return { latest, channelId, videoMetadata, channelMetadata };
 };
 
 const CommunityPostSchema = z.object({
@@ -449,10 +478,44 @@ const updateRowError = async (row: SourceRow, error: unknown): Promise<void> => 
 
 const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'skipped'> => {
   const mode = getMode(row);
-  const latest = await fetchLatest(row);
-  if (!latest) {
+  const fetched = await fetchLatest(row);
+  if (!fetched) {
     await updateRowNoLatest(row);
     return 'skipped';
+  }
+  const { latest, channelId, videoMetadata, channelMetadata } = fetched;
+
+  if (mode === 'posts') {
+    await upsertYouTubeItem(getSupabaseClient(), {
+      sourceId: row.id,
+      kind: 'community_post',
+      youtubeId: latest.id,
+      channelId,
+      channelTitle: latest.author,
+      title: latest.title,
+      description: latest.content,
+      url: displayLink(latest),
+      publishedAt: latest.published || null,
+      isShorts: false,
+      raw: {
+        source: 'youtube_innertube',
+        images: latest.images ?? [],
+      },
+    });
+  } else {
+    await upsertYouTubeItem(
+      getSupabaseClient(),
+      buildVideoItemInput({
+        sourceId: row.id,
+        latest: {
+          ...latest,
+          link: displayLink(latest),
+          isShorts: isShortsEntry(latest),
+        },
+        metadata: videoMetadata,
+        channel: channelMetadata,
+      }),
+    );
   }
 
   const previous = mode === 'posts' ? row.last_post_signature : row.last_post_id;
@@ -529,6 +592,7 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     if (overflow) {
       await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
     }
+
   } else {
     const intent: MuelRenderablePart[] = [
       {

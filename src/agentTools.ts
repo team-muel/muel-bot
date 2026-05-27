@@ -62,6 +62,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
           const context = await fetchServerContext();
           return [
             `[YouTube 구독] ${context.youtubeSourcesSummary}`,
+            context.recentYouTubeItems || '',
             `[꿈 네트워크] ${context.recentDreams}`,
             context.recentPosts || '',
           ].filter(Boolean).join('\n\n');

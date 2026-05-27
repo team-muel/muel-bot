@@ -1,10 +1,12 @@
 import { getSupabaseClient } from './supabase.js';
 import { formatPostsForContext } from './youtubePostCache.js';
+import { formatRecentYouTubeItemsForContext } from './youtubeItemStore.js';
 
 export type ServerContext = {
   recentDreams: string;
   youtubeSourcesSummary: string;
   recentPosts: string;
+  recentYouTubeItems: string;
 };
 
 const formatDreamSummary = (dreams: Array<{
@@ -55,7 +57,7 @@ const formatSourcesSummary = (sources: Array<{
 export const fetchServerContext = async (): Promise<ServerContext> => {
   const supabase = getSupabaseClient();
 
-  const [dreamsResult, sourcesResult] = await Promise.allSettled([
+  const [dreamsResult, sourcesResult, youtubeItemsResult] = await Promise.allSettled([
     supabase
       .from('dreams')
       .select('main_tag, emotions, keywords, created_at')
@@ -65,6 +67,7 @@ export const fetchServerContext = async (): Promise<ServerContext> => {
       .from('sources')
       .select('name, last_check_status, last_check_at')
       .eq('is_active', true),
+    formatRecentYouTubeItemsForContext(supabase, 5),
   ]);
 
   const dreams = dreamsResult.status === 'fulfilled' && dreamsResult.value.data
@@ -79,5 +82,6 @@ export const fetchServerContext = async (): Promise<ServerContext> => {
     recentDreams: formatDreamSummary(dreams),
     youtubeSourcesSummary: formatSourcesSummary(sources),
     recentPosts: formatPostsForContext(3),
+    recentYouTubeItems: youtubeItemsResult.status === 'fulfilled' ? youtubeItemsResult.value : '',
   };
 };

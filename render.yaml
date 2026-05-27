@@ -23,6 +23,8 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: YOUTUBE_DATA_API_KEY
+        sync: false
       - key: MUEL_AI_MODEL
         value: gemini-3.5-flash
       - key: MUEL_CHAT_MODEL

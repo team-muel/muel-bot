@@ -47,6 +47,7 @@ export const config = {
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
+  youtubeDataApiKey: optionalEnv('YOUTUBE_DATA_API_KEY'),
   mentionReplyTimeoutMs: Number(process.env.MENTION_REPLY_TIMEOUT_MS ?? 15_000),
   spamBlockEnabled: booleanEnv('MUEL_SPAM_BLOCK_ENABLED', true),
   spamBlockMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MIN_CONFIDENCE ?? 0.75),
@@ -65,6 +66,6 @@ export const config = {
   // in ~30s-3min and is unaffected. Override with AIQ_POLL_TIMEOUT_MS env.
   aiqPollTimeoutMs: Number(process.env.AIQ_POLL_TIMEOUT_MS ?? 25 * 60_000),
   aiqDefaultAgentType: optionalEnv('AIQ_DEFAULT_AGENT_TYPE') ?? 'deep_researcher',
-  aiqTopicMaxChars: Number(process.env.AIQ_TOPIC_MAX_CHARS ?? 500),
+  aiqTopicMaxChars: Number(process.env.AIQ_TOPIC_MAX_CHARS ?? 2_000),
   aiqEnabled: booleanEnv('AIQ_ENABLED', true),
 };

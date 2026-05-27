@@ -3,6 +3,7 @@ import { MessageFlags } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
+import { buildResearchTopicFromItem, getYouTubeItemByOrigin } from './youtubeItemStore.js';
 
 /**
  * Stage AI-Q: "이 소식 더 알아보기" button handler.
@@ -45,7 +46,7 @@ const safeTrim = (s: string, max: number): string => {
   return t.slice(0, max - 1).trimEnd() + '…';
 };
 
-const extractTopic = (message: Message, originTable: string): string | null => {
+const extractTopicFromMessage = (message: Message, originTable: string): string | null => {
   const embed = message.embeds?.[0];
   if (!embed) return null;
   const titleText = embed.title ?? '';
@@ -72,6 +73,23 @@ const extractTopic = (message: Message, originTable: string): string | null => {
   const tag = originTable === 'youtube_video' ? '영상 주제' : '게시글 주제';
   const finalTopic = `${tag} "${topic}"에 대한 맥락과 최근 동향을 한국어로 조사해줘. 관련된 사건, 출시 일정, 사용자 반응, 공식 발표가 있다면 함께 정리하고 출처를 인용해줘.`;
   return safeTrim(finalTopic, config.aiqTopicMaxChars);
+};
+
+const resolveResearchTopic = async (
+  message: Message,
+  originTable: string,
+  originId: string,
+): Promise<{ topic: string | null; topicSource: 'cache' | 'embed' | 'none' }> => {
+  const cached = await getYouTubeItemByOrigin(getSupabaseClient(), originTable, originId);
+  if (cached) {
+    return {
+      topic: safeTrim(buildResearchTopicFromItem(originTable, cached), config.aiqTopicMaxChars),
+      topicSource: 'cache',
+    };
+  }
+
+  const topic = extractTopicFromMessage(message, originTable);
+  return { topic, topicSource: topic ? 'embed' : 'none' };
 };
 
 export const isResearchEnrichButton = (customId: string): boolean =>
@@ -106,7 +124,7 @@ export const handleResearchEnrichButton = async (
     return;
   }
 
-  const topic = extractTopic(interaction.message as Message, parsed.originTable);
+  const { topic, topicSource } = await resolveResearchTopic(interaction.message as Message, parsed.originTable, parsed.originId);
   if (!topic) {
     await interaction.reply({
       content: '이 게시물에서 조사 주제를 뽑지 못했어요.',
@@ -136,6 +154,7 @@ export const handleResearchEnrichButton = async (
       metadata: {
         username: interaction.user.username,
         originMessageJumpUrl,
+        topicSource,
       },
     })
     .select('id')

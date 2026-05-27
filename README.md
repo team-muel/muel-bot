@@ -47,6 +47,7 @@ Optional:
 - `MUEL_EXTRACT_MODEL` — optional structured extraction lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_SUMMARY_MODEL` — optional community/YouTube summary lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_HEAVY_MODEL` — optional escalation lane; falls back to `MUEL_AI_MODEL`
+- `YOUTUBE_DATA_API_KEY` — optional. When set, Muel enriches detected videos with YouTube Data API metadata for better curation context and research prompts. Detection still uses `videos.xml`.
 - `MUEL_EMBEDDING_MODEL` — defaults to `gemini-embedding-001`
 - `MUEL_EMBEDDING_DIMENSIONS` — defaults to `768`
 - `NVIDIA_API_KEY` and `NVIDIA_MODEL` — optional fallback provider, default model `meta/llama-3.3-70b-instruct`
@@ -59,7 +60,7 @@ Optional:
 - `AIQ_AUTH_TOKEN` — shared bearer token forwarded to the AI-Q proxy front. Set to whatever the front-proxy checks.
 - `AIQ_POLL_INTERVAL_MS` / `AIQ_POLL_TIMEOUT_MS` — worker polling cadence for AI-Q job status. Defaults: 5s / 1500s.
 - `AIQ_DEFAULT_AGENT_TYPE` — `deep_researcher` (default) or `shallow_researcher`.
-- `AIQ_TOPIC_MAX_CHARS` — cap on topic string sent to AI-Q. Default 500.
+- `AIQ_TOPIC_MAX_CHARS` — cap on topic string sent to AI-Q. Default 2000.
 - `DISCORD_APPLICATION_PUBLIC_KEY` — required when `ENABLE_HTTP_INTERACTIONS=true`
 - `GOMDORI_APPLICATION_PUBLIC_KEY` — optional second signature key for Gomdori HTTP interactions
 
