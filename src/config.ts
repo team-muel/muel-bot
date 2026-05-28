@@ -60,10 +60,10 @@ export const config = {
   aiqAuthToken: optionalEnv('AIQ_AUTH_TOKEN'),
   aiqPollIntervalMs: Number(process.env.AIQ_POLL_INTERVAL_MS ?? 5_000),
   // deep_researcher (max_loops=2) takes ~15-20 min per the AI-Q deploy notes,
-  // so the previous 10 min default was guaranteed to time out. Bumped to 25 min
-  // (1500s) to cover deep_researcher with margin; shallow_researcher finishes
+  // so the previous 10 min default was guaranteed to time out. Bumped to 45 min
+  // (2700s); prod showed 25 min still timed out mid-run; shallow_researcher finishes
   // in ~30s-3min and is unaffected. Override with AIQ_POLL_TIMEOUT_MS env.
-  aiqPollTimeoutMs: Number(process.env.AIQ_POLL_TIMEOUT_MS ?? 25 * 60_000),
+  aiqPollTimeoutMs: Number(process.env.AIQ_POLL_TIMEOUT_MS ?? 45 * 60_000),
   aiqDefaultAgentType: optionalEnv('AIQ_DEFAULT_AGENT_TYPE') ?? 'deep_researcher',
   aiqTopicMaxChars: Number(process.env.AIQ_TOPIC_MAX_CHARS ?? 500),
   aiqEnabled: booleanEnv('AIQ_ENABLED', true),
