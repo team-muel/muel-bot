@@ -332,7 +332,10 @@ export const generateMuelReply = async (
 
   // 1. Primary: single-shot Gemini on the chat lane.
   if (config.googleGenerativeAiApiKey) {
-    const gemini = getGeminiTextModel(CHAT_MODEL_TASK);
+    // Casual/lightweight turns stay on the cheap lane; substantive turns get
+    // the stronger reasoning model.
+    const chatLane: MuelModelTask = lightweightTurn ? CHAT_MODEL_TASK : 'heavy';
+    const gemini = getGeminiTextModel(chatLane);
     if (gemini) {
       try {
         // Web search (Google grounding) is always attached so the model can answer

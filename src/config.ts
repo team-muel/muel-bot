@@ -37,7 +37,7 @@ export const config = {
   muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
   muelChatModel: optionalEnv('MUEL_CHAT_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
   muelRouterModel: optionalEnv('MUEL_ROUTER_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
-  muelExtractModel: optionalEnv('MUEL_EXTRACT_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
+  muelExtractModel: optionalEnv('MUEL_EXTRACT_MODEL') ?? DEFAULT_HEAVY_MODEL,
   muelSummaryModel: optionalEnv('MUEL_SUMMARY_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
   muelHeavyModel: optionalEnv('MUEL_HEAVY_MODEL') ?? DEFAULT_HEAVY_MODEL,
   muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-001',
