@@ -304,7 +304,7 @@ export const generateMuelReply = async (
       tools: modelTools,
       stopWhen: stepCountIs(4),
       temperature: 0.7,
-      maxOutputTokens: 1200,
+      maxOutputTokens: 2048,
     });
 
     const finalText = sanitizeModelOutput(text);

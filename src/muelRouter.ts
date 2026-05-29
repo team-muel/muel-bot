@@ -72,6 +72,7 @@ export const classifyMentionIntent = async (
       model: routerModel.model,
       schema: RouterSchema,
       experimental_repairText: repairJsonText,
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       temperature: 0,
       prompt: `${ROUTER_PROMPT}\n\nUser text:\n"""\n${trimmed}\n"""`,
     });

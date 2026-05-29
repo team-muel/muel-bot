@@ -109,7 +109,8 @@ const generateGroundedBrief = async (topic: string): Promise<string | null> => {
       tools,
       stopWhen: stepCountIs(3),
       temperature: 0.4,
-      maxOutputTokens: 700,
+      maxOutputTokens: 1024,
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       system: [
         '너는 Muel이야. 주어진 주제의 현재 맥락을 한국어로 간결히 정리해.',
         '핵심 사실 3~5개를 짧은 불릿으로. 가능하면 끝에 출처 링크를 붙여.',

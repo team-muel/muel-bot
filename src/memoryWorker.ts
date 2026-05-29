@@ -133,6 +133,7 @@ export async function processMemoryJob(job: any) {
       model: extractModel.model,
       schema: extractMemorySchema,
       experimental_repairText: repairJsonText,
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       prompt: `${SYSTEM_PROMPT}\n\nCONVERSATION:\n${conversationText}`,
     });
   } catch (aiError) {
@@ -193,6 +194,7 @@ export async function processMemoryJob(job: any) {
           model: extractModel.model,
           schema: mergeMemorySchema,
         experimental_repairText: repairJsonText,
+        providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
           prompt: `You are managing an AI's long-term memory for a user.
 A new memory candidate has been extracted:
 "${memory.content}"
