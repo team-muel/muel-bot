@@ -26,7 +26,7 @@ import {
   HUB_COMMAND_NAME,
 } from './conciergeHandler.js';
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
-import { handleResearchEnrichButton, isResearchEnrichButton } from './researchEnrich.js';
+import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -210,6 +210,8 @@ if (!config.enableHttpInteractions) {
     if (interaction.isButton()) {
       if (isResearchEnrichButton(interaction.customId)) {
         await handleResearchEnrichButton(client as Client<true>, interaction);
+      } else if (isResearchDeepButton(interaction.customId)) {
+        await handleResearchDeepButton(client as Client<true>, interaction);
       }
       return;
     }
