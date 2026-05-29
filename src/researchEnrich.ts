@@ -98,7 +98,7 @@ const resolveResearchTopic = async (
  * failure; callers degrade gracefully.
  */
 const generateGroundedBrief = async (topic: string): Promise<string | null> => {
-  const gemini = getGeminiTextModel('chat');
+  const gemini = getGeminiTextModel('heavy');
   if (!gemini) return null;
   const tools: Record<string, any> = {};
   const googleSearch = getGoogleSearchTool();

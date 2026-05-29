@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
+import { repairJsonText } from './aiRepair.js';
 
 /**
  * Stage 3.1 — Router lane as classifier-only observer.
@@ -70,6 +71,7 @@ export const classifyMentionIntent = async (
     const { object, usage } = await generateObject({
       model: routerModel.model,
       schema: RouterSchema,
+      experimental_repairText: repairJsonText,
       temperature: 0,
       prompt: `${ROUTER_PROMPT}\n\nUser text:\n"""\n${trimmed}\n"""`,
     });
