@@ -4,7 +4,12 @@ import { getSupabaseClient } from './supabase.js';
 import { processMemoryJob } from './memoryWorker.js';
 import { runYouTubeMonitorTick } from './youtubeMonitor.js';
 import { summarizeCommunityFlowJob } from './communityFlow.js';
-import { processResearchUserDmJob, type ResearchUserDmPayload } from './researchDeliver.js';
+import {
+  processResearchUserDmJob,
+  processResearchUserDmPollJob,
+  type ResearchUserDmPayload,
+  type ResearchUserDmPollPayload,
+} from './researchDeliver.js';
 import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
@@ -175,6 +180,12 @@ const processJob = async (job: JobRow) => {
   if (job.type === 'research_user_dm') {
     if (!workerClient) throw new Error('Discord client is unavailable for research_user_dm jobs');
     await processResearchUserDmJob(workerClient, job.payload as ResearchUserDmPayload);
+    return;
+  }
+
+  if (job.type === 'research_user_dm_poll') {
+    if (!workerClient) throw new Error('Discord client is unavailable for research_user_dm_poll jobs');
+    await processResearchUserDmPollJob(workerClient, job.payload as ResearchUserDmPollPayload);
     return;
   }
 

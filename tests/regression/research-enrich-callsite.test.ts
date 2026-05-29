@@ -7,7 +7,7 @@
  *      designated AI-Q caller.)
  *   2. researchEnrich INSERTs muel_research_jobs with trigger_source='user_button_dm'
  *      before enqueueing the background job.
- *   3. jobWorker dispatches 'research_user_dm' to researchDeliver.processResearchUserDmJob.
+ *   3. jobWorker dispatches research submit and poll jobs to researchDeliver.
  *   4. youtubeMonitor attaches actionButtons with the 'research:enrich:' customId
  *      prefix to youtube_post and youtube_video cards.
  *
@@ -73,6 +73,19 @@ assert(
   "jobWorker dispatches 'research_user_dm' to processResearchUserDmJob",
   /job\.type === ['"]research_user_dm['"]/.test(jobWorker) &&
     /processResearchUserDmJob\(/.test(jobWorker),
+);
+assert(
+  "jobWorker dispatches 'research_user_dm_poll' to processResearchUserDmPollJob",
+  /job\.type === ['"]research_user_dm_poll['"]/.test(jobWorker) &&
+    /processResearchUserDmPollJob\(/.test(jobWorker),
+);
+
+const researchDeliver = readFileSync(join(SRC, 'researchDeliver.ts'), 'utf8');
+assert(
+  'research_user_dm submit path schedules poll job instead of blocking until terminal',
+  /['"]research_user_dm_poll['"]/.test(researchDeliver) &&
+    /getJobStatus\(/.test(researchDeliver) &&
+    !/pollUntilTerminal/.test(researchDeliver),
 );
 
 const youtubeMonitor = readFileSync(join(SRC, 'youtubeMonitor.ts'), 'utf8');

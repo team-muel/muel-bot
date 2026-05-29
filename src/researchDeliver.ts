@@ -3,19 +3,21 @@ import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { MuelRenderablePart, CardSection } from './rendering/types.js';
 import {
   AiqClientError,
+  getJobStatus,
   getJobReport,
   getJobState,
-  pollUntilTerminal,
   submitJob,
   type AiqJobStatusResponse,
 } from './aiqClient.js';
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
+import { enqueueJob } from './muelJobs.js';
 
 /**
  * jobWorker handler for 'research_user_dm' job type. Submitted from
  * researchEnrich button → processed here. Owns:
- *   - calling AI-Q submit + polling + report fetch
+ *   - calling AI-Q submit
+ *   - short polling ticks + report fetch
  *   - rendering the DM card
  *   - DM delivery
  *   - ephemeral follow-up fallback via interaction webhook
@@ -35,6 +37,10 @@ export type ResearchUserDmPayload = {
   originMessageJumpUrl?: string | null;
   interactionToken?: string | null;
   interactionApplicationId?: string | null;
+};
+
+export type ResearchUserDmPollPayload = ResearchUserDmPayload & {
+  externalJobId?: string | null;
 };
 
 const reportExcerpt = (report: string, max = 500): string => {
@@ -110,30 +116,85 @@ const followUpEphemeral = async (
   }
 };
 
+const terminalStatuses = ['success', 'failure', 'cancelled', 'timeout'];
+
+const schedulePoll = async (
+  payload: ResearchUserDmPollPayload,
+  delayMs = config.aiqPollIntervalMs,
+): Promise<void> => {
+  const runAfter = new Date(Date.now() + delayMs).toISOString();
+  await enqueueJob(
+    getSupabaseClient(),
+    'research_user_dm_poll',
+    payload,
+    `research_user_dm_poll:${payload.researchJobRowId}:${runAfter}`,
+    runAfter,
+  );
+};
+
+const durationFrom = (createdAt: string | null | undefined, fallbackStartedAt: number): number =>
+  Date.now() - (createdAt ? Date.parse(createdAt) : fallbackStartedAt);
+
+const failResearchRow = async (
+  payload: ResearchUserDmPayload,
+  args: {
+    status: 'failure' | 'timeout' | 'cancelled';
+    errorClass: string;
+    errorMessage: string;
+    startedAt: number;
+    createdAt?: string | null;
+  },
+): Promise<void> => {
+  const supabase = getSupabaseClient();
+  await supabase
+    .from('muel_research_jobs')
+    .update({
+      status: args.status,
+      error_class: args.errorClass,
+      error_message: args.errorMessage.slice(0, 240),
+      completed_at: new Date().toISOString(),
+      duration_ms: durationFrom(args.createdAt, args.startedAt),
+    })
+    .eq('id', payload.researchJobRowId);
+
+  if (payload.interactionApplicationId && payload.interactionToken) {
+    let userMsg: string;
+    if (args.status === 'timeout') {
+      userMsg = '조사가 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 시도해주세요.';
+    } else if (args.errorClass === 'AiqClientError(0)') {
+      userMsg = '조사를 시작하지 못했어요. 잠시 뒤에 다시 시도해주세요.';
+    } else {
+      userMsg = '조사 중 문제가 생겼어요. 잠시 뒤에 다시 시도해주세요.';
+    }
+    await followUpEphemeral(
+      payload.interactionApplicationId,
+      payload.interactionToken,
+      userMsg,
+    );
+  }
+};
+
 export const processResearchUserDmJob = async (
-  client: Client,
+  _client: Client,
   payload: ResearchUserDmPayload,
 ): Promise<void> => {
   const supabase = getSupabaseClient();
   const startedAt = Date.now();
   const rowId = payload.researchJobRowId;
 
-  // Idempotency: if the row is already terminal, skip. Lets retries from
-  // claim_pending_jobs not redo a finished job.
   const { data: existing, error: rowErr } = await supabase
     .from('muel_research_jobs')
-    .select('status, external_job_id')
+    .select('status, external_job_id, created_at')
     .eq('id', rowId)
     .single();
   if (rowErr) {
     throw new Error(`failed to fetch research job row ${rowId}: ${rowErr.message}`);
   }
-  if (existing && ['success', 'failure', 'cancelled', 'timeout'].includes(existing.status)) {
+  if (existing && terminalStatuses.includes(existing.status)) {
     console.log('[research-deliver] row already terminal, skipping', { rowId, status: existing.status });
     return;
   }
 
-  // Mark running.
   await supabase
     .from('muel_research_jobs')
     .update({ status: 'running' })
@@ -155,7 +216,60 @@ export const processResearchUserDmJob = async (
         .eq('id', rowId);
     }
 
-    const terminal: AiqJobStatusResponse = await pollUntilTerminal(externalJobId);
+    await schedulePoll({ ...payload, externalJobId }, config.aiqPollIntervalMs);
+  } catch (error) {
+    const isClient = error instanceof AiqClientError;
+    const errClass = isClient ? `AiqClientError(${(error as AiqClientError).status})` : (error instanceof Error ? error.name : typeof error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[research-deliver] submit failed', { rowId, errClass, errMsg });
+
+    await failResearchRow(payload, {
+      status: errMsg.includes('timed out') ? 'timeout' : 'failure',
+      errorClass: errClass,
+      errorMessage: errMsg,
+      startedAt,
+      createdAt: existing?.created_at,
+    });
+    throw error;
+  }
+};
+
+export const processResearchUserDmPollJob = async (
+  client: Client,
+  payload: ResearchUserDmPollPayload,
+): Promise<void> => {
+  const supabase = getSupabaseClient();
+  const startedAt = Date.now();
+  const rowId = payload.researchJobRowId;
+
+  const { data: existing, error: rowErr } = await supabase
+    .from('muel_research_jobs')
+    .select('status, external_job_id, created_at')
+    .eq('id', rowId)
+    .single();
+  if (rowErr) {
+    throw new Error(`failed to fetch research job row ${rowId}: ${rowErr.message}`);
+  }
+  if (existing && terminalStatuses.includes(existing.status)) {
+    console.log('[research-deliver] row already terminal, skipping poll', { rowId, status: existing.status });
+    return;
+  }
+
+  const externalJobId = existing?.external_job_id ?? payload.externalJobId;
+  if (!externalJobId) {
+    throw new Error(`research row ${rowId} has no external_job_id`);
+  }
+
+  try {
+    if (durationFrom(existing?.created_at, startedAt) > config.aiqPollTimeoutMs) {
+      throw new AiqClientError(`AI-Q job ${externalJobId} polling timed out after ${config.aiqPollTimeoutMs}ms`, 0);
+    }
+
+    const terminal: AiqJobStatusResponse = await getJobStatus(externalJobId);
+    if (terminal.status !== 'SUCCESS' && terminal.status !== 'FAILURE' && terminal.status !== 'INTERRUPTED') {
+      await schedulePoll({ ...payload, externalJobId }, config.aiqPollIntervalMs);
+      return;
+    }
 
     if (terminal.status !== 'SUCCESS') {
       const errMsg = terminal.error ?? `AI-Q terminal status ${terminal.status}`;
@@ -166,7 +280,7 @@ export const processResearchUserDmJob = async (
           error_class: 'AiqTerminal',
           error_message: errMsg.slice(0, 240),
           completed_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAt,
+          duration_ms: durationFrom(existing?.created_at, startedAt),
         })
         .eq('id', rowId);
 
@@ -225,7 +339,7 @@ export const processResearchUserDmJob = async (
         status: 'success',
         external_job_id: externalJobId,
         completed_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
+        duration_ms: durationFrom(existing?.created_at, startedAt),
         report_excerpt: reportExcerpt(report.report ?? ''),
         report_full: report.report ?? '',
         source_found_count: sourceFound ?? null,
@@ -243,38 +357,13 @@ export const processResearchUserDmJob = async (
 
     const status = errMsg.includes('timed out') ? 'timeout' : 'failure';
 
-    await supabase
-      .from('muel_research_jobs')
-      .update({
-        status,
-        error_class: errClass,
-        error_message: errMsg.slice(0, 240),
-        completed_at: new Date().toISOString(),
-        duration_ms: Date.now() - startedAt,
-      })
-      .eq('id', rowId);
-
-    if (payload.interactionApplicationId && payload.interactionToken) {
-      // 오류 분류 안내 — 사용자에게는 외부 시스템(AI-Q) 명칭을 노출하지 않고
-      // 원인 범주만 자연스럽게 전달.
-      let userMsg: string;
-      if (status === 'timeout' || errMsg.includes('timed out')) {
-        // polling timeout: AI-Q가 terminal status를 안 보낸 채 한도 초과. 작중에
-        // 흔히 사용자가 "다시 시도"해도 즉시 풀리지는 않으므로 잠시 후 표현.
-        userMsg = '조사가 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 시도해주세요.';
-      } else if (isClient && (error as AiqClientError).status === 0) {
-        // 네트워크/abort 류 (e.g. submitJob 30s 시절 패턴). PR #7 이후로는
-        // 드물지만 anyway 분기.
-        userMsg = '조사를 시작하지 못했어요. 잠시 뒤에 다시 시도해주세요.';
-      } else {
-        userMsg = '조사 중 문제가 생겼어요. 잠시 뒤에 다시 시도해주세요.';
-      }
-      await followUpEphemeral(
-        payload.interactionApplicationId,
-        payload.interactionToken,
-        userMsg,
-      );
-    }
+    await failResearchRow(payload, {
+      status,
+      errorClass: errClass,
+      errorMessage: errMsg,
+      startedAt,
+      createdAt: existing?.created_at,
+    });
     throw error;
   }
 };
