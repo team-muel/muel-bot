@@ -315,7 +315,7 @@ export const processResearchUserDmPollJob = async (
     const message = renderDiscordMessage(renderable);
 
     // Deliver via DM.
-    let deliveryChannel: 'dm' | 'fallback_ephemeral' | 'none' = 'none';
+    let deliveryChannel: 'dm' | 'pending_dm' = 'pending_dm';
     let deliveryMessageId: string | null = null;
     let deliveredAt: string | null = null;
 
@@ -327,25 +327,10 @@ export const processResearchUserDmPollJob = async (
       deliveryMessageId = sent.id;
       deliveredAt = new Date().toISOString();
     } catch (dmError) {
-      console.warn('[research-deliver] DM failed', dmError);
-      // Fallback to ephemeral follow-up on the original interaction (if token still valid).
-      if (payload.interactionApplicationId && payload.interactionToken) {
-        const ok = await followUpEphemeral(
-          payload.interactionApplicationId,
-          payload.interactionToken,
-          [
-            '리서치 결과 DM 전달이 막혔어요. 서버 멤버 DM을 허용해주시면 다음부터 DM으로 받아볼 수 있어요.',
-            '',
-            '아래는 결과 요약 (다른 사람에겐 안 보여요):',
-            '',
-            reportExcerpt(report.report ?? '', 1500),
-          ].join('\n'),
-        );
-        if (ok) {
-          deliveryChannel = 'fallback_ephemeral';
-          deliveredAt = new Date().toISOString();
-        }
-      }
+      // DM blocked (e.g. user disallows server-member DMs). Keep the result
+      // and mark it pending so the next interaction can re-send it, token-free.
+      console.warn('[research-deliver] DM blocked; marking pending_dm', dmError);
+      deliveryChannel = 'pending_dm';
     }
 
     await supabase
@@ -356,6 +341,7 @@ export const processResearchUserDmPollJob = async (
         completed_at: new Date().toISOString(),
         duration_ms: durationFrom(existing?.created_at, startedAt),
         report_excerpt: reportExcerpt(report.report ?? ''),
+        report_full: report.report ?? '',
         source_found_count: sourceFound ?? null,
         source_cited_count: sourceCited ?? null,
         delivery_channel: deliveryChannel,
@@ -379,5 +365,77 @@ export const processResearchUserDmPollJob = async (
       createdAt: existing?.created_at,
     });
     throw error;
+  }
+};
+
+type PendingResearchDmRow = {
+  id: string;
+  topic: string;
+  report_full: string | null;
+  report_excerpt: string | null;
+  source_cited_count: number | null;
+  metadata: { originMessageJumpUrl?: string | null } | null;
+};
+
+/**
+ * Opportunistic, token-free redelivery of research results whose DM was blocked
+ * earlier (delivery_channel='pending_dm', delivered_at=null). Safe to call on any
+ * later user interaction. Never throws into the caller's path; if the DM is still
+ * blocked the rows stay pending for the next attempt.
+ */
+export const flushPendingResearchDms = async (
+  client: Client,
+  requesterUserId: string,
+  limit = 3,
+): Promise<void> => {
+  const supabase = getSupabaseClient();
+  try {
+    const { data: rows, error } = await supabase
+      .from('muel_research_jobs')
+      .select('id, topic, report_full, report_excerpt, source_cited_count, metadata')
+      .eq('requester_user_id', requesterUserId)
+      .eq('status', 'success')
+      .eq('delivery_channel', 'pending_dm')
+      .is('delivered_at', null)
+      .order('completed_at', { ascending: true })
+      .limit(limit);
+    if (error || !rows || rows.length === 0) return;
+
+    let user;
+    try {
+      user = await client.users.fetch(requesterUserId);
+    } catch {
+      return;
+    }
+    const dm = await user.createDM().catch(() => null);
+    if (!dm) return;
+
+    for (const row of rows as PendingResearchDmRow[]) {
+      const reportText = row.report_full ?? row.report_excerpt ?? '';
+      if (!reportText) continue;
+      const renderable = buildDmRenderable({
+        topic: row.topic,
+        report: reportText,
+        sourceCited: row.source_cited_count ?? undefined,
+        originMessageJumpUrl: row.metadata?.originMessageJumpUrl ?? null,
+      });
+      try {
+        const sent = await dm.send(renderDiscordMessage(renderable));
+        await supabase
+          .from('muel_research_jobs')
+          .update({
+            delivery_channel: 'dm',
+            delivered_at: new Date().toISOString(),
+            delivery_message_id: sent.id,
+          })
+          .eq('id', row.id);
+      } catch (sendErr) {
+        // Still blocked — leave pending and stop (the rest will fail the same way).
+        console.warn('[research-deliver] pending DM still blocked', { id: row.id });
+        break;
+      }
+    }
+  } catch (err) {
+    console.warn('[research-deliver] flushPendingResearchDms failed', err);
   }
 };

@@ -4,6 +4,7 @@ import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
 import { buildResearchTopicFromItem, getYouTubeItemByOrigin } from './youtubeItemStore.js';
+import { flushPendingResearchDms } from './researchDeliver.js';
 
 /**
  * Stage AI-Q: "이 소식 더 알아보기" button handler.
@@ -99,6 +100,9 @@ export const handleResearchEnrichButton = async (
   client: Client<true>,
   interaction: ButtonInteraction,
 ): Promise<void> => {
+  // Opportunistic, token-free redelivery of any earlier DM-blocked results.
+  void flushPendingResearchDms(client, interaction.user.id);
+
   const parsed = parseCustomId(interaction.customId);
   if (!parsed) {
     await interaction.reply({

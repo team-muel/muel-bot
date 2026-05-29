@@ -59,3 +59,5 @@ services:
         value: "false"
       - key: MENTION_REPLY_TIMEOUT_MS
         value: "15000"
+      - key: AIQ_POLL_TIMEOUT_MS
+        value: "2700000"
