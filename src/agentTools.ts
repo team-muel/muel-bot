@@ -55,7 +55,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     get_server_context: tool({
       description:
         'Fetch a cross-product snapshot: YouTube subscriptions, recent dreams (Weave), and the latest community post cache. Use this only when the user asks about recent news, posts, or dream context broadly.',
-      parameters: z.object({}),
+      inputSchema: z.object({}),
       // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
       execute: async () => {
         try {
@@ -75,7 +75,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     search_semantic_memory: tool({
       description:
         'Search past important conversations with the relevant Discord users. Use only when the user refers to a past discussion or explicitly asks if you remember something.',
-      parameters: z.object({
+      inputSchema: z.object({
         query: z.string().describe('The search query or topic to look up in past conversations.'),
       }),
       // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
@@ -98,7 +98,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     get_recent_messages: tool({
       description:
         'Read the latest messages in THIS channel that Muel has buffered. Use only when the user asks about what was just said in this channel. Returns at most 12 message lines.',
-      parameters: z.object({
+      inputSchema: z.object({
         limit: z.number().int().min(1).max(15).default(10).describe('How many recent messages to retrieve. Default 10, max 15.'),
       }),
       // @ts-ignore AI SDK v6 tool typing.
@@ -117,7 +117,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     get_thread: tool({
       description:
         'Read the messages Muel has stored for a particular Discord thread (only threads where someone interacted with Muel). Useful when the user asks "what did we discuss in that thread".',
-      parameters: z.object({
+      inputSchema: z.object({
         threadId: z.string().describe('Discord thread/channel ID. Must be a 17–20 digit Discord snowflake.'),
         limit: z.number().int().min(1).max(20).default(12).describe('How many messages to retrieve. Default 12, max 20.'),
       }),
@@ -159,7 +159,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     get_user_profile: tool({
       description:
         'Look up a Muel profile and recent interaction summary for a specific Discord user. Use only when the user asks about themselves or another user by Discord ID.',
-      parameters: z.object({
+      inputSchema: z.object({
         userId: z.string().describe('Discord user ID (17–20 digit snowflake).'),
       }),
       // @ts-ignore AI SDK v6 tool typing.
@@ -201,7 +201,7 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
     search_community_docs: tool({
       description:
         'Search summarized community digests (muel_community_digests) by keyword. Use when the user asks about a past channel surge, recap, or summary topic.',
-      parameters: z.object({
+      inputSchema: z.object({
         query: z.string().min(1).describe('Keyword or phrase to match against digest titles and summaries.'),
         limit: z.number().int().min(1).max(8).default(5),
       }),
