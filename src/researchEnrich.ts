@@ -1,6 +1,6 @@
 import type { ButtonInteraction, Client, Message } from 'discord.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
@@ -104,11 +104,10 @@ const generateGroundedBrief = async (topic: string): Promise<string | null> => {
   const googleSearch = getGoogleSearchTool();
   if (googleSearch) tools.googleSearch = googleSearch;
   try {
-    const { text } = await generateText({
+    const { text, finishReason } = await generateText({
       model: gemini.model,
       tools,
-      // @ts-ignore AI SDK compatibility in this project.
-      maxSteps: 3,
+      stopWhen: stepCountIs(3),
       temperature: 0.4,
       maxOutputTokens: 700,
       system: [
@@ -119,7 +118,12 @@ const generateGroundedBrief = async (topic: string): Promise<string | null> => {
       ].join('\n'),
       prompt: `주제: ${topic}\n\n위 주제를 웹에서 찾아 지금 시점의 맥락을 정리해줘.`,
     });
-    return sanitizeModelOutput(text) || null;
+    const cleaned = sanitizeModelOutput(text);
+    if (!cleaned) {
+      console.warn('[research-enrich] grounded brief empty', { finishReason, textLen: text?.length ?? 0 });
+      return null;
+    }
+    return cleaned;
   } catch (err) {
     console.warn('[research-enrich] grounded brief failed', err);
     return null;

@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { config } from './config.js';
 import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -302,8 +302,7 @@ export const generateMuelReply = async (
       system: systemParts.join('\n'),
       messages,
       tools: modelTools,
-      // @ts-ignore Kept for current AI SDK compatibility in this project.
-      maxSteps: 4,
+      stopWhen: stepCountIs(4),
       temperature: 0.7,
       maxOutputTokens: 1200,
     });
