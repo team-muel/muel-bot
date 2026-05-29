@@ -100,6 +100,7 @@ const BASE_SYSTEM_PROMPT = [
   'WHAT YOU KNOW & TOOLS:',
   '- This server tracks YouTube subscriptions and community posts.',
   '- You do not browse arbitrary YouTube videos or recommend random current videos.',
+  '- You have Google Search. For current events, news, releases, public figures, companies, products, or other AI models/tools you are unsure about, SEARCH FIRST and answer from what you find. Do not say you cannot access news or external info before searching.',
   '- Weave is for dream records. Gomdori is a separate game-facing product.',
   '- Use tools only when the user asks for a specific fact or summary. Do not call tools just to look busy.',
   '- All tools are READ-ONLY. You cannot post messages, edit messages, or change Discord state.',
@@ -334,7 +335,10 @@ export const generateMuelReply = async (
     const gemini = getGeminiTextModel(CHAT_MODEL_TASK);
     if (gemini) {
       try {
-        const agentTools: Record<string, any> = { ...tools };
+        // Web search (Google grounding) is always attached so the model can answer
+        // current-events / news / general-knowledge questions instead of refusing.
+        // DB tools stay gated behind shouldEnableTools for cost.
+        const agentTools: Record<string, any> = shouldEnableTools(userText) ? { ...tools } : {};
         const googleSearch = getGoogleSearchTool();
         if (googleSearch) {
           agentTools.googleSearch = googleSearch;
@@ -343,7 +347,7 @@ export const generateMuelReply = async (
           gemini.model,
           gemini.provider,
           gemini.modelId,
-          shouldEnableTools(userText) ? agentTools : {},
+          agentTools,
         );
         return result;
       } catch (error) {
