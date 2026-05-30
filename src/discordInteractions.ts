@@ -110,6 +110,10 @@ export const handleDiscordInteractions = async (request: IncomingMessage, respon
   }
 
   if (commandName === '게임') {
+    // /게임 은 Gomdori 의 Activity entry point command (type=4, handler=2) 로
+    // 등록돼 Discord 가 자동으로 Activity 를 띄운다. 정상 등록 시 이 분기까지
+    // 들어오지 않는다. 그러나 entry point 등록 실패·구버전 클라이언트 등
+    // 예외 상황을 위한 fallback 만 남겨둔다.
     json(response, 200, {
       type: 4,
       data: { content: `🐻 Gomdori — 마피아 게임\n\n${config.hubUrl}/game`, flags: EPHEMERAL_FLAG },

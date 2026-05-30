@@ -306,10 +306,11 @@ const gomdoriClient = config.gomdoriBotToken
   : null;
 
 if (gomdoriClient) {
-  const gomdoriGameCommand = new SlashCommandBuilder()
-    .setName('게임')
-    .setDescription('Gomdori 게임을 시작합니다.');
-
+  // /게임 은 Discord Activity entry point command (type=4, handler=2) 하나로만 등록.
+  // 같은 이름의 chat input command (type=1) 를 동시에 등록하면 Discord 가
+  // 둘 중 하나로 덮어쓰기 때문에 entry point 만 남긴다. 클릭 시 Discord 가
+  // 자동으로 muel-tree /game Activity 를 띄운다 — 봇 인터랙션 핸들러는
+  // /게임 에 대해 받지 않는다.
   const gomdoriPingCommand = new SlashCommandBuilder()
     .setName('ping')
     .setDescription('Check whether Gomdori Bot is online.');
@@ -331,7 +332,6 @@ if (gomdoriClient) {
       const rest = new REST({ version: '10' }).setToken(config.gomdoriBotToken!);
       await rest.put(Routes.applicationCommands(readyGomdori.application.id), {
         body: [
-          gomdoriGameCommand.toJSON(),
           gomdoriPingCommand.toJSON(),
           gomdoriActivityEntryPointCommand,
         ],
@@ -351,19 +351,7 @@ if (gomdoriClient) {
         await interaction.reply({ content: 'pong 🐻', flags: [MessageFlags.Ephemeral] });
         return;
       }
-
-      if (interaction.commandName === '게임') {
-        await interaction.reply({
-          content: [
-            '🐻 Gomdori — 마피아 게임',
-            '',
-            `${config.hubUrl}/game`,
-            '',
-            '준비 중입니다.',
-          ].join('\n'),
-        });
-        return;
-      }
+      // /게임 은 entry point command 라 핸들러를 거치지 않는다.
     });
   }
 
