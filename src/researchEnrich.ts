@@ -214,7 +214,7 @@ export const handleResearchEnrichButton = async (
 
   const components = deepAvailable && researchJobRowId ? [buildDeepButtonRow(researchJobRowId)] : [];
   const content = brief
-    ? `${brief}\n\n${deepAvailable ? '— 더 깊은 다출처 조사가 필요하면 아래 버튼을 눌러줘. 완료되면 DM으로 보낼게.' : ''}`.trim()
+    ? `${brief}\n\n${deepAvailable ? '— 더 깊은 다출처 조사가 필요하면 아래 버튼을 눌러줘. 검색 쿼터나 백엔드 상태에 따라 오래 걸리거나 실패할 수 있고, 결과나 실패 안내는 DM/알림으로 보낼게.' : ''}`.trim()
     : (deepAvailable
         ? '지금 빠른 요약을 만들지 못했어. 더 깊게 조사해볼까?'
         : '지금 빠른 요약을 만들지 못했어. 잠시 뒤 다시 시도해줘.');
@@ -256,7 +256,7 @@ export const handleResearchDeepButton = async (
   }
 
   if (row.status === 'submitted' || row.status === 'running') {
-    await interaction.editReply({ content: '이미 딥리서치가 진행 중이야. 완료되면 DM으로 보낼게.' }).catch(() => {});
+    await interaction.editReply({ content: '이미 딥리서치가 진행 중이야. 완료되면 DM으로, 실패하면 안내로 알려줄게.' }).catch(() => {});
     return;
   }
   if (row.status === 'success') {
@@ -316,5 +316,5 @@ export const handleResearchDeepButton = async (
     return;
   }
 
-  await interaction.editReply({ content: '딥리서치 시작했어. 다출처 조사라 시간이 좀 걸려 — 완료되면 DM으로 보낼게.' }).catch(() => {});
+  await interaction.editReply({ content: '딥리서치 시작했어. 다출처 조사라 시간이 걸리고, 검색 쿼터나 백엔드 상태에 따라 실패할 수 있어. 완료되면 DM으로, 실패하면 안내로 알려줄게.' }).catch(() => {});
 };

@@ -160,11 +160,11 @@ const failResearchRow = async (
   if (payload.interactionApplicationId && payload.interactionToken) {
     let userMsg: string;
     if (args.status === 'timeout') {
-      userMsg = '조사가 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 시도해주세요.';
+      userMsg = '조사가 너무 오래 걸려서 멈췄어요. 리서치 백엔드나 검색 쿼터 상태를 확인한 뒤 다시 시도해주세요.';
     } else if (args.errorClass === 'AiqClientError(0)') {
-      userMsg = '조사를 시작하지 못했어요. 잠시 뒤에 다시 시도해주세요.';
+      userMsg = '조사를 시작하지 못했어요. 리서치 백엔드 연결이나 검색 쿼터 상태를 확인해야 해요.';
     } else {
-      userMsg = '조사 중 문제가 생겼어요. 잠시 뒤에 다시 시도해주세요.';
+      userMsg = '조사 중 문제가 생겼어요. 리서치 백엔드나 검색 쿼터 상태를 확인해야 해요.';
     }
     await followUpEphemeral(
       payload.interactionApplicationId,
@@ -288,7 +288,7 @@ export const processResearchUserDmPollJob = async (
         await followUpEphemeral(
           payload.interactionApplicationId,
           payload.interactionToken,
-          `조사가 완료되지 못했어요. (${errMsg})`,
+          '조사가 완료되지 못했어요. 리서치 백엔드나 검색 쿼터 상태를 확인해야 해요.',
         );
       }
       return;
