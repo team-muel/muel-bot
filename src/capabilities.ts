@@ -26,6 +26,18 @@ export const capabilities = {
     status: 'enabled',
     description: 'Allowed server/context search for relevant conversation context; no private digging or harassment.',
   },
+  channelCatchup: {
+    status: 'enabled',
+    description: 'Read-only catch-up over messages Muel has buffered or stored for the current channel/thread. Does not read arbitrary private history.',
+  },
+  subscriptionStatusRead: {
+    status: 'enabled',
+    description: 'Read-only YouTube subscription status for the current server/channel. Does not add or remove subscriptions.',
+  },
+  hubStateChange: {
+    status: 'restricted',
+    description: 'Hub activation/deactivation can be drafted from natural language, but only runs after a Discord button confirmation and ManageChannels permission check.',
+  },
   memoryWrite: {
     status: 'restricted',
     description: 'Memory extraction is asynchronous and conservative; users cannot force arbitrary memory writes or store policy-bypass instructions.',

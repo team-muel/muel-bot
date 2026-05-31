@@ -27,7 +27,7 @@ const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
 const CHAT_MODEL_TASK: MuelModelTask = 'chat';
 
 const TOOL_TRIGGER_RE =
-  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약)/iu;
+  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져)/iu;
 const CASUAL_GREETING_RE = /^(?:안녕|안뇽|ㅎㅇ|하이|hello|hi|hey|yo)[!.?~\s]*$/iu;
 const HEALTH_CHECK_RE = /^(?:대답\s*가능\??|응답\s*가능\??|살아\s*있(?:어|냐)\??|잘\s*돼\??|작동\s*해\??)$/iu;
 
@@ -104,7 +104,7 @@ const BASE_SYSTEM_PROMPT = [
   '- Weave is for dream records. Gomdori is a separate game-facing product.',
   '- Use tools only when the user asks for a specific fact or summary. Do not call tools just to look busy.',
   '- All tools are READ-ONLY. You cannot post messages, edit messages, or change Discord state.',
-  '- Available tools when triggered: get_server_context, search_semantic_memory, get_recent_messages, get_thread, get_user_profile, search_community_docs.',
+  '- Available tools when triggered: get_server_context, search_semantic_memory, get_recent_messages, get_thread, get_hub_status, get_subscription_status, get_user_profile, search_community_docs.',
   '- Never expose tool calls, tool names, stack traces, raw JSON, channel IDs, guild IDs, or internal function names to Discord users.',
   '',
   'BOUNDARIES:',

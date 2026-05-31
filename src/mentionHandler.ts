@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { Client, Message } from 'discord.js';
+import { PermissionFlagsBits, type Client, type Message } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
@@ -17,6 +17,8 @@ import { classifyMentionIntent } from './muelRouter.js';
 import { acquireMentionSlot, formatLimitReplyMessage } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
 import { REACTION_DONE, tagMessage } from './agentReactions.js';
+import { classifyActionDraft } from './actionDraft.js';
+import { buildHubActionConfirmation } from './actionConfirmations.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -274,6 +276,56 @@ export const handleMuelMention = async (
         },
       });
       return;
+    }
+
+    if (message.guildId) {
+      const draft = await classifyActionDraft(supabase, {
+        chatId,
+        userText,
+        discordGuildId: message.guildId,
+        discordChannelId: message.channelId,
+        discordUserId: message.author.id,
+      });
+
+      if (draft && draft.action !== 'none' && draft.confidence >= 0.82) {
+        const hasPermission = message.member?.permissions.has(PermissionFlagsBits.ManageChannels) ?? false;
+        if (!hasPermission) {
+          const sent = await message.reply({
+            content: '그 작업은 채널 관리 권한이 있어야 해. 권한이 있는 사람이 `/허브 활성화` 또는 `/허브 비활성화`로 처리할 수 있어.',
+            allowedMentions: { parse: [], repliedUser: false },
+          });
+          void logMuelAgentAction(supabase, {
+            triggerSource: 'mention',
+            triggerDetail: `action_draft_${draft.action}`,
+            status: 'denied',
+            discordGuildId: message.guildId,
+            discordChannelId: message.channelId,
+            discordUserId: message.author.id,
+            targetMessageId: message.id,
+            responseMessageId: sent.id,
+            metadata: { reason: 'missing_manage_channels', confidence: draft.confidence },
+          });
+          return;
+        }
+
+        const sent = await message.reply(buildHubActionConfirmation({
+          action: draft.action,
+          userId: message.author.id,
+          channelId: message.channelId,
+        }));
+        void logMuelAgentAction(supabase, {
+          triggerSource: 'mention',
+          triggerDetail: `action_draft_${draft.action}`,
+          status: 'responded',
+          discordGuildId: message.guildId,
+          discordChannelId: message.channelId,
+          discordUserId: message.author.id,
+          targetMessageId: message.id,
+          responseMessageId: sent.id,
+          metadata: { phase: 'pending_confirmation', confidence: draft.confidence, reason: draft.reason ?? null },
+        });
+        return;
+      }
     }
 
     const mentionedUsers = message.mentions.users.filter((u) => u.id !== client.user.id && u.id !== message.author.id);

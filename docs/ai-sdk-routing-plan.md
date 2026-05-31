@@ -106,6 +106,33 @@ Discord mention handling should stay short:
 Background workers should handle extraction, embedding, summarization, dedupe,
 and future digest jobs.
 
+## Capability Expansion Rule
+
+AI SDK expansion is split into three layers:
+
+1. **Read-only tools**: safe status/catch-up surfaces that return compact text
+   to the model. Current examples are `get_recent_messages`, `get_thread`,
+   `get_hub_status`, and `get_subscription_status`.
+2. **Action drafts**: schema-first object classification for reversible
+   operations. The classifier may propose `hub_activate` or `hub_deactivate`,
+   but it cannot mutate Discord or the database.
+3. **Confirmed executors**: deterministic handlers behind Discord buttons.
+   They re-check requester identity, guild/channel context, and
+   `ManageChannels` before calling existing write paths.
+
+Do not add heuristic natural-language switches for write actions. New write
+capabilities should be added only when they have:
+
+- a schema entry in the action draft classifier,
+- a clear permission rule,
+- a confirmation UI,
+- an existing deterministic executor or slash-command path to reuse,
+- audit logging in `muel_agent_actions`.
+
+YouTube subscription add/remove is deliberately not enabled in the action draft
+path yet; it needs a richer select/button UI for kind, channel target, and link
+validation. Until then, users should use `/구독`.
+
 ## Observability
 
 AI event logging should record:

@@ -8,6 +8,9 @@ import {
   formatSemanticMemories,
   disableUserMemorySearch,
 } from './muelEmbeddings.js';
+import { isHubChannelActive, listHubChannels } from './hubChannels.js';
+import { listYouTubeSubscriptions } from './youtubeSubscriptionStore.js';
+import { formatYouTubeTarget, getSubscriptionKind, toKindLabel } from './subscribePresentation.js';
 
 /**
  * Stage 4.1 — Read-only Discord tools.
@@ -22,6 +25,8 @@ import {
  *   - search_semantic_memory: per-user long-term memory (existing, retained).
  *   - get_recent_messages: latest N messages from this channel's in-memory buffer.
  *   - get_thread: read messages stored by muel-bot for a given thread context.
+ *   - get_hub_status: read current/all hub-channel state.
+ *   - get_subscription_status: read YouTube subscription counts and names.
  *   - get_user_profile: Muel profile + last interaction summary for a Discord user.
  *   - search_community_docs: text-match against muel_community_digests.
  *
@@ -48,6 +53,22 @@ const summarizeMessages = (messages: Array<{ authorName: string; content: string
     .slice(-limit)
     .map((m) => `${m.authorName}: ${truncateText(m.content, 240)}`)
     .join('\n');
+};
+
+const summarizeSubscriptionRows = (rows: Awaited<ReturnType<typeof listYouTubeSubscriptions>>, max = 12): string => {
+  if (rows.length === 0) return '등록된 YouTube 구독이 없어.';
+
+  const counts = rows.reduce<Record<string, number>>((acc, row) => {
+    const kind = getSubscriptionKind(row);
+    acc[kind] = (acc[kind] ?? 0) + 1;
+    return acc;
+  }, {});
+  const summary = Object.entries(counts)
+    .map(([kind, count]) => `${toKindLabel(kind)} ${count}개`)
+    .join(', ');
+  const lines = rows.slice(0, max).map((row) => `- [${toKindLabel(getSubscriptionKind(row))}] ${formatYouTubeTarget(row)}`);
+  const suffix = rows.length > max ? `- ...${rows.length - max}개 더 있음` : '';
+  return [`총 ${rows.length}개 (${summary})`, ...lines, suffix].filter(Boolean).join('\n');
 };
 
 export const buildAgentTools = (ctx: AgentToolContext) => {
@@ -153,6 +174,55 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
           return `${speaker}: ${truncateText(text, 240)}`;
         });
         return lines.join('\n');
+      },
+    }),
+
+    get_hub_status: tool({
+      description:
+        'Read Muel Hub status for this server/channel. Use when the user asks whether Muel is active in this channel, which channels have hub enabled, or asks for hub status. Read-only; does not enable or disable anything.',
+      inputSchema: z.object({
+        scope: z.enum(['current_channel', 'all_channels']).default('current_channel'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ scope }: { scope: 'current_channel' | 'all_channels' }) => {
+        if (!ctx.currentGuildId) return '서버 컨텍스트가 없어. 허브 상태는 서버 안에서만 볼 수 있어.';
+        if (scope === 'current_channel') {
+          if (!ctx.currentChannelId) return '현재 채널 컨텍스트가 없어.';
+          const active = await isHubChannelActive(ctx.supabase, {
+            guildId: ctx.currentGuildId,
+            channelId: ctx.currentChannelId,
+          }).catch(() => false);
+          return active
+            ? '현재 채널은 Muel Hub가 켜져 있어. 일반 메시지에도 조건이 맞으면 응답할 수 있어.'
+            : '현재 채널은 Muel Hub가 꺼져 있어. 켜려면 채널 관리 권한자가 확인 버튼 또는 /허브 활성화를 사용해야 해.';
+        }
+
+        const channels = await listHubChannels(ctx.supabase, { guildId: ctx.currentGuildId }).catch(() => null);
+        if (!channels) return '허브 목록 조회에 실패했어.';
+        if (channels.length === 0) return '이 서버에 활성화된 허브 채널이 없어.';
+        return [
+          `활성 허브 채널 ${channels.length}개`,
+          ...channels.slice(0, 12).map((row) => `- <#${row.channelId}> · 응답 임계값 ${row.responsiveConfidenceMin.toFixed(2)}`),
+          channels.length > 12 ? `- ...${channels.length - 12}개 더 있음` : '',
+        ].filter(Boolean).join('\n');
+      },
+    }),
+
+    get_subscription_status: tool({
+      description:
+        'Read YouTube subscription status for this server or current channel. Use when the user asks what is subscribed, whether this channel has subscriptions, or asks for /구독 state. Read-only; does not add/remove subscriptions.',
+      inputSchema: z.object({
+        scope: z.enum(['current_channel', 'server']).default('server'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ scope }: { scope: 'current_channel' | 'server' }) => {
+        if (!ctx.currentGuildId) return '서버 컨텍스트가 없어. 구독 상태는 서버 안에서만 볼 수 있어.';
+        const rows = await listYouTubeSubscriptions({ guildId: ctx.currentGuildId }).catch(() => null);
+        if (!rows) return 'YouTube 구독 상태 조회에 실패했어.';
+        const filtered = scope === 'current_channel' && ctx.currentChannelId
+          ? rows.filter((row) => row.channel_id === ctx.currentChannelId)
+          : rows;
+        return summarizeSubscriptionRows(filtered);
       },
     }),
 
