@@ -27,6 +27,7 @@ import {
 } from './conciergeHandler.js';
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
+import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -263,6 +264,8 @@ if (!config.enableHttpInteractions) {
         await handleResearchEnrichButton(client as Client<true>, interaction);
       } else if (isResearchDeepButton(interaction.customId)) {
         await handleResearchDeepButton(client as Client<true>, interaction);
+      } else if (isMuelActionButton(interaction.customId)) {
+        await handleMuelActionButton(getSupabaseClient(), interaction);
       }
       return;
     }
