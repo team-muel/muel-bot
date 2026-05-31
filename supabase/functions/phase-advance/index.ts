@@ -8,6 +8,7 @@ import {
   tallyVerdictVotes,
 } from "../_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
+import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 
 type EngineState = Record<string, unknown> & {
   modifiers?: Record<string, number>;
@@ -213,84 +214,106 @@ Deno.serve((req: Request) => {
       let nextPhaseNumber = phase.phase_number;
 
       if (phase.phase_type === "role_assign") {
+        // role 배정 직후 첫째 밤으로. 첫째 밤은 안내성으로 짧게.
         nextPhaseType = "night";
-        nextDurationSec = 60;
+        nextDurationSec = GOMDORI_RULES.firstNight.durationSec;
         nextPhaseNumber = 1;
       } else if (phase.phase_type === "night") {
-        const actions = requireNoError(
-          await supabase
-            .from("match_actions")
-            .select("actor_user_id, target_user_id, action_type")
-            .eq("phase_id", phase.id),
-        ) as DbAction[];
+        const isFirstNight = phase.phase_number === 1 && GOMDORI_RULES.firstNight.skipsAbilities;
 
-        const state = playerStateFromRows(
-          matchId,
-          "night",
-          phase.phase_number,
-          players,
-          engineState.modifiers || {},
-        );
-        state.actionStack = actionRowsToInputs(actions).map((action) => ({
-          sourceUserId: action.actorUserId,
-          targetUserId: action.targetUserId,
-          actionType: action.actionType || "",
-          priority: action.actionType === "demon_kill" ? 4 : action.actionType === "doctor_heal" ? 3 : 5,
-        }));
-
-        const { newState, events } = resolveNightActions(state);
-
-        for (const [userId, playerState] of Object.entries(newState.players)) {
-          const dbPlayer = players.find((player) => player.user_id === userId);
-          if (!dbPlayer) continue;
-
-          const nextEngineState = {
-            ...(dbPlayer.engine_state || {}),
-            tags: playerState.tags,
-            counters: playerState.counters,
-            currentRole: playerState.currentRole,
-          };
-
-          const updatePayload: Record<string, unknown> = { engine_state: nextEngineState };
-          if (dbPlayer.alive && !playerState.alive) {
-            updatePayload.alive = false;
-            updatePayload.eliminated_at = endedAt;
-            updatePayload.eliminated_phase_number = phase.phase_number;
-            updatePayload.eliminated_cause = "night_kill";
-          }
-
-          requireNoError(
-            await supabase
-              .from("match_players")
-              .update(updatePayload)
-              .eq("match_id", matchId)
-              .eq("user_id", userId),
-          );
-        }
-
-        requireNoError(
-          await supabase
-            .from("matches")
-            .update({ engine_state: { ...engineState, modifiers: newState.modifiers } })
-            .eq("id", matchId),
-        );
-
-        for (const event of events as Array<{ type: string; payload?: unknown; userId?: string }>) {
+        if (isFirstNight) {
+          // 첫째 밤: 모든 능력 비활성. 정보 누적 전 첫 능력으로 결판나는 것 방지.
+          // night_resolve 를 거치지 않고 바로 아침으로 — 야간 사망/조사 없음.
           requireNoError(
             await supabase
               .from("match_events")
               .insert({
                 match_id: matchId,
                 phase_id: phase.id,
-                event_type: event.type,
+                event_type: "first_night_silent",
                 visibility: "public",
-                payload: event.payload || { user_id: event.userId },
+                payload: { day_number: 1 },
               }),
           );
-        }
 
-        nextPhaseType = "night_resolve";
-        nextDurationSec = 3;
+          nextPhaseType = "day";
+          nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
+        } else {
+          const actions = requireNoError(
+            await supabase
+              .from("match_actions")
+              .select("actor_user_id, target_user_id, action_type")
+              .eq("phase_id", phase.id),
+          ) as DbAction[];
+
+          const state = playerStateFromRows(
+            matchId,
+            "night",
+            phase.phase_number,
+            players,
+            engineState.modifiers || {},
+          );
+          state.actionStack = actionRowsToInputs(actions).map((action) => ({
+            sourceUserId: action.actorUserId,
+            targetUserId: action.targetUserId,
+            actionType: action.actionType || "",
+            priority: action.actionType === "demon_kill" ? 4 : action.actionType === "doctor_heal" ? 3 : 5,
+          }));
+
+          const { newState, events } = resolveNightActions(state);
+
+          for (const [userId, playerState] of Object.entries(newState.players)) {
+            const dbPlayer = players.find((player) => player.user_id === userId);
+            if (!dbPlayer) continue;
+
+            const nextEngineState = {
+              ...(dbPlayer.engine_state || {}),
+              tags: playerState.tags,
+              counters: playerState.counters,
+              currentRole: playerState.currentRole,
+            };
+
+            const updatePayload: Record<string, unknown> = { engine_state: nextEngineState };
+            if (dbPlayer.alive && !playerState.alive) {
+              updatePayload.alive = false;
+              updatePayload.eliminated_at = endedAt;
+              updatePayload.eliminated_phase_number = phase.phase_number;
+              updatePayload.eliminated_cause = "night_kill";
+            }
+
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update(updatePayload)
+                .eq("match_id", matchId)
+                .eq("user_id", userId),
+            );
+          }
+
+          requireNoError(
+            await supabase
+              .from("matches")
+              .update({ engine_state: { ...engineState, modifiers: newState.modifiers } })
+              .eq("id", matchId),
+          );
+
+          for (const event of events as Array<{ type: string; payload?: unknown; userId?: string }>) {
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({
+                  match_id: matchId,
+                  phase_id: phase.id,
+                  event_type: event.type,
+                  visibility: "public",
+                  payload: event.payload || { user_id: event.userId },
+                }),
+            );
+          }
+
+          nextPhaseType = "night_resolve";
+          nextDurationSec = GOMDORI_RULES.phases.nightResolve.durationSec;
+        }
       } else if (phase.phase_type === "night_resolve") {
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
@@ -299,10 +322,10 @@ Deno.serve((req: Request) => {
         }
 
         nextPhaseType = "day";
-        nextDurationSec = 180;
+        nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
       } else if (phase.phase_type === "day") {
         nextPhaseType = "vote";
-        nextDurationSec = 60;
+        nextDurationSec = GOMDORI_RULES.phases.vote.durationSec;
       } else if (phase.phase_type === "vote") {
         const actions = requireNoError(
           await supabase
@@ -348,10 +371,10 @@ Deno.serve((req: Request) => {
 
         if (tally.candidateUserId) {
           nextPhaseType = "verdict";
-          nextDurationSec = 60;
+          nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
         } else {
           nextPhaseType = "night";
-          nextDurationSec = 60;
+          nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
           nextPhaseNumber += 1;
         }
       } else if (phase.phase_type === "verdict") {
@@ -439,7 +462,7 @@ Deno.serve((req: Request) => {
         }
 
         nextPhaseType = "night";
-        nextDurationSec = 60;
+        nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
         nextPhaseNumber += 1;
       }
 
