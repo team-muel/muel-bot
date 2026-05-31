@@ -81,6 +81,11 @@ Invoke-RestMethod https://muel-bot.onrender.com/ | ConvertTo-Json -Depth 6
 npm run typecheck
 ```
 
+Supabase migrations, Edge Functions, and cron operations use
+`docs/supabase-operations-playbook.md`. Follow that playbook when a change
+touches `supabase/migrations`, `supabase/functions`, `pg_cron`, `pg_net`, or the
+Gomdori `mafia` schema.
+
 Expected runtime shape:
 
 - `/health` returns `OK`.

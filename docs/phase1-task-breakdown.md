@@ -26,6 +26,7 @@
 
 ### Task 2: phase-advance Vote 집계 + 처형 대상 결정 로직
 
+**상태**: ✅ Implemented (2026-05-31, Codex)
 **담당**: Codex (Edge Function engine.ts)
 **위치**: `muel-bot/supabase/functions/_shared/engine.ts` 또는 `muel-bot/supabase/functions/phase-advance/`
 
@@ -41,6 +42,7 @@
 
 ### Task 3: Game-end 판정 로직
 
+**상태**: ✅ Implemented (2026-05-31, Codex)
 **담당**: Codex
 **위치**: `engine.ts` (각 페이즈 종료 시 호출되는 WinCheck 함수)
 
@@ -58,6 +60,7 @@
 
 ### Task 4: pg_cron 활성화 + phase-advance 스케줄
 
+**상태**: ✅ Applied to remote Supabase (2026-05-31, Codex)
 **담당**: Codex / 사용자 (Supabase 권한 필요)
 **위치**: `muel-bot/supabase/migrations/20260516000000_setup_phase_advance_cron.sql`
 
@@ -72,6 +75,7 @@
 
 ### Task 5: End-to-end 5인 시뮬레이션 테스트
 
+**상태**: ✅ Engine simulation implemented (2026-05-31, Codex) — live Discord Activity E2E는 별도 수동 QA 필요
 **담당**: Codex (자동화) · 사용자 (수동 검증)
 **위치**: `muel-bot/tests/gomdori/` 또는 `muel-tree/tests/`
 

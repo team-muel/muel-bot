@@ -54,7 +54,7 @@ Gomdori 봇이 등록하는 `/게임` 슬래시 명령은 Application Command Ty
 ### 트레이드오프
 - Render free tier 의 cold-start 가 muel-bot 가용성에 영향.
 - Supabase Edge Function 의 stateless 제약 → 게임 상태는 DB 에 100% 의존.
-- pg_cron 활성화 없으면 phase-advance 자동 호출 안 됨 (현재 `20260516000000_setup_phase_advance_cron.sql` 주석 처리됨 — Phase 1 마무리에 활성화 필요).
+- pg_cron 활성화 없으면 phase-advance 자동 호출 안 됨. `mafia-phase-advance` cron 은 원격 Supabase에 적용 완료.
 
 ## 거부된 대안
 
@@ -80,3 +80,4 @@ Gomdori 봇이 등록하는 `/게임` 슬래시 명령은 Application Command Ty
 ## 변경 이력
 
 - 2026-05-30: 초안. Phase 1 진단 결과 (Vote 집계·Game-end 판정·pg_cron 미완) 반영.
+- 2026-05-31: Phase 1 Task 2-5 repo-side 구현 반영 (Vote/Verdict, WinCheck, pg_cron migration, 엔진 시뮬레이션 테스트).

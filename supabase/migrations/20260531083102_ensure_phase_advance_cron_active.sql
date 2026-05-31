@@ -1,6 +1,5 @@
--- Trigger phase-advance once every 5 seconds by using a pg_cron job that runs
--- every minute and loops internally. phase-advance has verify_jwt=false in
--- supabase/config.toml, so no bearer token is stored in this migration.
+-- Re-assert the Phase 1 phase-advance scheduler for databases where the older
+-- 20260516000000 migration was already applied before cron was hardened.
 create extension if not exists pg_net with schema extensions;
 create extension if not exists pg_cron with schema extensions;
 
@@ -24,7 +23,7 @@ BEGIN
       url:= target_url || '/functions/v1/phase-advance',
       headers:='{"Content-Type": "application/json"}'::jsonb
     );
-    
+
     if i < 12 then
       perform pg_sleep(5);
     end if;
