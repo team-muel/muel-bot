@@ -1,12 +1,15 @@
 import { preflight, jsonResponse } from "../_shared/cors.ts";
-import { withErrorHandling } from "../_shared/errors.ts";
+import { badRequest, withErrorHandling } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import {
   findOpenMatchByDiscordChannel,
+  findOpenMatchByInstance,
   readJsonObject,
-  readRequiredString,
 } from "../_shared/game.ts";
 
+// Resolve an open match for the caller's Discord Activity context.
+// Prefers the Activity instance_id (one match per Activity instance); falls back
+// to the voice channel id for backward compatibility with older clients.
 Deno.serve((req: Request) => {
   return withErrorHandling(req, async () => {
     const origin = req.headers.get("Origin");
@@ -22,8 +25,21 @@ Deno.serve((req: Request) => {
 
     await requireGameAuth(req);
     const body = readJsonObject(await req.json().catch(() => null));
-    const discordChannelId = readRequiredString(body, "discordChannelId");
-    const match = await findOpenMatchByDiscordChannel(discordChannelId);
+    const instanceId =
+      typeof body.instanceId === "string" && body.instanceId.trim() ? body.instanceId.trim() : null;
+    const discordChannelId =
+      typeof body.discordChannelId === "string" && body.discordChannelId.trim()
+        ? body.discordChannelId.trim()
+        : null;
+
+    if (!instanceId && !discordChannelId) {
+      throw badRequest("missing_field", "instanceId 또는 discordChannelId 가 필요합니다.");
+    }
+
+    let match = instanceId ? await findOpenMatchByInstance(instanceId) : null;
+    if (!match && discordChannelId) {
+      match = await findOpenMatchByDiscordChannel(discordChannelId);
+    }
 
     return jsonResponse(match, { origin });
   });

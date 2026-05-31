@@ -4,6 +4,7 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import {
   findOpenMatchByDiscordChannel,
+  findOpenMatchByInstance,
   getGameUser,
   readJsonObject,
   readRequiredString,
@@ -30,8 +31,14 @@ Deno.serve((req: Request) => {
       typeof body.discordGuildId === "string" && body.discordGuildId.trim()
         ? body.discordGuildId.trim()
         : null;
+    const instanceId =
+      typeof body.instanceId === "string" && body.instanceId.trim()
+        ? body.instanceId.trim()
+        : null;
 
-    const existing = await findOpenMatchByDiscordChannel(discordChannelId);
+    const existing = instanceId
+      ? (await findOpenMatchByInstance(instanceId)) ?? (await findOpenMatchByDiscordChannel(discordChannelId))
+      : await findOpenMatchByDiscordChannel(discordChannelId);
     if (existing) {
       return jsonResponse({ match: existing, created: false }, { origin });
     }
@@ -46,6 +53,7 @@ Deno.serve((req: Request) => {
         context_id: discordChannelId,
         notification_kind: "discord_channel",
         notification_id: discordChannelId,
+        instance_id: instanceId,
       })
       .select("*")
       .single();
