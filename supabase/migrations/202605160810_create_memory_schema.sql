@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.muel_memory_entries (
   content text NOT NULL,
   importance smallint NOT NULL DEFAULT 3 CHECK (importance BETWEEN 1 AND 5),
   confidence real NULL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  status text NOT NULL DEFAULT 'active',
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

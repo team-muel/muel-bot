@@ -32,7 +32,7 @@ Deno.serve((req: Request) => {
     const claims = await requireGameAuth(req);
     const body = readJsonObject(await req.json().catch(() => null));
     const matchId = readRequiredString(body, "matchId");
-    const actionType = readRequiredString(body, "actionType"); // 'demon_kill', 'doctor_heal', 'police_investigate', 'vote'
+    const actionType = readRequiredString(body, "actionType"); // night actions, vote, verdict_approve, verdict_reject
     const targetUserId = readOptionalString(body, "targetUserId"); // Can be null for skip vote
 
     const supabase = getSupabaseAdmin();
@@ -72,6 +72,10 @@ Deno.serve((req: Request) => {
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
+    } else if (match.status === "verdict") {
+      if (actionType !== "verdict_approve" && actionType !== "verdict_reject") {
+        throw badRequest("invalid_phase", "현재는 찬반 투표 페이즈입니다.");
+      }
     } else {
       throw conflict("invalid_phase", "지금은 행동을 할 수 없는 페이즈입니다.");
     }
@@ -90,6 +94,19 @@ Deno.serve((req: Request) => {
         // Only the exact "demon" role shows up as demon. "helper" shows up as "angel" (not demon).
         investigationResult = target.role === "demon" ? "demon" : "angel";
       }
+    }
+
+    // Verdict choices use two action labels, so clear the opposite choice before
+    // upsert to preserve one active verdict ballot per player.
+    if (actionType === "verdict_approve" || actionType === "verdict_reject") {
+      const { error: clearVerdictError } = await supabase
+        .from("match_actions")
+        .delete()
+        .eq("phase_id", currentPhase.id)
+        .eq("actor_user_id", claims.sub)
+        .in("action_type", ["verdict_approve", "verdict_reject"]);
+
+      if (clearVerdictError) throw clearVerdictError;
     }
 
     // 4. Insert or update action

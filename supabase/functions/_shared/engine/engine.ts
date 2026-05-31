@@ -4,6 +4,33 @@ import { CORE_ROLES } from "./roles.ts";
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
 
+export type VoteActionInput = {
+  actorUserId: string;
+  targetUserId: string | null;
+  actionType?: string;
+};
+
+export type VoteTallyResult = {
+  tallies: Record<string, number>;
+  skipped: number;
+  candidateUserId: string | null;
+  maxVotes: number;
+  tie: boolean;
+};
+
+export type VerdictTallyResult = {
+  approve: number;
+  reject: number;
+  skipped: number;
+  approved: boolean;
+};
+
+export type WinConditionResult = {
+  winner: "angels" | "demons" | null;
+  aliveAngels: number;
+  aliveDemons: number;
+};
+
 export function getRoleDefinition(roleId: string) {
   return CORE_ROLES.find((role) => role.id === roleId);
 }
@@ -64,6 +91,117 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   }
 
   return { newState, events };
+}
+
+export function tallyEliminationVotes(
+  actions: VoteActionInput[],
+  players: Record<string, PlayerState>,
+): VoteTallyResult {
+  const tallies: Record<string, number> = {};
+  let skipped = 0;
+
+  for (const action of actions) {
+    const actor = players[action.actorUserId];
+    if (!actor?.alive) continue;
+
+    if (!action.targetUserId) {
+      skipped += 1;
+      continue;
+    }
+
+    const target = players[action.targetUserId];
+    if (!target?.alive) {
+      skipped += 1;
+      continue;
+    }
+
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0));
+    if (voteValue === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue;
+  }
+
+  let candidateUserId: string | null = null;
+  let maxVotes = 0;
+  let tie = false;
+
+  for (const [targetUserId, votes] of Object.entries(tallies)) {
+    if (votes > maxVotes) {
+      candidateUserId = targetUserId;
+      maxVotes = votes;
+      tie = false;
+    } else if (votes === maxVotes) {
+      tie = true;
+    }
+  }
+
+  return {
+    tallies,
+    skipped,
+    candidateUserId: tie ? null : candidateUserId,
+    maxVotes,
+    tie,
+  };
+}
+
+export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<string, PlayerState>): VerdictTallyResult {
+  let approve = 0;
+  let reject = 0;
+  let skipped = 0;
+
+  for (const action of actions) {
+    const actor = players[action.actorUserId];
+    if (!actor?.alive) continue;
+
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0));
+    if (voteValue === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    if (action.actionType === "verdict_approve") {
+      approve += voteValue;
+    } else if (action.actionType === "verdict_reject") {
+      reject += voteValue;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return {
+    approve,
+    reject,
+    skipped,
+    approved: approve > reject,
+  };
+}
+
+export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
+  let aliveAngels = 0;
+  let aliveDemons = 0;
+
+  for (const player of Object.values(players)) {
+    if (!player.alive) continue;
+
+    const faction = player.treatedAsFaction || player.actualFaction;
+    if (faction === "demon" || faction === "helper") {
+      aliveDemons += 1;
+    } else if (faction === "angel") {
+      aliveAngels += 1;
+    }
+  }
+
+  let winner: "angels" | "demons" | null = null;
+  if (aliveDemons === 0) {
+    winner = "angels";
+  } else if (aliveDemons >= aliveAngels) {
+    winner = "demons";
+  }
+
+  return { winner, aliveAngels, aliveDemons };
 }
 
 function applyEffect(
