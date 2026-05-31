@@ -12,6 +12,10 @@ function toneColor(tone?: RenderTone): number | null {
 function parseRelativeTimeToUnix(text: string): number | null {
   if (!text) return null;
   const now = Math.floor(Date.now() / 1000);
+  const discordTimestamp = text.trim().match(/^<t:(\d+):[tTdDfFR]>$/);
+  if (discordTimestamp?.[1]) {
+    return Number(discordTimestamp[1]);
+  }
   const match = text.match(/(\d+)\s*(초|분|시간|일|주|개월|년|second|minute|hour|day|week|month|year)/i);
   if (!match) return null;
   const val = parseInt(match[1], 10);
@@ -25,6 +29,34 @@ function parseRelativeTimeToUnix(text: string): number | null {
   if (unit.includes('개월') || unit.includes('month')) return now - val * 2592000;
   if (unit.includes('년') || unit.includes('year')) return now - val * 31536000;
   return null;
+}
+
+function formatUnixAsKoreanRelative(unixTime: number): string {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = Math.max(0, now - unixTime);
+
+  if (diff < 60) return '방금 전';
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}일 전`;
+  if (diff < 2592000) return `${Math.floor(diff / 604800)}주 전`;
+  if (diff < 31536000) return `${Math.floor(diff / 2592000)}개월 전`;
+  return `${Math.floor(diff / 31536000)}년 전`;
+}
+
+function formatPublishedAtForFooter(text: string | undefined): string {
+  const raw = text?.trim();
+  if (!raw) return '';
+
+  const relativeUnix = parseRelativeTimeToUnix(raw);
+  if (relativeUnix) return formatUnixAsKoreanRelative(relativeUnix);
+
+  const parsedMs = Date.parse(raw);
+  if (!Number.isNaN(parsedMs)) {
+    return formatUnixAsKoreanRelative(Math.floor(parsedMs / 1000));
+  }
+
+  return raw.replace(/<t:\d+:[tTdDfFR]>/g, '').trim().slice(0, 80);
 }
 
 function truncate(text: string, max: number): string {
@@ -133,8 +165,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.body) descriptionLines.push(truncate(part.body, imageUrl ? 1400 : 2400));
       const description = descriptionLines.join('\n\n');
 
-      const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
-      const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
+      const timeStr = formatPublishedAtForFooter(part.publishedAt);
 
       const embed = applyTone(
         new EmbedBuilder()
@@ -206,8 +237,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     } else if (part.type === 'video-card') {
       const videoId = extractYouTubeVideoId(part.url, part.videoId);
       const kind = part.isShorts ? '쇼츠' : '영상';
-      const unixTime = parseRelativeTimeToUnix(part.publishedAt || '');
-      const timeStr = unixTime ? `<t:${unixTime}:R>` : part.publishedAt;
+      const timeStr = formatPublishedAtForFooter(part.publishedAt);
 
       const embed = applyTone(
         new EmbedBuilder()

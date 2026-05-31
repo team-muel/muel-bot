@@ -12,10 +12,11 @@
     "typecheck": "tsc --noEmit",
     "test:regression": "tsx tests/regression/mention-llm-callsite.test.ts",
     "test:regression:research": "tsx tests/regression/research-enrich-callsite.test.ts",
+    "test:regression:discord-polish": "tsx tests/regression/discord-output-polish.test.ts",
     "test:registry": "tsx tests/registry/registry.smoke.test.ts",
     "test:router": "tsx tests/router/router.smoke.test.ts",
     "test:gomdori": "tsx tests/gomdori/phase1-simulation.test.ts",
-    "test:smoke": "npm run test:regression && npm run test:regression:research && npm run test:registry && npm run test:router",
+    "test:smoke": "npm run test:regression && npm run test:regression:research && npm run test:regression:discord-polish && npm run test:registry && npm run test:router",
     "eval:embeddings": "tsx tests/embeddings/embedding-eval.ts"
   },
   "engines": {

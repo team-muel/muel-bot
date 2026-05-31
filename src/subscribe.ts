@@ -3,9 +3,14 @@ import {
   createYouTubeSubscription,
   deleteYouTubeSubscription,
   listYouTubeSubscriptions,
-  type YouTubeSubscription,
   type YouTubeSubscriptionKind,
 } from './youtubeSubscriptionStore.js';
+import {
+  formatDiscordTarget,
+  formatSubscriptionLine,
+  formatYouTubeTarget,
+  toKindLabel,
+} from './subscribePresentation.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { RenderTone } from './rendering/types.js';
 
@@ -29,39 +34,17 @@ const buildSimpleEmbed = (title: string, description: string, tone: RenderTone =
     body: description,
   }]) as any;
 
-const getChannelTypeLabel = (channelType: number): string => {
-  const mapped = ChannelType[channelType];
-  return typeof mapped === 'string' ? mapped : String(channelType);
-};
-
-const toKindLabel = (kind: string): string => {
-  if (kind === 'posts') return '\uac8c\uc2dc\uae00';
-  if (kind === 'videos') return '\uc601\uc0c1';
-  return kind;
-};
-
-const formatSubscriptionLine = (row: YouTubeSubscription): string => {
-  const kind = row.url.endsWith('#posts')
-    ? 'posts'
-    : row.url.endsWith('#videos')
-      ? 'videos'
-      : 'unknown';
-  const channelId = row.url.match(/\/channel\/(UC[0-9A-Za-z_-]{20,})/)?.[1] || 'unknown';
-  const discordTarget = row.channel_id ? `<#${row.channel_id}>` : '-';
-  return `#${row.id} [${toKindLabel(kind)}] youtube=${channelId} -> discord=${discordTarget}`;
-};
-
 const resolveRowChannelMeta = async (
   interaction: ChatInputCommandInteraction,
-  row: YouTubeSubscription,
+  row: Parameters<typeof formatSubscriptionLine>[0],
 ): Promise<string> => {
-  if (!interaction.guild || !row.channel_id) return 'unknown';
+  if (!interaction.guild || !row.channel_id) return formatSubscriptionLine(row, null);
   try {
     const channel = await interaction.guild.channels.fetch(row.channel_id);
-    if (!channel) return 'missing';
-    return `${channel.name} (${getChannelTypeLabel(channel.type)})`;
+    if (!channel) return formatSubscriptionLine(row, null);
+    return formatSubscriptionLine(row, { id: channel.id, name: channel.name, type: channel.type });
   } catch {
-    return 'missing';
+    return formatSubscriptionLine(row, null);
   }
 };
 
@@ -71,6 +54,12 @@ const isValidSubscribeChannelType = (t: number): boolean =>
   t === ChannelType.PublicThread ||
   t === ChannelType.PrivateThread ||
   t === ChannelType.AnnouncementThread;
+
+const getChannelName = (channel: unknown): string | null => {
+  if (!channel || typeof channel !== 'object' || !('name' in channel)) return null;
+  const name = (channel as { name?: unknown }).name;
+  return typeof name === 'string' ? name : null;
+};
 
 const getKindOption = (interaction: ChatInputCommandInteraction): YouTubeSubscriptionKind | null => {
   const raw = interaction.options.getString(OPTION_KIND)?.trim();
@@ -119,7 +108,7 @@ export const handleSubscribeYouTubeCommand = async (
     const state = result.created ? '등록했어' : '이미 등록되어 있어';
     await interaction.editReply(buildSimpleEmbed(
       'YouTube 구독',
-      `${state}: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}> (${getChannelTypeLabel(targetChannel.type)})`,
+      `${state}: [${toKindLabel(kind)}] ${formatYouTubeTarget(result.row)} -> ${formatDiscordTarget({ id: targetChannel.id, name: getChannelName(targetChannel), type: targetChannel.type })}`,
       result.created ? 'success' : 'muel',
     ));
   } catch (error) {
@@ -145,11 +134,7 @@ export const handleSubscriptionListCommand = async (
     }
 
     const previewRows = rows.slice(0, 20);
-    const lines = await Promise.all(previewRows.map(async (row) => {
-      const line = formatSubscriptionLine(row);
-      const meta = await resolveRowChannelMeta(interaction, row);
-      return `${line} | channel=${meta}`;
-    }));
+    const lines = await Promise.all(previewRows.map((row) => resolveRowChannelMeta(interaction, row)));
     const suffix = rows.length > 20 ? `\n...(${rows.length - 20}개 더 있음)` : '';
 
     await interaction.editReply(buildSimpleEmbed('구독 목록', [...lines, suffix].filter(Boolean).join('\n'), 'muel'));
@@ -199,8 +184,8 @@ export const handleUnsubscribeCommand = async (
     await interaction.editReply(buildSimpleEmbed(
       result.deleted ? '구독 제거 완료' : '구독을 찾지 못했어요',
       result.deleted
-        ? `제거했어: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`
-        : `제거할 항목이 없어: [${toKindLabel(kind)}] youtube=${result.channelId} -> discord=<#${targetChannel.id}>`,
+        ? `제거했어: [${toKindLabel(kind)}] ${formatYouTubeTarget(result.channelId)} -> ${formatDiscordTarget({ id: targetChannel.id, name: getChannelName(targetChannel), type: targetChannel.type })}`
+        : `제거할 항목이 없어: [${toKindLabel(kind)}] ${formatYouTubeTarget(result.channelId)} -> ${formatDiscordTarget({ id: targetChannel.id, name: getChannelName(targetChannel), type: targetChannel.type })}`,
       result.deleted ? 'success' : 'warning',
     ));
   } catch (error) {

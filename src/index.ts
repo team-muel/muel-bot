@@ -36,6 +36,8 @@ let gomdoriLoginError: string | null = null;
 let lastRegisteredAt: string | null = null;
 let lastRegisteredCommandNames: string[] = [];
 let lastRegistrationError: string | null = null;
+let lastLegacyGuildCommandCleanupAt: string | null = null;
+let lastLegacyGuildCommandCleanupNames: string[] = [];
 
 const getRuntimeStatus = () => {
   const youtubeMonitor = getYouTubeMonitorStatus();
@@ -106,6 +108,25 @@ const subscribeCommand = new SlashCommandBuilder()
       .setRequired(false),
   );
 
+const LEGACY_GUILD_HUB_COMMAND_NAMES = new Set([
+  '허브활성화',
+  '허브비활성화',
+  '허브목록',
+  '허브상태',
+  '허브-활성화',
+  '허브-비활성화',
+  '허브-목록',
+  '허브-상태',
+  '허브_활성화',
+  '허브_비활성화',
+  '허브_목록',
+  '허브_상태',
+  'hub-activate',
+  'hub-deactivate',
+  'hub-list',
+  'hub-status',
+]);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -113,6 +134,35 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
+
+const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
+  const cleanedNames: string[] = [];
+  const guilds = [...readyClient.guilds.cache.values()];
+
+  for (const guild of guilds) {
+    try {
+      const rows = await rest.get(Routes.applicationGuildCommands(readyClient.application.id, guild.id));
+      if (!Array.isArray(rows)) continue;
+
+      for (const row of rows as Array<{ id?: string; name?: string }>) {
+        if (!row.id || !row.name || !LEGACY_GUILD_HUB_COMMAND_NAMES.has(row.name)) continue;
+        await rest.delete(Routes.applicationGuildCommand(readyClient.application.id, guild.id, row.id));
+        cleanedNames.push(`${guild.id}:${row.name}`);
+      }
+    } catch (error) {
+      console.warn('[discord] legacy guild command cleanup failed', {
+        guildId: guild.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (cleanedNames.length > 0) {
+    lastLegacyGuildCommandCleanupAt = new Date().toISOString();
+    lastLegacyGuildCommandCleanupNames = cleanedNames;
+    console.log('[discord] cleaned legacy guild commands', { count: cleanedNames.length, names: cleanedNames });
+  }
+};
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
@@ -142,6 +192,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
       registered: registeredNames,
       note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
     });
+    await cleanupLegacyGuildCommands(readyClient, rest);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const responseBody = (error as { rawError?: unknown }).rawError;
@@ -457,6 +508,10 @@ const server = http.createServer((request, response) => {
       lastRegisteredAt,
       registered: lastRegisteredCommandNames,
       lastError: lastRegistrationError,
+      legacyGuildCleanup: {
+        lastCleanedAt: lastLegacyGuildCommandCleanupAt,
+        cleaned: lastLegacyGuildCommandCleanupNames,
+      },
     },
   }));
 });

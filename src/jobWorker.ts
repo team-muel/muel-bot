@@ -16,6 +16,12 @@ import {
   listYouTubeSubscriptions,
   type YouTubeSubscriptionKind,
 } from './youtubeSubscriptionStore.js';
+import {
+  formatDiscordTarget,
+  formatSubscriptionLine,
+  formatYouTubeTarget,
+  toKindLabel,
+} from './subscribePresentation.js';
 
 type JobRow = {
   id: string;
@@ -91,6 +97,21 @@ const buildSubscribeResponse = (title: string, text: string) => ({
   content: `**${title}**\n${text}`.slice(0, 1900),
 });
 
+const resolveWorkerChannelTarget = async (channelId: string | null | undefined) => {
+  if (!channelId || !workerClient) return null;
+  try {
+    const channel = await workerClient.channels.fetch(channelId);
+    if (!channel || !('type' in channel)) return null;
+    return {
+      id: channel.id,
+      name: 'name' in channel && typeof channel.name === 'string' ? channel.name : null,
+      type: channel.type,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) => {
   if (!payload.guildId) {
     await patchOriginalInteractionResponse(payload.applicationId, payload.token, buildSubscribeResponse('구독', '이 명령어는 서버에서만 사용할 수 있어.'));
@@ -100,9 +121,14 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
   try {
     if (payload.action === 'list') {
       const rows = await listYouTubeSubscriptions({ guildId: payload.guildId });
+      const previewRows = rows.slice(0, 20);
+      const lines = await Promise.all(previewRows.map(async (row) => (
+        formatSubscriptionLine(row, await resolveWorkerChannelTarget(row.channel_id))
+      )));
+      const suffix = rows.length > 20 ? `\n...(${rows.length - 20}개 더 있음)` : '';
       const text = rows.length === 0
         ? '등록된 YouTube 구독이 없어.'
-        : rows.slice(0, 20).map((row) => `#${row.id} ${row.url} -> ${row.channel_id ?? '-'}`).join('\n');
+        : [...lines, suffix].filter(Boolean).join('\n');
       await patchOriginalInteractionResponse(payload.applicationId, payload.token, buildSubscribeResponse('구독 목록', text));
       return;
     }
@@ -133,7 +159,10 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
       await patchOriginalInteractionResponse(
         payload.applicationId,
         payload.token,
-        buildSubscribeResponse('구독 등록', `${result.created ? '등록했어' : '이미 있어'}: ${result.channelId} -> <#${payload.channelId}>`)
+        buildSubscribeResponse(
+          '구독 등록',
+          `${result.created ? '등록했어' : '이미 있어'}: [${toKindLabel(payload.kind)}] ${formatYouTubeTarget(result.row)} -> ${formatDiscordTarget({ id: channel.id, name: 'name' in channel && typeof channel.name === 'string' ? channel.name : null, type: channel.type })}`,
+        )
       );
       return;
     }
@@ -147,7 +176,12 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
     await patchOriginalInteractionResponse(
       payload.applicationId,
       payload.token,
-      buildSubscribeResponse('구독 제거', result.deleted ? `제거했어: ${result.channelId}` : `지울 구독이 없어: ${result.channelId}`)
+      buildSubscribeResponse(
+        '구독 제거',
+        result.deleted
+          ? `제거했어: [${toKindLabel(payload.kind)}] ${formatYouTubeTarget(result.channelId)} -> ${formatDiscordTarget({ id: channel.id, name: 'name' in channel && typeof channel.name === 'string' ? channel.name : null, type: channel.type })}`
+          : `지울 구독이 없어: [${toKindLabel(payload.kind)}] ${formatYouTubeTarget(result.channelId)} -> ${formatDiscordTarget({ id: channel.id, name: 'name' in channel && typeof channel.name === 'string' ? channel.name : null, type: channel.type })}`,
+      )
     );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);

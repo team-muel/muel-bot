@@ -1,4 +1,5 @@
 import { getSupabaseClient } from './supabase.js';
+import { fetchYouTubeChannelMetadata } from './youtubeMetadataClient.js';
 
 export type YouTubeSubscriptionKind = 'videos' | 'posts';
 
@@ -145,6 +146,20 @@ const buildSourceUrl = (
   return `https://www.youtube.com/channel/${channelId}?muelGuild=${encodeURIComponent(guildId)}&muelChannel=${encodeURIComponent(discordChannelId)}#${kind}`;
 };
 
+const buildSourceName = async (channelId: string, kind: YouTubeSubscriptionKind): Promise<string> => {
+  try {
+    const metadata = await fetchYouTubeChannelMetadata(channelId);
+    const title = metadata?.title?.replace(/\s+/g, ' ').trim();
+    if (title) {
+      return `youtube-${kind}:${title.slice(0, 80)}`;
+    }
+  } catch (error) {
+    console.warn('[youtube-subscribe] channel title lookup failed', { channelId, error });
+  }
+
+  return `youtube-${kind}`;
+};
+
 export const parseYouTubeChannelId = async (input: string): Promise<string | null> => {
   const directChannelId = extractChannelIdFromInput(input);
   if (directChannelId) {
@@ -198,13 +213,15 @@ export const createYouTubeSubscription = async (params: {
     return { created: false, row: existing[0] as YouTubeSubscription, channelId, url };
   }
 
+  const name = await buildSourceName(channelId, params.kind);
+
   const { data: inserted, error: insertError } = await db
     .from('sources')
     .insert([{
       user_id: params.userId,
       guild_id: params.guildId,
       channel_id: params.discordChannelId,
-      name: `youtube-${params.kind}`,
+      name,
       url,
       is_active: true,
     }])
