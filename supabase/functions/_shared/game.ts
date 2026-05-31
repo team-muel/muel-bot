@@ -97,6 +97,25 @@ export async function findOpenMatchByDiscordChannel(
   return data ? toMatchSummary(data as Record<string, unknown>) : null;
 }
 
+export async function findOpenMatchByInstance(
+  instanceId: string,
+): Promise<MatchSummary | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("instance_id", instanceId)
+    .in("status", ["lobby", "role_assign", "night", "night_resolve", "day", "vote", "verdict"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  return data ? toMatchSummary(data as Record<string, unknown>) : null;
+}
+
 export async function getMatch(matchId: string): Promise<MatchSummary> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
