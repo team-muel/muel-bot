@@ -114,6 +114,37 @@ const BASE_SYSTEM_PROMPT = [
   '- If tools return empty, be honest in one sentence.',
 ].join('\n');
 
+/**
+ * 현재 시각을 KST (Asia/Seoul) 기준으로 시스템 프롬프트에 주입한다.
+ *
+ * Why: LLM 은 자체 시계가 없어, 대화 컨텍스트에 등장한 시간 표현
+ * (예: "한국 시간으로 2시 10분이야!") 을 *지금 시각* 으로 환각하는 경향이 있다.
+ * 매 호출마다 *진짜* 현재 시각을 단정해 줘야 시간/날짜 답이 정확해진다.
+ *
+ * 예: 사용자가 시간 표현을 컨텍스트에 흘리면 Muel 이 그 값을 자기 시간으로
+ * 차용하던 문제 (2026-05-25 보고).
+ */
+const formatCurrentTime = (): string => {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const formatted = fmt.format(now);
+  return [
+    '--- CURRENT TIME ---',
+    `지금은 ${formatted} (Asia/Seoul, KST = UTC+9) 이다.`,
+    '시간/날짜 질문에는 위 값을 단정해서 답하라. 대화 컨텍스트에 등장한 시간 표현을 *현재 시각* 으로 차용하지 마라.',
+    '--- End Time ---',
+  ].join('\n');
+};
+
 const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
   if (!summary || summary.totalInteractions === 0) {
     return `--- About This User ---\n${authorName}: 아직 나와 대화한 기록이 거의 없는 유저.\n--- End User ---`;
@@ -247,7 +278,7 @@ export const generateMuelReply = async (
   }
 
   const lightweightTurn = isLightweightTurn(userText);
-  const systemParts = [BASE_SYSTEM_PROMPT, formatCapabilityRegistryForPrompt()];
+  const systemParts = [BASE_SYSTEM_PROMPT, formatCurrentTime(), formatCapabilityRegistryForPrompt()];
   if (guildTopology) systemParts.push('', guildTopology);
   if (channelActivity) systemParts.push('', channelActivity);
   systemParts.push('', formatUserHistory(userHistory, authorName));
