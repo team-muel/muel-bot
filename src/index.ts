@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { Client, Events, GatewayIntentBits, MessageFlags, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags, Partials, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { config } from './config.js';
 import {
   handleFlatSubscribeCommand,
@@ -133,7 +133,13 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    // DM 채널의 메시지 이벤트를 받기 위해 필요. shouldMuelRespond / handleMuelMention
+    // 는 이미 isDM 케이스를 처리 중 — intent 만 빠진 상태였음.
+    GatewayIntentBits.DirectMessages,
   ],
+  // 봇이 아직 캐시하지 않은 DM 채널의 messageCreate 이벤트를 partial 로라도 받기 위해 필요.
+  // discord.js 의 표준 패턴 (DM 봇이 채널을 미리 알 길이 없음).
+  partials: [Partials.Channel],
 });
 
 const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
