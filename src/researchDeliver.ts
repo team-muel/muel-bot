@@ -331,6 +331,21 @@ export const processResearchUserDmPollJob = async (
       // and mark it pending so the next interaction can re-send it, token-free.
       console.warn('[research-deliver] DM blocked; marking pending_dm', dmError);
       deliveryChannel = 'pending_dm';
+
+      // 사용자가 *조사 성공 + DM 차단* 상태일 때 silent fail 하던 문제 해결.
+      // interaction token 이 살아있으면 (15분 이내) ephemeral 안내로 *DM 막힌
+      // 상태* 를 통지한다. 사용자가 DM 허용/Muel 에 메시지 한 줄 보내면 다음
+      // interaction 때 flushPendingResearchDms 가 retry.
+      if (payload.interactionApplicationId && payload.interactionToken) {
+        await followUpEphemeral(
+          payload.interactionApplicationId,
+          payload.interactionToken,
+          [
+            `조사 끝났는데 너한테 DM 으로 못 보내. (${payload.topic})`,
+            '서버 → 개인 정보 보호 → "서버 멤버가 DM 보낼 수 있게 허용" 켜주거나, 나한테 DM 한 줄 보내서 채널 열어줘. 다음에 자동으로 보낼게.',
+          ].join('\n'),
+        );
+      }
     }
 
     await supabase
