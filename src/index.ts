@@ -109,6 +109,18 @@ const subscribeCommand = new SlashCommandBuilder()
       .setRequired(false),
   );
 
+// /구독 명령을 길드 + DM + private channel + user-install 모두에서 사용 가능하도록.
+// discord.js SlashCommandBuilder 에 setContexts/setIntegrationTypes 가 일부 버전에서만
+// 노출되어 있어 toJSON 후 정수 코드로 패치 (Discord API spec 직접 사용).
+// - integration_types: 0=Guild install, 1=User install
+// - contexts: 0=Guild, 1=Bot DM, 2=Private Channel (group DM 등)
+// 이미 /일기 (diaryEntryPointCommand) 와 /허브 가 같은 값을 쓰고 있음.
+const subscribeCommandPayload = {
+  ...subscribeCommand.toJSON(),
+  integration_types: [0, 1],
+  contexts: [0, 1, 2],
+};
+
 const LEGACY_GUILD_HUB_COMMAND_NAMES = new Set([
   '허브활성화',
   '허브비활성화',
@@ -193,7 +205,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
   const commands: any[] = [
     helpCommand.toJSON(),
-    subscribeCommand.toJSON(),
+    subscribeCommandPayload,
     pingCommand.toJSON(),
     diaryEntryPointCommand,
     buildHubSlashCommand(),
