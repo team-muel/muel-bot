@@ -28,6 +28,7 @@ import {
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
+import { buildMemoSlashCommand, handleMemoCommand, MEMO_COMMAND_NAME } from './memoHandler.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -69,14 +70,10 @@ const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
   .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
 
-const diaryEntryPointCommand = {
-  name: '일기',
-  description: '꿈을 기록하고 연결합니다.',
-  type: 4,
-  handler: 2,
-  integration_types: [0, 1],
-  contexts: [0, 1, 2],
-};
+// 이전의 /일기 (Activity entry point, type=4) 는 제거되었다.
+// 사용자 결정 (2026-06-05): 일기는 노출 의도 X 였고, /메모 로 의도 재설계.
+// /메모 는 type=1 chat input + 서브커맨드 (add/목록/삭제) 로 사용자 개인화 메모리 CRUD.
+// LEGACY_GLOBAL_COMMAND_NAMES 에 '일기' 포함 — global cleanup 으로 자동 제거 + registerCommands PUT 으로도 덮어씀.
 
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
@@ -138,6 +135,9 @@ const LEGACY_GUILD_HUB_COMMAND_NAMES = new Set([
   'hub-deactivate',
   'hub-list',
   'hub-status',
+  // /일기 entry point 는 /메모 로 의도 재설계되어 제거 (2026-06-05).
+  // registerCommands PUT 이 자동으로 덮어쓰지만 cleanup 에도 명시.
+  '일기',
 ]);
 
 const client = new Client({
@@ -242,11 +242,18 @@ const cleanupLegacyGlobalCommands = async (readyClient: Client<true>, rest: REST
 
 const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
+  const memoCommandPayload = {
+    ...buildMemoSlashCommand().toJSON(),
+    // /메모 는 DM + private channel + user-install 모두 가능.
+    integration_types: [0, 1],
+    contexts: [0, 1, 2],
+  };
+
   const commands: any[] = [
     helpCommand.toJSON(),
     subscribeCommandPayload,
     pingCommand.toJSON(),
-    diaryEntryPointCommand,
+    memoCommandPayload,
     buildHubSlashCommand(),
   ];
 
@@ -366,6 +373,11 @@ if (!config.enableHttpInteractions) {
 
     if (interaction.commandName === HUB_COMMAND_NAME) {
       await handleHubSlashInteraction(interaction);
+      return;
+    }
+
+    if (interaction.commandName === MEMO_COMMAND_NAME) {
+      await handleMemoCommand(interaction);
       return;
     }
 
