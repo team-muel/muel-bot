@@ -1,6 +1,7 @@
 import { type ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import { insertWeaveNode } from './weaveNodes.js';
 
 /**
  * /메모 명령 — 사용자가 Muel 에게 *기억해줘* 라고 직접 지시하는 메모 CRUD.
@@ -189,17 +190,26 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     return;
   }
   const supabase = getSupabaseClient();
-  const { error } = await supabase
+  const { data: inserted, error } = await supabase
     .from('muel_user_memos')
     .insert({
       discord_user_id: interaction.user.id,
       content,
-    });
+    })
+    .select('id')
+    .single();
   if (error) {
     console.warn('[memo] add failed', error);
     await interaction.reply({ content: `저장 실패: ${error.message}`, flags: EPHEMERAL });
     return;
   }
+  // ADR-002: 직접 메모도 weave 지식 노드로 남긴다 (private, owner=본인). fire-and-forget.
+  void insertWeaveNode({
+    sourceKind: 'user_memo',
+    ownerUserId: interaction.user.id,
+    body: content,
+    sourceRef: { muel_user_memos_id: inserted?.id ?? null },
+  });
   await interaction.reply({ ...buildAddSuccess(content), flags: EPHEMERAL });
 };
 
