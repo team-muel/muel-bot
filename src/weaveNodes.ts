@@ -39,6 +39,13 @@ export type InsertWeaveNodeInput = {
   client?: SupabaseClient;
 };
 
+export type DeleteWeaveNodesBySourceRefInput = {
+  sourceKind: WeaveSourceKind;
+  ownerUserId?: string | null;
+  sourceRef: Record<string, unknown>;
+  client?: SupabaseClient;
+};
+
 /** sourceKind 별 visibility 기본값 (ADR-002 두 페르소나: 개인 ↔ 커뮤니티). */
 const DEFAULT_VISIBILITY: Record<WeaveSourceKind, WeaveVisibility> = {
   dream: 'private',
@@ -100,5 +107,31 @@ export const insertWeaveNode = async (input: InsertWeaveNodeInput): Promise<stri
   } catch (err) {
     console.warn('[weave] insertWeaveNode unexpected error', err);
     return null;
+  }
+};
+
+/**
+ * 원본 메모/리서치 항목이 삭제·비활성화될 때 연결된 private weave 노드를 같이 정리.
+ * 실패해도 원래 사용자 액션은 막지 않는다.
+ */
+export const deleteWeaveNodesBySourceRef = async (input: DeleteWeaveNodesBySourceRefInput): Promise<void> => {
+  try {
+    const supabase = input.client ?? getSupabaseClient();
+    let query = supabase
+      .from('weave_nodes')
+      .delete()
+      .eq('source_kind', input.sourceKind)
+      .contains('source_ref', input.sourceRef);
+
+    if (input.ownerUserId) {
+      query = query.eq('owner_user_id', input.ownerUserId);
+    }
+
+    const { error } = await query;
+    if (error) {
+      console.warn('[weave] delete by source_ref failed', error.message);
+    }
+  } catch (err) {
+    console.warn('[weave] deleteWeaveNodesBySourceRef unexpected error', err);
   }
 };

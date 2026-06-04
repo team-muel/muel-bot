@@ -28,7 +28,7 @@ import {
 import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
-import { buildMemoSlashCommand, handleMemoCommand, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -169,7 +169,7 @@ const client = new Client({
 const MUEL_WELCOME_DM = [
   '안녕, 나는 Muel (뮤엘) 이야.',
   '이 서버 어디서든 `@Muel` 멘션해서 부르거나, 여기 DM 으로도 바로 얘기할 수 있어.',
-  '뭐든 물어봐도 돼. 모르면 모른다고 할게.',
+  '뭐든 질문해도 돼. 모르면 모른다고 할게.',
 ].join('\n');
 
 const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
@@ -300,6 +300,7 @@ const buildHelpMessage = () => renderDiscordMessage([{
       name: '명령어',
       value: [
         '/구독 - YouTube 영상/게시글 자동 구독 관리',
+        '/메모 - DM에서도 쓰는 개인화 메모 목록/추가/삭제',
         '/허브 - 이 채널에서 뮤엘이 자연어로 응답할지 켜고 끄기 (채널 관리 권한 필요)',
         '/도움말 - 이 안내 보기',
         '/ping - 온라인 확인',
@@ -352,6 +353,12 @@ if (!config.enableHttpInteractions) {
       }
       return;
     }
+    if (interaction.isStringSelectMenu()) {
+      if (isMemoSelectMenu(interaction.customId)) {
+        await handleMemoSelectMenu(interaction);
+      }
+      return;
+    }
     if (!interaction.isChatInputCommand()) {
       return;
     }
@@ -386,7 +393,7 @@ if (!config.enableHttpInteractions) {
         type: 'info-card',
         tone: 'warning',
         title: '알 수 없는 명령어',
-        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /허브, /ping 입니다.',
+        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /메모, /허브, /ping 입니다.',
       }]),
       flags: [MessageFlags.Ephemeral],
     });
