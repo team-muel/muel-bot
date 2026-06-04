@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 import { embedMuelText } from './muelEmbeddings.js';
+import { insertWeaveNode } from './weaveNodes.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 import { repairJsonText } from './aiRepair.js';
@@ -302,6 +303,17 @@ Task:
           kind: memory.kind || 'preference',
           status: 'active',
           created_at: new Date().toISOString()
+        });
+
+        // ADR-002: 자동 추출 메모도 weave 지식 노드로 (private, owner=사용자).
+        // 임베딩은 위에서 이미 계산됐으니 재사용. fire-and-forget.
+        void insertWeaveNode({
+          sourceKind: 'auto_memo',
+          ownerUserId: sourceUserId,
+          body: finalContent,
+          tags: [memory.kind, memory.memory_type].filter(Boolean),
+          sourceRef: { muel_memory_entries_id: newEntryId, importance: memory.importance },
+          embedding,
         });
       }
     }

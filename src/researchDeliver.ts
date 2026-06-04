@@ -12,6 +12,7 @@ import {
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
+import { insertWeaveNode } from './weaveNodes.js';
 
 /**
  * jobWorker handler for 'research_user_dm' job type. Submitted from
@@ -364,6 +365,21 @@ export const processResearchUserDmPollJob = async (
         delivery_message_id: deliveryMessageId,
       })
       .eq('id', rowId);
+
+    // ADR-002: 리서치 리포트를 weave 지식 노드로 남긴다 (private, owner=요청자).
+    // DM 1회성으로 끝나지 않고 /weave 에서 후방 자산으로 노출. fire-and-forget.
+    void insertWeaveNode({
+      sourceKind: 'research_report',
+      ownerUserId: payload.requesterUserId,
+      title: payload.topic,
+      body: report.report ?? '',
+      tags: ['research'],
+      sourceRef: {
+        research_job_id: rowId,
+        source_cited: sourceCited ?? null,
+        source_found: sourceFound ?? null,
+      },
+    });
   } catch (error) {
     const isClient = error instanceof AiqClientError;
     const errClass = isClient ? `AiqClientError(${(error as AiqClientError).status})` : (error instanceof Error ? error.name : typeof error);

@@ -8,6 +8,7 @@ import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import { insertWeaveNode } from './weaveNodes.js';
 import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 import { enqueueJob } from './muelJobs.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
@@ -588,7 +589,17 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     const intent: MuelRenderablePart[] = [intentBase];
 
     const sentMessage = await channel.send(renderDiscordMessage(intent));
-    
+
+    // ADR-002: 커뮤니티 게시글을 weave 지식 노드로 (community). fire-and-forget.
+    void insertWeaveNode({
+      sourceKind: 'community_post',
+      visibility: 'community',
+      title: latest.title,
+      body: latest.content || latest.title,
+      tags: [latest.author].filter(Boolean),
+      sourceRef: { youtube_id: latest.id, channel_id: channelId, url: displayLink(latest) },
+    });
+
     if (overflow) {
       await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
     }
@@ -610,6 +621,16 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     ];
     
     await channel.send(renderDiscordMessage(intent));
+
+    // ADR-002: 커뮤니티 영상을 weave 지식 노드로 (community). fire-and-forget.
+    void insertWeaveNode({
+      sourceKind: 'community_video',
+      visibility: 'community',
+      title: latest.title,
+      body: latest.title,
+      tags: [latest.author].filter(Boolean),
+      sourceRef: { youtube_id: latest.id, channel_id: channelId, url: displayLink(latest), is_shorts: isShortsEntry(latest) },
+    });
     // No thread on video/shorts cards. The card itself carries title + thumbnail +
     // "영상 보기" link button — a thread that just re-pastes the same URL forces
     // Discord to draw a second auto-embed (the duplicate observed in production).
