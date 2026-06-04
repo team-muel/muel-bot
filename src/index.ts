@@ -162,7 +162,18 @@ const MUEL_WELCOME_DM = [
 
 const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
   const cleanedNames: string[] = [];
-  const guilds = [...readyClient.guilds.cache.values()];
+
+  // 이전: client.guilds.cache.values() 만 순회 — ready 시점에 캐시된 길드만 청소.
+  // 결과: cache miss 길드에 legacy 명령이 남아 사용자 자동완성에 노이즈.
+  // 변경: readyClient.guilds.fetch() 로 *모든 길드* 를 강제 수집.
+  let guilds: Array<{ id: string }>;
+  try {
+    const guildManager = await readyClient.guilds.fetch();
+    guilds = [...guildManager.values()];
+  } catch (err) {
+    console.warn('[discord] guilds.fetch failed, fallback to cache', err);
+    guilds = [...readyClient.guilds.cache.values()];
+  }
 
   for (const guild of guilds) {
     try {
@@ -186,6 +197,34 @@ const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST)
     lastLegacyGuildCommandCleanupAt = new Date().toISOString();
     lastLegacyGuildCommandCleanupNames = cleanedNames;
     console.log('[discord] cleaned legacy guild commands', { count: cleanedNames.length, names: cleanedNames });
+  } else {
+    console.log('[discord] no legacy guild commands found', { scannedGuilds: guilds.length });
+  }
+};
+
+/**
+ * 글로벌 명령에 legacy 허브 명령이 남아있는지 *방어적*으로 확인 + 청소.
+ *
+ * registerCommands 가 매 ready 마다 PUT 으로 글로벌 명령 set 을 덮어쓰기 때문에
+ * 글로벌 단에는 잔재가 남기 어렵지만, 일시적 race 또는 외부 변경에 대비.
+ */
+const cleanupLegacyGlobalCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
+  const cleanedNames: string[] = [];
+  try {
+    const rows = await rest.get(Routes.applicationCommands(readyClient.application.id));
+    if (!Array.isArray(rows)) return;
+
+    for (const row of rows as Array<{ id?: string; name?: string }>) {
+      if (!row.id || !row.name || !LEGACY_GUILD_HUB_COMMAND_NAMES.has(row.name)) continue;
+      await rest.delete(Routes.applicationCommand(readyClient.application.id, row.id));
+      cleanedNames.push(row.name);
+    }
+  } catch (err) {
+    console.warn('[discord] legacy global command cleanup failed', err);
+  }
+
+  if (cleanedNames.length > 0) {
+    console.log('[discord] cleaned legacy global commands', { count: cleanedNames.length, names: cleanedNames });
   }
 };
 
@@ -218,6 +257,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
       note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
     });
     await cleanupLegacyGuildCommands(readyClient, rest);
+    await cleanupLegacyGlobalCommands(readyClient, rest);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const responseBody = (error as { rawError?: unknown }).rawError;
