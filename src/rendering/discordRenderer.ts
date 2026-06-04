@@ -1,5 +1,5 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
-import type { MuelRenderablePart, RenderTone, CardSection, CardActionButton } from './types.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
+import type { MuelRenderablePart, RenderTone, CardSection, CardActionButton, CardSelectMenu } from './types.js';
 
 function toneColor(tone?: RenderTone): number | null {
   if (tone === 'muel') return 0xa2e61d;
@@ -120,6 +120,43 @@ function buildActionButtonRow(buttons: CardActionButton[] | undefined): ActionRo
   return row;
 }
 
+function buildLinkButtonRow(linkButton: { label: string; url: string } | undefined): ActionRowBuilder<ButtonBuilder> | null {
+  const url = linkButton?.url?.trim();
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setLabel((linkButton?.label || '열기').slice(0, 80))
+      .setStyle(ButtonStyle.Link)
+      .setURL(url),
+  );
+}
+
+function buildSelectMenuRow(menu: CardSelectMenu | undefined): ActionRowBuilder<StringSelectMenuBuilder> | null {
+  if (!menu || menu.options.length === 0) return null;
+  const maxOptions = menu.options.slice(0, 25);
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(menu.customId.slice(0, 100))
+    .setPlaceholder(menu.placeholder.slice(0, 150))
+    .setMinValues(menu.minValues ?? 1)
+    .setMaxValues(Math.min(menu.maxValues ?? 1, maxOptions.length))
+    .addOptions(maxOptions.map((option) => {
+      const built = {
+        label: option.label.slice(0, 100),
+        value: option.value.slice(0, 100),
+        description: option.description?.slice(0, 100),
+        emoji: option.emoji,
+      };
+      return built;
+    }));
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+}
+
+function appendComponentRow(options: MessageCreateOptions, row: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder> | null) {
+  if (!row) return;
+  if ((options.components?.length ?? 0) >= 5) return;
+  options.components = [...(options.components || []), row];
+}
+
 export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreateOptions {
   const embeds: EmbedBuilder[] = [];
   const options: MessageCreateOptions = {
@@ -155,8 +192,9 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
 
-      const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, buildLinkButtonRow(part.linkButton));
+      appendComponentRow(options, buildActionButtonRow(part.actionButtons));
+      appendComponentRow(options, buildSelectMenuRow(part.selectMenu));
     } else if (part.type === 'youtube-community-post-card') {
       const imageUrl = part.imageUrls?.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url));
 
@@ -195,12 +233,12 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       );
 
       embeds.push(embed);
-      options.components = [...(options.components || []), linkRow];
+      appendComponentRow(options, linkRow);
 
       // Action buttons (custom_id, e.g., enrichment trigger) go on a separate row
       // so they don't conflict with the link button. Discord allows up to 5 rows.
       const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, actionRow);
     } else if (part.type === 'announcement-card') {
       const embed = applyTone(
         new EmbedBuilder()
@@ -219,7 +257,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       embeds.push(embed);
 
       const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, actionRow);
     } else if (part.type === 'release-note-card') {
       const embed = applyTone(
         new EmbedBuilder()
@@ -233,7 +271,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       embeds.push(embed);
 
       const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, actionRow);
     } else if (part.type === 'video-card') {
       const videoId = extractYouTubeVideoId(part.url, part.videoId);
       const kind = part.isShorts ? '쇼츠' : '영상';
@@ -268,10 +306,10 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       );
 
       embeds.push(embed);
-      options.components = [...(options.components || []), linkRow];
+      appendComponentRow(options, linkRow);
 
       const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, actionRow);
     } else if (part.type === 'rich-card') {
       if (part.bannerImage && /^https?:\/\//i.test(part.bannerImage)) {
         const bannerEmbed = applyTone(new EmbedBuilder().setImage(part.bannerImage), part.tone);
@@ -296,17 +334,11 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       embeds.push(embed);
 
       if (part.linkButton?.url) {
-        const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setLabel(part.linkButton.label.slice(0, 80) || '열기')
-            .setStyle(ButtonStyle.Link)
-            .setURL(part.linkButton.url),
-        );
-        options.components = [...(options.components || []), linkRow];
+        appendComponentRow(options, buildLinkButtonRow(part.linkButton));
       }
 
-      const actionRow = buildActionButtonRow(part.actionButtons);
-      if (actionRow) options.components = [...(options.components || []), actionRow];
+      appendComponentRow(options, buildActionButtonRow(part.actionButtons));
+      appendComponentRow(options, buildSelectMenuRow(part.selectMenu));
     }
   }
 

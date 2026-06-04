@@ -5,7 +5,8 @@
  *   1. YouTube embeds do not place Discord timestamp markup in embed footers.
  *   2. /구독 output hides raw DB row ids, raw YouTube channel ids, and enum labels.
  *   3. /허브 remains one grouped command while guild-scoped legacy commands are cleaned.
- *   4. Deep research UX does not promise guaranteed delivery when AI-Q/search quota fails.
+ *   4. Renderer supports structured link/select controls without ad hoc Discord code.
+ *   5. Deep research UX does not promise guaranteed delivery when AI-Q/search quota fails.
  *
  * Run: npx tsx tests/regression/discord-output-polish.test.ts
  */
@@ -97,6 +98,34 @@ check('/허브 grouped command registration has guild-scoped legacy cleanup', ()
   assert.match(index, /Routes\.applicationGuildCommands/);
   assert.match(index, /Routes\.applicationGuildCommand/);
   assert.doesNotMatch(index, /new SlashCommandBuilder\(\)\s*\.setName\('허브활성화'\)/);
+});
+
+check('renderer emits info-card link button and select menu rows', () => {
+  const message = renderDiscordMessage([{
+    type: 'info-card',
+    title: '메모',
+    body: 'body',
+    linkButton: { label: 'Weave 열기', url: 'https://muel-tree.vercel.app/weave' },
+    selectMenu: {
+      customId: 'memo:forget-select:1234',
+      placeholder: '삭제할 메모 선택',
+      options: [
+        { label: '#1 직접', value: 'u:memo-1', description: '테스트 메모' },
+      ],
+    },
+  }]);
+  const rows = (message.components ?? []).map((row: any) => row.toJSON());
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].components[0].style, 5);
+  assert.equal(rows[1].components[0].type, 3);
+  assert.equal(rows[1].components[0].custom_id, 'memo:forget-select:1234');
+});
+
+check('/메모 select menu interactions are routed', () => {
+  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+  assert.match(index, /interaction\.isStringSelectMenu\(\)/);
+  assert.match(index, /isMemoSelectMenu\(interaction\.customId\)/);
+  assert.match(index, /handleMemoSelectMenu\(interaction\)/);
 });
 
 check('deep research copy mentions backend/search quota failure modes', () => {

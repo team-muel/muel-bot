@@ -35,6 +35,19 @@ export type CardActionButton = {
   emoji?: string;
 };
 
+export type CardSelectMenu = {
+  customId: string;
+  placeholder: string;
+  minValues?: number;
+  maxValues?: number;
+  options: Array<{
+    label: string;
+    value: string;
+    description?: string;
+    emoji?: string;
+  }>;
+};
+
 export type MuelRenderablePart =
   | {
       type: 'text';
@@ -52,7 +65,9 @@ export type MuelRenderablePart =
       }>;
       footer?: string;
       sourceUrl?: string;
+      linkButton?: { label: string; url: string };
       actionButtons?: CardActionButton[];
+      selectMenu?: CardSelectMenu;
     }
   | {
       type: 'youtube-community-post-card';
@@ -115,4 +130,5 @@ export type MuelRenderablePart =
       sourceUrl?: string;
       linkButton?: { label: string; url: string };
       actionButtons?: CardActionButton[];
+      selectMenu?: CardSelectMenu;
     };

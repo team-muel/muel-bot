@@ -1,7 +1,8 @@
-import { type ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder } from 'discord.js';
+import { type ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder, type StringSelectMenuInteraction } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
-import { insertWeaveNode } from './weaveNodes.js';
+import { deleteWeaveNodesBySourceRef, insertWeaveNode } from './weaveNodes.js';
+import { config } from './config.js';
 
 /**
  * /메모 명령 — 사용자가 Muel 에게 *기억해줘* 라고 직접 지시하는 메모 CRUD.
@@ -23,6 +24,7 @@ export const MEMO_COMMAND_NAME = '메모';
 const MEMO_SUB_ADD = 'add';
 const MEMO_SUB_LIST = '목록';
 const MEMO_SUB_DELETE = '삭제';
+const MEMO_ACTION_FORGET_SELECT_PREFIX = 'memo:forget-select:';
 
 const MEMO_PAGE_SIZE = 10;
 const MEMO_MAX_LIST = 100; // 한 사용자 메모 표시 상한 (목록 페이지네이션 기준)
@@ -79,6 +81,17 @@ type MemoRow = {
   kind: string | null;
   importance: number | null;
   created_at: string;
+};
+
+const memoSelectValue = (memo: MemoRow): string =>
+  `${memo.source === 'user_direct' ? 'u' : 'a'}:${memo.id}`;
+
+const sourceLabelFor = (memo: MemoRow): string =>
+  memo.source === 'user_direct' ? '직접' : '자동';
+
+const preview = (text: string, max = 92): string => {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  return compact.length <= max ? compact : `${compact.slice(0, max - 1).trimEnd()}…`;
 };
 
 /** 사용자 + 자동 메모 통합 fetch (created_at desc 정렬, 상한 MEMO_MAX_LIST). */
@@ -157,7 +170,7 @@ const buildAddSuccess = (content: string) =>
     fields: [{ name: '​', value: '✏️ 직접 · 다음 대화부터 반영' }],
   }]) as any;
 
-const buildListMessage = (memos: MemoRow[], page: number) => {
+const buildListMessage = (memos: MemoRow[], page: number, ownerUserId: string) => {
   if (memos.length === 0) {
     return renderDiscordMessage([{
       type: 'info-card',
@@ -173,11 +186,27 @@ const buildListMessage = (memos: MemoRow[], page: number) => {
   const slice = memos.slice(start, start + MEMO_PAGE_SIZE);
 
   const cards = slice.map((m, i) => formatMemoCard(m, start + i + 1));
+  const hasNext = safePage < totalPages;
   const footer = {
     type: 'info-card' as const,
     tone: 'muel' as const,
     title: `페이지 ${safePage} / ${totalPages}`,
-    body: `총 ${memos.length}건 · 다음 페이지: \`/메모 목록 페이지:${safePage + 1}\` · 삭제: \`/메모 삭제 번호:<#>\``,
+    body: [
+      `총 ${memos.length}건`,
+      hasNext ? `다음 페이지: \`/메모 목록 페이지:${safePage + 1}\`` : null,
+      '직접 메모는 삭제, 자동 메모는 비활성화됨',
+    ].filter(Boolean).join(' · '),
+    linkButton: { label: 'Weave 열기', url: `${config.hubUrl}/weave` },
+    selectMenu: {
+      customId: `${MEMO_ACTION_FORGET_SELECT_PREFIX}${ownerUserId}`,
+      placeholder: '삭제/비활성화할 메모 선택',
+      options: slice.map((memo, i) => ({
+        label: `#${start + i + 1} ${sourceLabelFor(memo)}`,
+        value: memoSelectValue(memo),
+        description: preview(memo.content),
+        emoji: memo.source === 'user_direct' ? '✏️' : '🤖',
+      })),
+    },
   };
 
   return renderDiscordMessage([...cards, footer]) as any;
@@ -216,7 +245,7 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
 const handleMemoList = async (interaction: ChatInputCommandInteraction) => {
   const page = interaction.options.getInteger('페이지') ?? 1;
   const memos = await fetchAllMemos(interaction.user.id);
-  await interaction.reply({ ...buildListMessage(memos, page), flags: EPHEMERAL });
+  await interaction.reply({ ...buildListMessage(memos, page, interaction.user.id), flags: EPHEMERAL });
 };
 
 const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
@@ -234,29 +263,111 @@ const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
     return;
   }
   const target = memos[number - 1];
-  const supabase = getSupabaseClient();
-  if (target.source === 'user_direct') {
-    const { error } = await supabase.from('muel_user_memos').delete().eq('id', target.id);
-    if (error) {
-      await interaction.reply({ content: `삭제 실패: ${error.message}`, flags: EPHEMERAL });
-      return;
-    }
-  } else {
-    // auto_extracted: 자동 추출 메모는 hard delete 대신 status='archived' 로 비활성.
-    // retrieveRelevantMemories 가 status='active' 만 본다.
-    const { error } = await supabase
-      .from('muel_memory_entries')
-      .update({ status: 'archived' })
-      .eq('id', target.id);
-    if (error) {
-      await interaction.reply({ content: `비활성 실패: ${error.message}`, flags: EPHEMERAL });
-      return;
-    }
+  const result = await deleteOrArchiveMemo({
+    source: target.source,
+    id: target.id,
+    ownerUserId: interaction.user.id,
+  });
+  if (!result.ok) {
+    await interaction.reply({ content: result.message, flags: EPHEMERAL });
+    return;
   }
   await interaction.reply({
-    content: `메모 #${number} 삭제됨 (${target.source === 'user_direct' ? '직접' : '자동 → 비활성'}).`,
+    content: `메모 #${number} 처리됨 (${target.source === 'user_direct' ? '직접 삭제' : '자동 비활성'}).`,
     flags: EPHEMERAL,
   });
+};
+
+const deleteOrArchiveMemo = async (
+  args: {
+    source: MemoRow['source'];
+    id: string;
+    ownerUserId: string;
+  },
+): Promise<{ ok: true; label: string } | { ok: false; message: string }> => {
+  const supabase = getSupabaseClient();
+  if (args.source === 'user_direct') {
+    const { data, error } = await supabase
+      .from('muel_user_memos')
+      .delete()
+      .eq('id', args.id)
+      .eq('discord_user_id', args.ownerUserId)
+      .select('id')
+      .maybeSingle();
+    if (error) return { ok: false, message: `삭제 실패: ${error.message}` };
+    if (!data?.id) return { ok: false, message: '이 메모를 찾지 못했어. 목록을 새로 열어줘.' };
+
+    await deleteWeaveNodesBySourceRef({
+      sourceKind: 'user_memo',
+      ownerUserId: args.ownerUserId,
+      sourceRef: { muel_user_memos_id: args.id },
+      client: supabase,
+    });
+    return { ok: true, label: '직접 메모 삭제됨' };
+  }
+
+  const { data: owned, error: ownErr } = await supabase
+    .from('muel_memory_entries')
+    .select('id, muel_chats!inner(source_user_id)')
+    .eq('id', args.id)
+    .eq('muel_chats.source_user_id', args.ownerUserId)
+    .maybeSingle();
+  if (ownErr) return { ok: false, message: `비활성 실패: ${ownErr.message}` };
+  if (!owned?.id) return { ok: false, message: '이 자동 메모를 찾지 못했어. 목록을 새로 열어줘.' };
+
+  const { error } = await supabase
+    .from('muel_memory_entries')
+    .update({ status: 'archived' })
+    .eq('id', args.id);
+  if (error) return { ok: false, message: `비활성 실패: ${error.message}` };
+
+  await deleteWeaveNodesBySourceRef({
+    sourceKind: 'auto_memo',
+    ownerUserId: args.ownerUserId,
+    sourceRef: { muel_memory_entries_id: args.id },
+    client: supabase,
+  });
+  return { ok: true, label: '자동 메모 비활성화됨' };
+};
+
+const parseMemoSelectValue = (value: string): { source: MemoRow['source']; id: string } | null => {
+  const separator = value.indexOf(':');
+  if (separator === -1) return null;
+  const kind = value.slice(0, separator);
+  const id = value.slice(separator + 1);
+  if (!id) return null;
+  if (kind === 'u') return { source: 'user_direct', id };
+  if (kind === 'a') return { source: 'auto_extracted', id };
+  return null;
+};
+
+export const isMemoSelectMenu = (customId: string): boolean =>
+  customId.startsWith(MEMO_ACTION_FORGET_SELECT_PREFIX);
+
+export const handleMemoSelectMenu = async (interaction: StringSelectMenuInteraction): Promise<void> => {
+  const ownerUserId = interaction.customId.slice(MEMO_ACTION_FORGET_SELECT_PREFIX.length);
+  if (!ownerUserId || ownerUserId !== interaction.user.id) {
+    await interaction.reply({ content: '이 메모 목록은 요청한 사람만 조작할 수 있어.', flags: EPHEMERAL }).catch(() => {});
+    return;
+  }
+
+  const parsed = parseMemoSelectValue(interaction.values[0] ?? '');
+  if (!parsed) {
+    await interaction.reply({ content: '선택 데이터가 손상됐어. 목록을 다시 열어줘.', flags: EPHEMERAL }).catch(() => {});
+    return;
+  }
+
+  await interaction.deferReply({ flags: EPHEMERAL }).catch(() => {});
+  const result = await deleteOrArchiveMemo({
+    source: parsed.source,
+    id: parsed.id,
+    ownerUserId,
+  });
+
+  const message = result.ok
+    ? `${result.label}. 최신 상태는 \`/메모 목록\` 으로 다시 확인해줘.`
+    : result.message;
+  await interaction.editReply({ content: message }).catch(() => {});
 };
 
 export const handleMemoCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
