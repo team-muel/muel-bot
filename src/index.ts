@@ -136,11 +136,29 @@ const client = new Client({
     // DM 채널의 메시지 이벤트를 받기 위해 필요. shouldMuelRespond / handleMuelMention
     // 는 이미 isDM 케이스를 처리 중 — intent 만 빠진 상태였음.
     GatewayIntentBits.DirectMessages,
+    // 서버 신규 입장 멤버에게 환영 DM 을 보내기 위한 privileged intent.
+    // Discord Developer Portal → Bot → Privileged Gateway Intents 에서
+    // "SERVER MEMBERS INTENT" 활성화 필수. 100 서버 이상 되면 verification 필요.
+    GatewayIntentBits.GuildMembers,
   ],
   // 봇이 아직 캐시하지 않은 DM 채널의 messageCreate 이벤트를 partial 로라도 받기 위해 필요.
   // discord.js 의 표준 패턴 (DM 봇이 채널을 미리 알 길이 없음).
   partials: [Partials.Channel],
 });
+
+/**
+ * 신규 멤버 환영 DM. Muel 페르소나 (반말 + 짧고 dense) 로 첫 인사 + 사용법.
+ *
+ * 부수 효과: 사용자 ↔ Muel DM 채널이 *처음 열린다*. 이후 봇 → 사용자 push (예:
+ * AI-Q 리서치 리포트 DM 전송) 가 차단되지 않음.
+ *
+ * 사용자가 DM 막은 경우는 silent fail. 강제 못 함.
+ */
+const MUEL_WELCOME_DM = [
+  '안녕, 나는 Muel (뮤엘) 이야.',
+  '이 서버 어디서든 `@Muel` 멘션해서 부르거나, 여기 DM 으로도 바로 얘기할 수 있어.',
+  '뭐든 물어봐도 돼. 모르면 모른다고 할게.',
+].join('\n');
 
 const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
   const cleanedNames: string[] = [];
@@ -354,6 +372,21 @@ client.on(Events.MessageCreate, async (message) => {
     } catch (error) {
       console.warn('[community-flow] skipped observe', error);
     }
+  }
+});
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  if (member.user.bot) return;
+  try {
+    await member.send(MUEL_WELCOME_DM);
+    console.log('[muel-welcome] sent', { userId: member.id, guildId: member.guild.id });
+  } catch (err) {
+    // 사용자가 *서버 멤버의 DM 허용 X* 또는 봇 차단. 강제 못 함, silent.
+    console.warn('[muel-welcome] DM blocked', {
+      userId: member.id,
+      guildId: member.guild.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
