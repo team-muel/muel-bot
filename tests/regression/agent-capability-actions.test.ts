@@ -54,6 +54,18 @@ assert(
 );
 
 assert(
+  'muelAgent self-introduction avoids unsolicited product and origin details',
+  /Do not volunteer creator, name-origin, Weave, Gomdori, or product-introduction details/.test(muelAgent) &&
+    /do not bring it up unless the user asks or the current task is actually about Weave/.test(muelAgent),
+);
+
+assert(
+  'muelAgent keeps Arknights untranslated when origin is explicitly asked',
+  /Keep "Arknights" in English/.test(muelAgent) &&
+    /do not transliterate it as "아르케나이츠"/.test(muelAgent),
+);
+
+assert(
   'actionDraft uses schema-first AI SDK object classification, not executor heuristics',
   /generateObject\(/.test(actionDraft) &&
     /ActionDraftSchema/.test(actionDraft) &&
