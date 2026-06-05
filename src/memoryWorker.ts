@@ -105,7 +105,7 @@ export async function processMemoryJob(job: any) {
   // Fetch up to 30 messages to capture repetitive patterns
   const { data: messages, error: messagesError } = await supabase
     .from('muel_messages_v2')
-    .select('id, role, parts, created_at')
+    .select('id, role, parts, metadata, created_at')
     .eq('chat_id', chatId)
     .lte('created_at', payload.createdAt)
     .order('created_at', { ascending: false })
@@ -167,6 +167,20 @@ export async function processMemoryJob(job: any) {
   if (!object.memories || object.memories.length === 0) return;
 
   const sourceUserId = chatData.source_user_id;
+
+  // muel_chats.source_user_id 는 채널 스코프 chat 에서 NULL 인 경우가 많다 (운영 데이터에서 관찰).
+  // 메모의 실제 소유자 = 트리거 user 메시지 작성자 (metadata.discordUserId). 이게 weave
+  // private 그래프의 owner_user_id 가 된다. 없으면 owner-less 노드 → 개인 그래프에 안 뜸.
+  const resolveMemoOwnerId = (): string | null => {
+    const fromTrigger = (messages as Array<{ id: string; role: string; metadata?: { discordUserId?: string } }>)
+      .find((m) => m.id === messageId && m.role === 'user' && m.metadata?.discordUserId)?.metadata?.discordUserId;
+    if (fromTrigger) return String(fromTrigger);
+    const lastUser = [...(messages as Array<{ role: string; metadata?: { discordUserId?: string } }>)]
+      .reverse()
+      .find((m) => m.role === 'user' && m.metadata?.discordUserId);
+    return lastUser?.metadata?.discordUserId ? String(lastUser.metadata.discordUserId) : null;
+  };
+  const memoOwnerUserId = sourceUserId ?? resolveMemoOwnerId();
 
   // Fetch existing active memories for this user to deduplicate/merge
   const { data: userMemories } = await supabase.rpc('fetch_active_memories_by_user', {
@@ -309,7 +323,7 @@ Task:
         // 임베딩은 위에서 이미 계산됐으니 재사용. fire-and-forget.
         void insertWeaveNode({
           sourceKind: 'auto_memo',
-          ownerUserId: sourceUserId,
+          ownerUserId: memoOwnerUserId,
           body: finalContent,
           tags: [memory.kind, memory.memory_type].filter(Boolean),
           sourceRef: { muel_memory_entries_id: newEntryId, importance: memory.importance },
