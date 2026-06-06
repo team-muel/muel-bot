@@ -16,6 +16,7 @@ export const GOMDORI_RULES = {
    */
   phases: {
     roleAssign: { durationSec: 8 },
+    nightSuspect: { durationSec: 30 },
     night: { durationSec: 60 },
     nightResolve: { durationSec: 3 },
     day: { durationSec: 180 },

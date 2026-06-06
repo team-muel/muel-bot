@@ -76,6 +76,9 @@ Deno.serve((req: Request) => {
       if (actionType !== "verdict_approve" && actionType !== "verdict_reject") {
         throw badRequest("invalid_phase", "현재는 찬반 투표 페이즈입니다.");
       }
+    } else if (match.status === "night_suspect") {
+      // 의심 투표. 대상 null = 기권(무투, canon §3).
+      if (actionType !== "suspect") throw badRequest("invalid_phase", "현재는 의심 투표 페이즈입니다.");
     } else {
       throw conflict("invalid_phase", "지금은 행동을 할 수 없는 페이즈입니다.");
     }
