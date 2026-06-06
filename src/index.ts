@@ -261,6 +261,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   console.log('[discord] registering global commands', { count: commands.length, names: intendedNames });
 
   try {
+    await cleanupLegacyGlobalCommands(readyClient, rest);
     const result = await rest.put(Routes.applicationCommands(readyClient.application.id), {
       body: commands,
     });
@@ -276,7 +277,6 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
       note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
     });
     await cleanupLegacyGuildCommands(readyClient, rest);
-    await cleanupLegacyGlobalCommands(readyClient, rest);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const responseBody = (error as { rawError?: unknown }).rawError;
