@@ -179,25 +179,49 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
   };
 }
 
+// 카운트 기반 승리 판정 (canon §1·§10).
+// 천사 승리 = 살아있는 악마 0 (탈락/처형). 악마 승리 = 악마팀 카운트 >= 천사팀 카운트.
+// 기본 카운트: 생존자 = 1, 사망자 = 0. counters.countBonus(생존 가산, 예: 수호병 +1)
+// 와 counters.deadCountBonus(사망 무관 지속, 예: 라이너 백호 +3) 가 팀 카운트에 반영된다.
+// 능력이 카운트를 건드리지 않으면(counters 비어있음) 결과는 생존 패리티와 동일 — 회귀 0.
 export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
   let aliveAngels = 0;
   let aliveDemons = 0;
+  let angelCount = 0;
+  let demonCount = 0;
 
   for (const player of Object.values(players)) {
-    if (!player.alive) continue;
-
     const faction = player.treatedAsFaction || player.actualFaction;
-    if (faction === "demon" || faction === "helper") {
-      aliveDemons += 1;
-    } else if (faction === "angel") {
-      aliveAngels += 1;
+    const bucket =
+      faction === "demon" || faction === "helper"
+        ? "demon"
+        : faction === "angel"
+          ? "angel"
+          : null;
+    if (!bucket) continue;
+
+    if (player.alive) {
+      const weight = 1 + (player.counters?.countBonus ?? 0);
+      if (bucket === "demon") {
+        aliveDemons += 1;
+        demonCount += weight;
+      } else {
+        aliveAngels += 1;
+        angelCount += weight;
+      }
+    } else {
+      const deadWeight = player.counters?.deadCountBonus ?? 0;
+      if (deadWeight) {
+        if (bucket === "demon") demonCount += deadWeight;
+        else angelCount += deadWeight;
+      }
     }
   }
 
   let winner: "angels" | "demons" | null = null;
   if (aliveDemons === 0) {
     winner = "angels";
-  } else if (aliveDemons >= aliveAngels) {
+  } else if (demonCount >= angelCount) {
     winner = "demons";
   }
 

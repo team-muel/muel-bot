@@ -130,8 +130,24 @@ function runTieAndNoVoteSimulation() {
   assert.equal(noVote.maxVotes, 0);
 }
 
+function runCountBonusSimulation() {
+  // canon §10: 라이너 백호 같은 카운트 가산이 악마팀 패리티 승리를 막는다 (회귀 0 훅 검증).
+  const state = fivePlayerState();
+  state.players.citizen1.alive = false;
+  state.players.citizen2.alive = false;
+  state.players.doctor.alive = false;
+  // 생존 패리티(1:1)면 원래 악마 승리. 천사 카운트 +3 가산 시 악마 승리 차단.
+  state.players.police.counters = { countBonus: 3 };
+  assert.deepEqual(checkWinCondition(state.players), {
+    winner: null,
+    aliveAngels: 1,
+    aliveDemons: 1,
+  });
+}
+
 runAngelWinSimulation();
 runDemonWinSimulation();
 runTieAndNoVoteSimulation();
+runCountBonusSimulation();
 
 console.log("Gomdori Phase 1 simulation tests passed.");
