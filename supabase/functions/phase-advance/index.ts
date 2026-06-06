@@ -453,7 +453,35 @@ Deno.serve((req: Request) => {
         const candidate = candidateUserId ? players.find((player) => player.user_id === candidateUserId) : null;
         let executed = false;
 
-        if (verdict.approved && candidate?.alive) {
+        const candidateCounters = ((candidate?.engine_state?.counters as Record<string, number> | undefined) ?? null);
+        const candidateShield = candidateCounters?.shield ?? 0;
+
+        if (verdict.approved && candidate?.alive && candidateShield > 0) {
+          // 가인 보호막: 처형 1회 무효 + 소비.
+          requireNoError(
+            await supabase
+              .from("match_players")
+              .update({
+                engine_state: {
+                  ...(candidate.engine_state || {}),
+                  counters: { ...candidateCounters, shield: candidateShield - 1 },
+                },
+              })
+              .eq("match_id", matchId)
+              .eq("user_id", candidateUserId),
+          );
+          requireNoError(
+            await supabase
+              .from("match_events")
+              .insert({
+                match_id: matchId,
+                phase_id: phase.id,
+                event_type: "execution_blocked",
+                visibility: "public",
+                payload: { user_id: candidateUserId, reason: "shield" },
+              }),
+          );
+        } else if (verdict.approved && candidate?.alive) {
           executed = true;
           requireNoError(
             await supabase

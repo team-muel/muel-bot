@@ -4,31 +4,45 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 
+// 라이너 백호 카운트 가산. canon = +3; v1 은 저인원 안전을 위해 +1 (라이브 튜닝 대상).
+const RAINER_COUNT_BONUS = 1;
+
 function generateRoles(playerCount: number): Array<{ role: string; faction: string }> {
-  // role: 'citizen', 'demon', 'helper', 'doctor', 'police'
-  // faction: 'angel', 'demon'
-  let demon = 1;
-  let doctor = 1;
-  let police = 1;
-  let helper = 0;
-  let citizen = 0;
-
-  if (playerCount === 5) { helper = 0; citizen = 2; }
-  else if (playerCount === 6) { helper = 1; citizen = 2; }
-  else if (playerCount === 7) { helper = 1; citizen = 3; }
-  else if (playerCount === 8) { helper = 1; citizen = 4; }
-  else if (playerCount === 9) { helper = 2; citizen = 4; }
-  else if (playerCount === 10) { helper = 2; citizen = 5; }
-  else if (playerCount === 11) { helper = 2; citizen = 6; }
-  else if (playerCount === 12) { helper = 2; citizen = 7; }
-  else { throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다."); }
-
+  // W4 v1 트랜치: 라이너(천사,카운트+)·로마즈(천사,용의자색출)·가인(조력자,악마보호).
+  // 5인 = 라이브 쇼케이스(가인 포함, demon-team 2). 6+ = helper 1개→가인, citizen 2개→라이너/로마즈 치환.
+  // 팀 머릿수는 기존 분포와 동일 — 가인↔helper, 라이너/로마즈↔citizen 1:1 치환.
   const roles: Array<{ role: string; faction: string }> = [];
-  for (let i = 0; i < demon; i++) roles.push({ role: 'demon', faction: 'demon' });
-  for (let i = 0; i < helper; i++) roles.push({ role: 'helper', faction: 'demon' });
-  for (let i = 0; i < doctor; i++) roles.push({ role: 'doctor', faction: 'angel' });
-  for (let i = 0; i < police; i++) roles.push({ role: 'police', faction: 'angel' });
-  for (let i = 0; i < citizen; i++) roles.push({ role: 'citizen', faction: 'angel' });
+  const add = (role: string, faction: string, n = 1) => {
+    for (let i = 0; i < n; i++) roles.push({ role, faction });
+  };
+
+  if (playerCount === 5) {
+    add('demon', 'demon');
+    add('gain', 'demon');
+    add('romaz', 'angel');
+    add('rainer', 'angel');
+    add('doctor', 'angel');
+  } else {
+    let helper = 0;
+    let citizen = 0;
+    if (playerCount === 6) { helper = 1; citizen = 2; }
+    else if (playerCount === 7) { helper = 1; citizen = 3; }
+    else if (playerCount === 8) { helper = 1; citizen = 4; }
+    else if (playerCount === 9) { helper = 2; citizen = 4; }
+    else if (playerCount === 10) { helper = 2; citizen = 5; }
+    else if (playerCount === 11) { helper = 2; citizen = 6; }
+    else if (playerCount === 12) { helper = 2; citizen = 7; }
+    else { throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다."); }
+
+    add('demon', 'demon');
+    add('gain', 'demon');                  // helper 1개 → 가인
+    add('helper', 'demon', helper - 1);    // 나머지 helper
+    add('doctor', 'angel');
+    add('police', 'angel');
+    add('rainer', 'angel');                // citizen 1개 → 라이너
+    add('romaz', 'angel');                 // citizen 1개 → 로마즈
+    add('citizen', 'angel', citizen - 2);  // 나머지 시민
+  }
 
   // Shuffle roles
   for (let i = roles.length - 1; i > 0; i--) {
@@ -37,6 +51,17 @@ function generateRoles(playerCount: number): Array<{ role: string; faction: stri
   }
 
   return roles;
+}
+
+// 직업별 초기 engine_state. 라이너=백호 카운트, 가인=악마 보호막(악마 본인에게 주입).
+function initEngineState(role: string, gainPresent: boolean): Record<string, unknown> | null {
+  if (role === 'rainer') {
+    return { counters: { countBonus: RAINER_COUNT_BONUS, deadCountBonus: RAINER_COUNT_BONUS } };
+  }
+  if (role === 'demon' && gainPresent) {
+    return { counters: { shield: 1 } };
+  }
+  return null;
 }
 
 Deno.serve((req: Request) => {
@@ -91,13 +116,15 @@ Deno.serve((req: Request) => {
       faction: roles[index].faction,
     }));
 
-    // Update match_players roles in a loop (since no bulk update in pure Supabase JS easily without RPC, but we can do it via promise all or rpc. 
-    // Actually, we can use `upsert` or individual updates). Let's use individual updates for now or delete/reinsert? No, update is safer.
+    // 가인이 배정됐으면 악마 본인에게 보호막을 주입한다.
+    const gainPresent = assignments.some((a) => a.role === "gain");
+
+    // Update match_players roles + 초기 engine_state (라이너 카운트, 가인→악마 보호막).
     await Promise.all(
       assignments.map((a) =>
         supabase
           .from("match_players")
-          .update({ role: a.role, faction: a.faction })
+          .update({ role: a.role, faction: a.faction, engine_state: initEngineState(a.role, gainPresent) })
           .eq("match_id", matchId)
           .eq("user_id", a.user_id)
       )

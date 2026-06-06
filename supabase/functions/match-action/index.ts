@@ -65,10 +65,12 @@ Deno.serve((req: Request) => {
     if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 행동할 수 없습니다.");
 
     if (match.status === "night") {
+      const NIGHT_ACTIONS = ["demon_kill", "doctor_heal", "police_investigate", "romaz_suspect"];
+      if (!NIGHT_ACTIONS.includes(actionType)) throw badRequest("invalid_action", "밤에 할 수 없는 행동입니다.");
       if (actionType === "demon_kill" && player.role !== "demon") throw forbidden("invalid_role", "악마만 살해할 수 있습니다.");
       if (actionType === "doctor_heal" && player.role !== "doctor") throw forbidden("invalid_role", "의사만 치료할 수 있습니다.");
       if (actionType === "police_investigate" && player.role !== "police") throw forbidden("invalid_role", "경찰만 조사할 수 있습니다.");
-      if (actionType === "vote") throw badRequest("invalid_phase", "밤에는 투표할 수 없습니다.");
+      if (actionType === "romaz_suspect" && player.role !== "romaz") throw forbidden("invalid_role", "로마즈만 용의자 색출을 할 수 있습니다.");
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
