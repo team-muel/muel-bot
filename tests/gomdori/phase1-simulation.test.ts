@@ -3,6 +3,7 @@ import {
   checkWinCondition,
   resolveNightActions,
   tallyEliminationVotes,
+  tallySuspicionVotes,
   tallyVerdictVotes,
 } from "../../supabase/functions/_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
@@ -42,6 +43,45 @@ function fivePlayerState(): MatchState {
     actionStack: [],
     modifiers: {},
   };
+}
+
+function runSuspicionSimulation() {
+  // canon §3: 최다 의심자는 그 밤 능력 사용 불가. 동률/무표 = 부결.
+  const players = fivePlayerState().players;
+
+  const susp = tallySuspicionVotes(
+    [
+      { actorUserId: "citizen1", targetUserId: "demon" },
+      { actorUserId: "citizen2", targetUserId: "demon" },
+      { actorUserId: "doctor", targetUserId: "police" },
+      { actorUserId: "police", targetUserId: null },
+      { actorUserId: "demon", targetUserId: "citizen1" },
+    ],
+    players,
+  );
+  assert.equal(susp.candidateUserId, "demon");
+  assert.equal(susp.tie, false);
+
+  const tie = tallySuspicionVotes(
+    [
+      { actorUserId: "citizen1", targetUserId: "demon" },
+      { actorUserId: "demon", targetUserId: "citizen1" },
+    ],
+    players,
+  );
+  assert.equal(tie.candidateUserId, null);
+  assert.equal(tie.tie, true);
+
+  // 의심받아 잠긴 악마의 밤 능력은 무효.
+  const state = fivePlayerState();
+  state.players.demon.tags = ["suspected"];
+  state.actionStack = [
+    { sourceUserId: "demon", targetUserId: "citizen1", actionType: "demon_kill", priority: 4 },
+  ];
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.citizen1.alive, true);
+  assert.equal(events.some((event: any) => event.type === "action_blocked_suspected"), true);
+  assert.equal(newState.players.demon.tags.includes("suspected"), false);
 }
 
 function runAngelWinSimulation() {
@@ -149,5 +189,7 @@ runAngelWinSimulation();
 runDemonWinSimulation();
 runTieAndNoVoteSimulation();
 runCountBonusSimulation();
+
+runSuspicionSimulation();
 
 console.log("Gomdori Phase 1 simulation tests passed.");
