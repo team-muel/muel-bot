@@ -38,7 +38,7 @@ export interface ActionPayload {
 }
 
 export interface Effect {
-  type: "ModifyVoteValue" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction";
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction";
   target: "self" | "Target" | "All";
   amount?: number;
   tag?: string;
