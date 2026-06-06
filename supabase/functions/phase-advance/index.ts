@@ -2,13 +2,20 @@ import { preflight, jsonResponse } from "../_shared/cors.ts";
 import { withErrorHandling } from "../_shared/errors.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import {
+  TAG_SUSPECTED,
   checkWinCondition,
   resolveNightActions,
   tallyEliminationVotes,
+  tallySuspicionVotes,
   tallyVerdictVotes,
 } from "../_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
+import {
+  firstNightTransition,
+  nextNightSuspectTransition,
+  nightAfterSuspicionTransition,
+} from "../_shared/phase-flow.ts";
 
 type EngineState = Record<string, unknown> & {
   modifiers?: Record<string, number>;
@@ -215,9 +222,10 @@ Deno.serve((req: Request) => {
 
       if (phase.phase_type === "role_assign") {
         // role 배정 직후 첫째 밤으로. 첫째 밤은 안내성으로 짧게.
-        nextPhaseType = "night";
-        nextDurationSec = GOMDORI_RULES.firstNight.durationSec;
-        nextPhaseNumber = 1;
+        const transition = firstNightTransition();
+        nextPhaseType = transition.phaseType;
+        nextDurationSec = transition.durationSec;
+        nextPhaseNumber = transition.phaseNumber;
       } else if (phase.phase_type === "night") {
         const isFirstNight = phase.phase_number === 1 && GOMDORI_RULES.firstNight.skipsAbilities;
 
@@ -314,6 +322,58 @@ Deno.serve((req: Request) => {
           nextPhaseType = "night_resolve";
           nextDurationSec = GOMDORI_RULES.phases.nightResolve.durationSec;
         }
+      } else if (phase.phase_type === "night_suspect") {
+        // 밤 의심 투표 집계 → 최다 의심자는 다가오는 밤 능력 사용 불가 (canon §3·§4).
+        const actions = requireNoError(
+          await supabase
+            .from("match_actions")
+            .select("actor_user_id, target_user_id, action_type")
+            .eq("phase_id", phase.id)
+            .eq("action_type", "suspect"),
+        ) as DbAction[];
+
+        const state = playerStateFromRows(matchId, "night", phase.phase_number, players);
+        const suspicion = tallySuspicionVotes(actionRowsToInputs(actions), state.players);
+
+        if (suspicion.candidateUserId) {
+          const target = players.find((player) => player.user_id === suspicion.candidateUserId);
+          if (target) {
+            const existing = (target.engine_state || {}) as { tags?: unknown };
+            const tags = Array.isArray(existing.tags)
+              ? (existing.tags.filter((tag) => typeof tag === "string") as string[])
+              : [];
+            if (!tags.includes(TAG_SUSPECTED)) tags.push(TAG_SUSPECTED);
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(target.engine_state || {}), tags } })
+                .eq("match_id", matchId)
+                .eq("user_id", suspicion.candidateUserId),
+            );
+          }
+        }
+
+        requireNoError(
+          await supabase
+            .from("match_events")
+            .insert({
+              match_id: matchId,
+              phase_id: phase.id,
+              event_type: "suspicion_revealed",
+              visibility: "public",
+              payload: {
+                user_id: suspicion.candidateUserId,
+                tie: suspicion.tie,
+                tallies: suspicion.tallies,
+              },
+            }),
+        );
+
+        // 의심 투표와 그 밤은 같은 밤 번호 — phase_number 유지하고 night 로 전환.
+        const transition = nightAfterSuspicionTransition(phase.phase_number);
+        nextPhaseType = transition.phaseType;
+        nextDurationSec = transition.durationSec;
+        nextPhaseNumber = transition.phaseNumber;
       } else if (phase.phase_type === "night_resolve") {
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
@@ -373,9 +433,11 @@ Deno.serve((req: Request) => {
           nextPhaseType = "verdict";
           nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
         } else {
-          nextPhaseType = "night";
-          nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
-          nextPhaseNumber += 1;
+          // 부결: 다음 밤으로. 둘째 밤부터는 의심 투표(night_suspect)를 먼저 거친다.
+          const transition = nextNightSuspectTransition(phase.phase_number);
+          nextPhaseType = transition.phaseType;
+          nextDurationSec = transition.durationSec;
+          nextPhaseNumber = transition.phaseNumber;
         }
       } else if (phase.phase_type === "verdict") {
         const actions = requireNoError(
@@ -461,9 +523,11 @@ Deno.serve((req: Request) => {
           }
         }
 
-        nextPhaseType = "night";
-        nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
-        nextPhaseNumber += 1;
+        // 처형/부결 처리 후 다음 밤으로. 의심 투표(night_suspect)를 먼저 거친다.
+        const transition = nextNightSuspectTransition(phase.phase_number);
+        nextPhaseType = transition.phaseType;
+        nextDurationSec = transition.durationSec;
+        nextPhaseNumber = transition.phaseNumber;
       }
 
       if (!nextPhaseType) {

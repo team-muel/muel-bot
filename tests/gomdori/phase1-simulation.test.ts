@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  TAG_SUSPECTED,
   checkWinCondition,
   resolveNightActions,
   tallyEliminationVotes,
@@ -7,6 +8,11 @@ import {
   tallyVerdictVotes,
 } from "../../supabase/functions/_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
+import {
+  firstNightTransition,
+  nextNightSuspectTransition,
+  nightAfterSuspicionTransition,
+} from "../../supabase/functions/_shared/phase-flow.ts";
 
 function player(userId: string, role: string, faction: "angel" | "demon"): PlayerState {
   return {
@@ -74,14 +80,34 @@ function runSuspicionSimulation() {
 
   // 의심받아 잠긴 악마의 밤 능력은 무효.
   const state = fivePlayerState();
-  state.players.demon.tags = ["suspected"];
+  state.players.demon.tags = [TAG_SUSPECTED];
   state.actionStack = [
     { sourceUserId: "demon", targetUserId: "citizen1", actionType: "demon_kill", priority: 4 },
   ];
   const { newState, events } = resolveNightActions(state);
   assert.equal(newState.players.citizen1.alive, true);
   assert.equal(events.some((event: any) => event.type === "action_blocked_suspected"), true);
-  assert.equal(newState.players.demon.tags.includes("suspected"), false);
+  assert.equal(newState.players.demon.tags.includes(TAG_SUSPECTED), false);
+}
+
+function runPhaseFlowSimulation() {
+  assert.deepEqual(firstNightTransition(), {
+    phaseType: "night",
+    phaseNumber: 1,
+    durationSec: 8,
+  });
+
+  assert.deepEqual(nextNightSuspectTransition(1), {
+    phaseType: "night_suspect",
+    phaseNumber: 2,
+    durationSec: 30,
+  });
+
+  assert.deepEqual(nightAfterSuspicionTransition(2), {
+    phaseType: "night",
+    phaseNumber: 2,
+    durationSec: 60,
+  });
 }
 
 function runAngelWinSimulation() {
@@ -191,5 +217,6 @@ runTieAndNoVoteSimulation();
 runCountBonusSimulation();
 
 runSuspicionSimulation();
+runPhaseFlowSimulation();
 
 console.log("Gomdori Phase 1 simulation tests passed.");

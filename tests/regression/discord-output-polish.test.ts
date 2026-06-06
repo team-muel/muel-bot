@@ -128,6 +128,15 @@ check('/메모 select menu interactions are routed', () => {
   assert.match(index, /handleMemoSelectMenu\(interaction\)/);
 });
 
+check('legacy global entry point commands are deleted before bulk command replacement', () => {
+  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+  const cleanup = index.indexOf('await cleanupLegacyGlobalCommands(readyClient, rest);');
+  const replace = index.indexOf('await rest.put(Routes.applicationCommands(readyClient.application.id)');
+  assert.ok(cleanup >= 0, 'missing pre-cleanup call');
+  assert.ok(replace >= 0, 'missing global replacement call');
+  assert.ok(cleanup < replace, 'legacy entry point cleanup must run before bulk PUT');
+});
+
 check('deep research copy mentions backend/search quota failure modes', () => {
   const enrich = readFileSync(join(SRC, 'researchEnrich.ts'), 'utf8');
   const deliver = readFileSync(join(SRC, 'researchDeliver.ts'), 'utf8');
