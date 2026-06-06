@@ -78,11 +78,18 @@ function applyTone(embed: EmbedBuilder, tone?: RenderTone): EmbedBuilder {
 
 function sectionsToFields(sections: CardSection[] | undefined): APIEmbedField[] {
   if (!sections || sections.length === 0) return [];
-  return sections.slice(0, 25).map((section) => ({
+  const MAX_FIELDS = 25;
+  const overflow = sections.length > MAX_FIELDS;
+  const shown = sections.slice(0, overflow ? MAX_FIELDS - 1 : MAX_FIELDS);
+  const fields: APIEmbedField[] = shown.map((section) => ({
     name: truncateTitle(`▼ ${section.header}`, 256),
     value: truncate(section.content, 1024),
     inline: section.inline ?? false,
   }));
+  if (overflow) {
+    fields.push({ name: '…', value: `(${sections.length - (MAX_FIELDS - 1)}개 섹션이 더 있어)`, inline: false });
+  }
+  return fields;
 }
 
 function extractYouTubeVideoId(url: string | undefined, fallbackId?: string): string | null {
@@ -122,7 +129,7 @@ function buildActionButtonRow(buttons: CardActionButton[] | undefined): ActionRo
 
 function buildLinkButtonRow(linkButton: { label: string; url: string } | undefined): ActionRowBuilder<ButtonBuilder> | null {
   const url = linkButton?.url?.trim();
-  if (!url || !/^https?:\/\//i.test(url)) return null;
+  if (!url || !/^https?:\/\//i.test(url) || url.length > 512) return null;
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setLabel((linkButton?.label || '열기').slice(0, 80))
