@@ -97,7 +97,9 @@ const SECURITY_THREAT_RE =
   /(해킹할|해킹해|뚫어|침입|권한\s*우회|권한상승|탈취|secret\s*key|api\s*key|토큰.*훔|bypass|exploit|exfiltrate|credential)/iu;
 const AUTHORITY_CLAIM_RE =
   /(내가|나는).*(관리자|운영자|admin|owner|생강팀|team[-\s]?muel|팀원|개발자).*(인데|이야|임|니까|권한)|(?:관리자|운영자|admin|owner)\s*(권한|모드|인증)/iu;
-const MODEL_INFO_RE = /(모델|model).*(뭐|무엇|이름|버전|정체|사용|쓰고)|(?:gemini|deepseek|gpt|claude).*(쓰|사용)/iu;
+// 봇 자신의 모델 정체를 물을 때만 발동. "추천 모델 뭐가 좋아" 같은 일반 모델 질문은 제외.
+const MODEL_INFO_RE =
+  /(너|넌|니|네가|당신|muel|뮤엘|이\s*봇|챗봇).{0,16}(모델|model|gemini|deepseek|gpt|claude|ai|인공지능)|(?:모델|model)\s*(?:이름|버전|정체|뭐\s*(?:써|쓰|사용)|뭐야|뭐임)|(?:어떤|무슨)\s*(?:모델|ai)\s*(?:써|쓰|사용|기반|돌)/iu;
 const BASE64_LIKE_RE = /\b[A-Za-z0-9+/]{16,}={0,2}\b/g;
 const POLICY_BYPASS_TEXT_RE =
   /(ignore|bypass|disable|override|jailbreak|safety|system prompt|developer message|previous instructions|모든\s*지시|이전\s*지시|규칙\s*무시|안전\s*규칙|시스템\s*프롬프트|제한\s*해제|권한\s*상승)/iu;

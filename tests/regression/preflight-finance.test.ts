@@ -14,4 +14,10 @@ assert.equal(getPreflightGuard("삼성전자 주가 얼마야")?.reason, "realti
 assert.equal(getPreflightGuard("코스피 지금 어때")?.reason, "realtime_finance", "코스피 → 가드");
 assert.equal(getPreflightGuard("테슬라 오를까 살까")?.reason, "realtime_finance", "예측 → 가드");
 
+// 모델 정보 가드: 봇 자신을 물을 때만 발동.
+assert.equal(getPreflightGuard("넌 무슨 모델이야?")?.reason, "model_information", "넌 무슨 모델 → 가드");
+assert.equal(getPreflightGuard("당신 gemini 써?")?.reason, "model_information", "당신 gemini → 가드");
+assert.equal(getPreflightGuard("추천 모델 뭐가 좋아"), null, "추천 모델 뭐가 좋아 → 일반 질문, null");
+assert.equal(getPreflightGuard("요즘 gpt 써봤어?"), null, "일반 gpt 질문 → null");
+
 console.log("preflight finance regression passed.");
