@@ -86,5 +86,11 @@ verify_jwt = false
 # Called by pg_cron through net.http_post without a Discord user JWT.
 verify_jwt = false
 
+[functions.match-kick]
+verify_jwt = false
+
+[functions.match-leave]
+verify_jwt = false
+
 [realtime]
 enabled = true
