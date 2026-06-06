@@ -3,7 +3,7 @@ import { CORE_ROLES } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
-const TAG_SUSPECTED = "suspected"; // 의심 투표 최다 득표 → 그 밤 능력 사용 불가 (canon §3)
+export const TAG_SUSPECTED = "suspected"; // 의심 투표 최다 득표 → 그 밤 능력 사용 불가 (canon §3)
 
 export type VoteActionInput = {
   actorUserId: string;
