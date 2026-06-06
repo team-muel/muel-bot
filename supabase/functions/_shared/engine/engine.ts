@@ -3,6 +3,7 @@ import { CORE_ROLES } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
+const TAG_SUSPECTED = "suspected"; // 의심 투표 최다 득표 → 그 밤 능력 사용 불가 (canon §3)
 
 export type VoteActionInput = {
   actorUserId: string;
@@ -48,6 +49,11 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
 
     if (!sourcePlayer?.alive) continue;
 
+    if (sourcePlayer.tags.includes(TAG_SUSPECTED)) {
+      events.push({ type: "action_blocked_suspected", userId: sourcePlayer.userId });
+      continue;
+    }
+
     const roleDef = getRoleDefinition(sourcePlayer.currentRole);
     if (!roleDef) continue;
 
@@ -87,7 +93,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       }
     }
 
-    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED);
+    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED);
   }
 
   return { newState, events };
@@ -122,6 +128,62 @@ export function tallyEliminationVotes(
     }
 
     tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue;
+  }
+
+  let candidateUserId: string | null = null;
+  let maxVotes = 0;
+  let tie = false;
+
+  for (const [targetUserId, votes] of Object.entries(tallies)) {
+    if (votes > maxVotes) {
+      candidateUserId = targetUserId;
+      maxVotes = votes;
+      tie = false;
+    } else if (votes === maxVotes) {
+      tie = true;
+    }
+  }
+
+  return {
+    tallies,
+    skipped,
+    candidateUserId: tie ? null : candidateUserId,
+    maxVotes,
+    tie,
+  };
+}
+
+// 밤 의심 투표 집계 (canon §3·§12). 의심가치 = max(0, 1 + suspicionValue) (기본 1).
+// 최다 1인 → candidate, 동률/무표 → null(부결, canon §4).
+export function tallySuspicionVotes(
+  actions: VoteActionInput[],
+  players: Record<string, PlayerState>,
+): VoteTallyResult {
+  const tallies: Record<string, number> = {};
+  let skipped = 0;
+
+  for (const action of actions) {
+    const actor = players[action.actorUserId];
+    if (!actor?.alive) continue;
+
+    if (!action.targetUserId) {
+      skipped += 1;
+      continue;
+    }
+
+    const target = players[action.targetUserId];
+    if (!target?.alive) {
+      skipped += 1;
+      continue;
+    }
+
+    const weight = Math.max(0, 1 + (actor.suspicionValue || 0));
+    if (weight === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + weight;
   }
 
   let candidateUserId: string | null = null;
