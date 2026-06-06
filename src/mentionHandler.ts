@@ -55,14 +55,24 @@ const stripBotMention = (content: string, botId: string): string => {
     .trim();
 };
 
+const RECENT_REQUEST_MAX = 5000;
+
 const sweepRecentRequests = (now: number): void => {
-  if (now - lastRecentRequestSweepAt < RECENT_REQUEST_SWEEP_INTERVAL_MS) return;
+  const overCap = recentRequests.size > RECENT_REQUEST_MAX;
+  if (!overCap && now - lastRecentRequestSweepAt < RECENT_REQUEST_SWEEP_INTERVAL_MS) return;
   lastRecentRequestSweepAt = now;
 
   for (const [key, value] of recentRequests.entries()) {
     if (now - value.at > RECENT_REQUEST_TTL_MS) {
       recentRequests.delete(key);
     }
+  }
+
+  // TTL 정리 후에도 상한 초과면 오래된 항목부터 제거(메모리 가드).
+  if (recentRequests.size > RECENT_REQUEST_MAX) {
+    const sorted = [...recentRequests.entries()].sort((a, b) => a[1].at - b[1].at);
+    const remove = sorted.length - RECENT_REQUEST_MAX;
+    for (let i = 0; i < remove; i++) recentRequests.delete(sorted[i][0]);
   }
 };
 

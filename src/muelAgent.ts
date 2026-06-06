@@ -449,5 +449,10 @@ export const generateMuelReply = async (
 export const toDiscordReply = (text: string): string => {
   const sanitized = sanitizeModelOutput(text) || '응답을 정리하는 중 문제가 생겼어. 다시 짧게 물어봐줘.';
   if (sanitized.length <= 1900) return sanitized;
-  return `${sanitized.slice(0, 1890).trimEnd()}\n...`;
+  const head = sanitized.slice(0, 1890);
+  const marks = ['. ', '? ', '! ', '。'];
+  let cut = -1;
+  for (const m of marks) cut = Math.max(cut, head.lastIndexOf(m));
+  const body = cut > 1500 ? head.slice(0, cut + 1).trimEnd() : head.trimEnd();
+  return `${body}\n\n(메시지가 길어 일부만 표시했어.)`;
 };
