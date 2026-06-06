@@ -86,6 +86,11 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.markedForDeath = false;
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "attack_prevented", userId: player.userId });
+      } else if ((player.counters?.shield ?? 0) > 0) {
+        // 보호막(가인 등): 밤 살해 1회 무효 + 소비. (처형 차단은 phase-advance, 후속.)
+        player.counters.shield -= 1;
+        player.markedForDeath = false;
+        events.push({ type: "shield_blocked", userId: player.userId });
       } else {
         player.alive = false;
         player.markedForDeath = false;
@@ -128,6 +133,12 @@ export function tallyEliminationVotes(
     }
 
     tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue;
+  }
+
+  // 받는-표 가산 (로마즈 용의자 +투표가치). counters.voteBias 보유 생존자에 가산.
+  for (const p of Object.values(players)) {
+    const bias = p.counters?.voteBias ?? 0;
+    if (p.alive && bias > 0) tallies[p.userId] = (tallies[p.userId] || 0) + bias;
   }
 
   let candidateUserId: string | null = null;
@@ -184,6 +195,12 @@ export function tallySuspicionVotes(
     }
 
     tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + weight;
+  }
+
+  // 받는-의심 가산 (로마즈 용의자 +의심가치). counters.suspicionBias 보유 생존자에 가산.
+  for (const p of Object.values(players)) {
+    const bias = p.counters?.suspicionBias ?? 0;
+    if (p.alive && bias > 0) tallies[p.userId] = (tallies[p.userId] || 0) + bias;
   }
 
   let candidateUserId: string | null = null;
@@ -317,6 +334,14 @@ function applyEffect(
       if (effect.tag) {
         target.tags = target.tags.filter((tag) => tag !== effect.tag);
       }
+      break;
+    case "ModifyReceivedVote":
+      target.counters.voteBias = (target.counters.voteBias ?? 0) + (effect.amount ?? 0);
+      events.push({ type: "vote_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
+      break;
+    case "ModifyReceivedSuspicion":
+      target.counters.suspicionBias = (target.counters.suspicionBias ?? 0) + (effect.amount ?? 0);
+      events.push({ type: "suspicion_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
       break;
     case "ChangeFaction":
       if (target.actualFaction !== "demon" && target.actualFaction !== "neutral") {

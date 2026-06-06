@@ -211,6 +211,65 @@ function runCountBonusSimulation() {
   });
 }
 
+function runRainerSimulation() {
+  // 라이너 백호 +3, 생존 무관: 죽어도 천사팀 카운트 유지 → 악마 패리티 승리 차단.
+  const state = fivePlayerState();
+  state.players.police.currentRole = "rainer";
+  state.players.police.counters = { countBonus: 2, deadCountBonus: 3 }; // 배정 시 주입값
+  state.players.citizen1.alive = false;
+  state.players.citizen2.alive = false;
+  state.players.doctor.alive = false;
+  state.players.police.alive = false; // 라이너 본인도 사망
+  const res = checkWinCondition(state.players);
+  // 생존 천사 0, 악마 1 — 그러나 라이너 deadCountBonus 3 → angelCount 3 > demonCount 1.
+  assert.equal(res.winner, null);
+  assert.equal(res.aliveDemons, 1);
+}
+
+function runRomazSimulation() {
+  // 로마즈 용의자 색출 → 대상 +5 투표가치 / +10 의심가치 (받는-표 가산).
+  const state = fivePlayerState();
+  state.players.citizen2.currentRole = "romaz";
+  state.actionStack = [
+    { sourceUserId: "citizen2", targetUserId: "demon", actionType: "romaz_suspect", priority: 5 },
+  ];
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.demon.counters.voteBias, 5);
+  assert.equal(newState.players.demon.counters.suspicionBias, 10);
+
+  // 실제 1표 + 가산 5 = demon 6 vs citizen1 1 → demon 후보 확정.
+  const vote = tallyEliminationVotes(
+    [
+      { actorUserId: "citizen1", targetUserId: "demon" },
+      { actorUserId: "doctor", targetUserId: "citizen1" },
+    ],
+    newState.players,
+  );
+  assert.equal(vote.candidateUserId, "demon");
+  assert.equal(vote.maxVotes, 6);
+
+  // 의심: 무표여도 가산 10 → demon 후보.
+  const susp = tallySuspicionVotes([], newState.players);
+  assert.equal(susp.candidateUserId, "demon");
+}
+
+function runGainShieldSimulation() {
+  // 보호막(가인 부여) 프리미티브: 밤 살해 1회 무효 + 소비. (배정·처형차단은 후속 PR.)
+  const state = fivePlayerState();
+  state.players.citizen1.counters = { shield: 1 };
+  state.actionStack = [
+    { sourceUserId: "demon", targetUserId: "citizen1", actionType: "demon_kill", priority: 4 },
+  ];
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.citizen1.alive, true);
+  assert.equal(newState.players.citizen1.counters.shield, 0);
+  assert.equal(events.some((event: any) => event.type === "shield_blocked"), true);
+}
+
+runRainerSimulation();
+runRomazSimulation();
+runGainShieldSimulation();
+
 runAngelWinSimulation();
 runDemonWinSimulation();
 runTieAndNoVoteSimulation();
