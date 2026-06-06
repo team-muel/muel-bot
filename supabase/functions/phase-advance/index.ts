@@ -335,6 +335,20 @@ Deno.serve((req: Request) => {
         const state = playerStateFromRows(matchId, "night", phase.phase_number, players);
         const suspicion = tallySuspicionVotes(actionRowsToInputs(actions), state.players);
 
+        // 로마즈 받는-의심 가산(suspicionBias)은 1회성 — 이번 의심 집계 후 소거.
+        for (const p of players) {
+          const c = p.engine_state?.counters as Record<string, number> | undefined;
+          if (c && (c.suspicionBias ?? 0) !== 0) {
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(p.engine_state || {}), counters: { ...c, suspicionBias: 0 } } })
+                .eq("match_id", matchId)
+                .eq("user_id", p.user_id),
+            );
+          }
+        }
+
         if (suspicion.candidateUserId) {
           const target = players.find((player) => player.user_id === suspicion.candidateUserId);
           if (target) {
@@ -396,6 +410,21 @@ Deno.serve((req: Request) => {
         ) as DbAction[];
         const state = playerStateFromRows(matchId, "vote", phase.phase_number, players);
         const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players);
+
+        // 로마즈 받는-표 가산(voteBias)은 1회성 — 이번 투표 집계 후 소거.
+        for (const p of players) {
+          const c = p.engine_state?.counters as Record<string, number> | undefined;
+          if (c && (c.voteBias ?? 0) !== 0) {
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(p.engine_state || {}), counters: { ...c, voteBias: 0 } } })
+                .eq("match_id", matchId)
+                .eq("user_id", p.user_id),
+            );
+          }
+        }
+
         const voteSummary = {
           candidateUserId: tally.candidateUserId,
           tallies: tally.tallies,
