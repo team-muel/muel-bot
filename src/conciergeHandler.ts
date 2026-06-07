@@ -50,6 +50,13 @@ const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'meta',
 ]);
 
+// PA-0: a bare YouTube/link share gets classified as news_query but should NOT
+// trigger a reflexive reply — only engage news_query when it reads as a question.
+const looksLikeNewsQuestion = (text: string): boolean => {
+  if (/[?？]/.test(text)) return true;
+  return /(뭐|무슨|어때|어떤|추천|있어|있나|알려|찾아|봤|뉴스|소식|영상|업로드|recommend|news)/i.test(text);
+};
+
 const pickStringField = (record: Record<string, unknown> | undefined, key: string): string | null => {
   if (!record) return null;
   const value = record[key];
@@ -287,10 +294,13 @@ export const handleHubChannelMessage = async (
       discordUserId: userId,
     });
 
+    const newsReflexSuppressed =
+      decision?.intent === 'news_query' && !looksLikeNewsQuestion(userText);
     if (
       !decision ||
       !RESPONSIVE_INTENTS.has(decision.intent) ||
-      decision.confidence < responsiveMin
+      decision.confidence < responsiveMin ||
+      newsReflexSuppressed
     ) {
       void logMuelAgentAction(supabase, {
         triggerSource: 'allowlist_channel',
@@ -304,7 +314,7 @@ export const handleHubChannelMessage = async (
           confidence: decision?.confidence ?? null,
           intent: decision?.intent ?? null,
           channelResponsiveMin: responsiveMin,
-          reason: 'intent_not_responsive_or_low_confidence',
+          reason: newsReflexSuppressed ? 'news_query_link_share_suppressed' : 'intent_not_responsive_or_low_confidence',
         },
       });
       return;

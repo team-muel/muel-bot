@@ -29,6 +29,8 @@ import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { PROACTIVE_COMMAND_NAME, buildProactiveSlashCommand, handleProactiveCommand } from './proactiveHandler.js';
+import { startProactiveScheduler } from './proactiveSpeaker.js';
 import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 
@@ -274,6 +276,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     buildHubSlashCommand(),
     buildRollingSlashCommand().toJSON(),
     buildWelcomeSlashCommand().toJSON(),
+    buildProactiveSlashCommand().toJSON(),
     muelActivityEntryPointCommand,
   ];
 
@@ -353,6 +356,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     startYouTubeMonitor(readyClient);
   }
 
+  startProactiveScheduler(readyClient, getSupabaseClient());
+
   if (config.enableJobWorker) {
     runJobWorkerLoop().catch(err => {
       console.error('[jobs] worker loop crashed', err);
@@ -409,6 +414,11 @@ if (!config.enableHttpInteractions) {
 
     if (interaction.commandName === MEMO_COMMAND_NAME) {
       await handleMemoCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === PROACTIVE_COMMAND_NAME) {
+      await handleProactiveCommand(interaction);
       return;
     }
 

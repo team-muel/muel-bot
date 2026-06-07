@@ -21,6 +21,7 @@ export type AgentTriggerSource =
   | 'mention'
   | 'reply_to_muel'
   | 'reaction'
+  | 'proactive'
   | 'allowlist_channel'
   | 'slash_command';
 
