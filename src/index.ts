@@ -29,6 +29,7 @@ import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -270,6 +271,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     pingCommand.toJSON(),
     memoCommandPayload,
     buildHubSlashCommand(),
+    buildWelcomeSlashCommand().toJSON(),
     muelActivityEntryPointCommand,
   ];
 
@@ -404,6 +406,11 @@ if (!config.enableHttpInteractions) {
       return;
     }
 
+    if (interaction.commandName === WELCOME_COMMAND_NAME) {
+      await handleWelcomeCommand(interaction);
+      return;
+    }
+
     await interaction.reply({
       ...renderDiscordMessage([{
         type: 'info-card',
@@ -475,6 +482,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
       err: err instanceof Error ? err.message : String(err),
     });
   }
+  await postWelcomeIfConfigured(member);
 });
 
 client.on(Events.Error, (error) => {
