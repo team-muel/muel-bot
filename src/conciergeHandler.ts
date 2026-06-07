@@ -67,7 +67,7 @@ const pickNumberField = (record: Record<string, unknown> | undefined, key: strin
 export const buildHubSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(HUB_COMMAND_NAME)
-    .setDescription('이 채널에서 뮤엘이 자연어로 응답할지 관리합니다.')
+    .setDescription('뮤엘 등장 — 이 채널 평소 대화에도 내가 끼게 할지 정해.')
     .addStringOption((opt) =>
       opt
         .setName('동작')
@@ -129,7 +129,7 @@ export const handleHubSlashInteraction = async (
         activatedByUsername: interaction.user.username,
       });
       await interaction.editReply({
-        content: '이 채널에서 뮤엘이 살아 움직여요. 비활성화하려면 `/허브 비활성화`.',
+        content: '좋아, 이 채널에선 나도 평소처럼 떠들게. 끄려면 `/허브 동작:비활성화`.',
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -233,8 +233,8 @@ export const handleHubSlashInteraction = async (
     const active = await isHubChannelActive(supabase, { guildId, channelId }).catch(() => false);
     await interaction.editReply({
       content: active
-        ? '이 채널은 뮤엘 허브로 활성화되어 있어. 일반 메시지에도 응답할 수 있어.'
-        : '이 채널은 뮤엘 허브가 아니야. 활성화하려면 `/허브 활성화`.',
+        ? '여기선 나 평소 대화에도 껴. (허브 켜짐)'
+        : '여긴 아직 멘션해야 대답해. 평소에도 끼게 하려면 `/허브 동작:활성화`.',
     }).catch(() => {});
     return;
   }

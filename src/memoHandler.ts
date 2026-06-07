@@ -34,29 +34,29 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 export const buildMemoSlashCommand = () => {
   const cmd = new SlashCommandBuilder()
     .setName(MEMO_COMMAND_NAME)
-    .setDescription('Muel 에게 기억시킬 개인화 메모 (자기 응답 스타일·지침·사실).')
+    .setDescription('뮤엘 가르치기 — 기억시킬 내 톤·지침·사실을 박아둬.')
     .addStringOption((opt) =>
       opt
         .setName('동작')
-        .setDescription('추가 / 목록 / 삭제')
+        .setDescription('작성 / 목록 / 지우기')
         .setRequired(true)
         .addChoices(
-          { name: '추가', value: MEMO_SUB_ADD },
+          { name: '작성', value: MEMO_SUB_ADD },
           { name: '목록', value: MEMO_SUB_LIST },
-          { name: '삭제', value: MEMO_SUB_DELETE },
+          { name: '지우기', value: MEMO_SUB_DELETE },
         ),
     )
     .addStringOption((opt) =>
       opt
         .setName('내용')
-        .setDescription('동작=추가 일 때 기억시킬 내용')
+        .setDescription('동작=작성 일 때 기억시킬 내용')
         .setRequired(false)
         .setMaxLength(2000),
     )
     .addIntegerOption((opt) =>
       opt
         .setName('번호')
-        .setDescription('동작=삭제 일 때 카드 #번호')
+        .setDescription('동작=지우기 일 때 카드 #번호')
         .setRequired(false)
         .setMinValue(1),
     )
@@ -161,7 +161,7 @@ const buildAddSuccess = (content: string) =>
   renderDiscordMessage([{
     type: 'info-card',
     tone: 'muel',
-    title: '메모 추가됨',
+    title: '기억해뒀어',
     body: content,
     fields: [{ name: '​', value: '✏️ 직접 · 다음 대화부터 반영' }],
   }]) as any;
@@ -212,7 +212,7 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
   await interaction.deferReply({ flags: EPHEMERAL });
   const content = (interaction.options.getString('내용') ?? '').trim();
   if (!content) {
-    await interaction.editReply({ content: '`동작:추가` 에는 `내용` 을 함께 적어줘.' });
+    await interaction.editReply({ content: '`동작:작성` 엔 `내용` 도 같이 적어줘.' });
     return;
   }
   const supabase = getSupabaseClient();
@@ -226,7 +226,7 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     .single();
   if (error) {
     console.warn('[memo] add failed', error);
-    await interaction.editReply({ content: `저장 실패: ${error.message}` });
+    await interaction.editReply({ content: `못 박아뒀어: ${error.message}. 잠깐 뒤 다시 해줘.` });
     return;
   }
   // ADR-002: 직접 메모도 weave 지식 노드로 남긴다 (private, owner=본인). fire-and-forget.
@@ -250,7 +250,7 @@ const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
   await interaction.deferReply({ flags: EPHEMERAL });
   const number = interaction.options.getInteger('번호') ?? 0;
   if (number < 1) {
-    await interaction.editReply({ content: '`동작:삭제` 에는 `번호` 를 함께 적어줘. (1 이상)' });
+    await interaction.editReply({ content: '`동작:지우기` 엔 `번호` 도 같이. (1 이상)' });
     return;
   }
   const memos = await fetchAllMemos(interaction.user.id);
@@ -271,7 +271,7 @@ const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
     return;
   }
   await interaction.editReply({
-    content: `메모 #${number} 처리됨 (${target.source === 'user_direct' ? '직접 삭제' : '자동 비활성'}).`,
+    content: `지웠어 #${number} (${target.source === 'user_direct' ? '직접' : '자동 비활성'}).`,
   });
 };
 
@@ -374,7 +374,7 @@ export const handleMemoCommand = async (interaction: ChatInputCommandInteraction
     else if (sub === MEMO_SUB_LIST) await handleMemoList(interaction);
     else if (sub === MEMO_SUB_DELETE) await handleMemoDelete(interaction);
     else {
-      await interaction.reply({ content: '알 수 없는 서브커맨드.', flags: EPHEMERAL });
+      await interaction.reply({ content: '그건 모르는 동작이야.', flags: EPHEMERAL });
     }
   } catch (err) {
     console.error('[memo] handler failed', err);
