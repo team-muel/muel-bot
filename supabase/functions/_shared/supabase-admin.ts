@@ -3,9 +3,9 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
-let cached: SupabaseClient | null = null;
+let cached: SupabaseClient<any, "mafia"> | null = null;
 
-export function getSupabaseAdmin(): SupabaseClient {
+export function getSupabaseAdmin(): SupabaseClient<any, "mafia"> {
   if (cached) return cached;
 
   const url = Deno.env.get("SUPABASE_URL");

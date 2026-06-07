@@ -10,6 +10,7 @@
     "mcp:discord": "tsx src/mcpServer.ts",
     "mcp:discord:start": "node dist/mcpServer.js",
     "typecheck": "tsc --noEmit",
+    "typecheck:edge": "cd supabase/functions && deno task check",
     "test:regression": "tsx tests/regression/mention-llm-callsite.test.ts",
     "test:regression:research": "tsx tests/regression/research-enrich-callsite.test.ts",
     "test:regression:discord-polish": "tsx tests/regression/discord-output-polish.test.ts",

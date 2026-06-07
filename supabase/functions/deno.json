@@ -1,0 +1,12 @@
+{
+  "nodeModulesDir": "none",
+  "tasks": {
+    "check": "deno check */index.ts",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100
+  }
+}

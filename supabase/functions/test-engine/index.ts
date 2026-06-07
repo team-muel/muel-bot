@@ -43,7 +43,7 @@ Deno.serve(async (req: Request) => {
 
   const report = {
     scenario: "악마가 시민 킬 -> 의사가 시민 힐 -> 로마즈가 악마를 용의자로 지목",
-    generatedEvents: events.map(e => `${e.type}: ${JSON.stringify(e.payload || e.userId)}`),
+    generatedEvents: events.map((e: any) => `${e.type}: ${JSON.stringify(e.payload || e.userId)}`),
     playerStatuses: Object.keys(newState.players).map(id => {
       const p = newState.players[id];
       return `${id} (${p.currentRole}): ${p.alive ? "생존" : "사망"} | 태그: [${p.tags.join(', ')}]`;
