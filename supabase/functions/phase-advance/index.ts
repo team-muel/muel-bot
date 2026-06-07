@@ -452,39 +452,75 @@ Deno.serve((req: Request) => {
         const candidateUserId = engineState.verdict?.candidateUserId || null;
         const candidate = candidateUserId ? players.find((player) => player.user_id === candidateUserId) : null;
         let executed = false;
+        let blockedByShield = false;
 
         if (verdict.approved && candidate?.alive) {
-          executed = true;
-          requireNoError(
-            await supabase
-              .from("match_players")
-              .update({
-                alive: false,
-                eliminated_at: endedAt,
-                eliminated_phase_number: phase.phase_number,
-                eliminated_cause: "vote",
-              })
-              .eq("match_id", matchId)
-              .eq("user_id", candidateUserId),
-          );
+          const counters =
+            candidate.engine_state?.counters && typeof candidate.engine_state.counters === "object" && !Array.isArray(candidate.engine_state.counters)
+              ? { ...(candidate.engine_state.counters as Record<string, number>) }
+              : {};
+          const shield = typeof counters.shield === "number" ? counters.shield : 0;
 
-          requireNoError(
-            await supabase
-              .from("match_events")
-              .insert({
-                match_id: matchId,
-                phase_id: phase.id,
-                event_type: "player_eliminated",
-                visibility: "public",
-                payload: {
-                  user_id: candidate.user_id,
-                  display_name: candidate.display_name,
-                  role: candidate.role,
-                  faction: candidate.faction,
-                  cause: "vote",
-                },
-              }),
-          );
+          if (shield > 0) {
+            blockedByShield = true;
+            counters.shield = shield - 1;
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(candidate.engine_state || {}), counters } })
+                .eq("match_id", matchId)
+                .eq("user_id", candidateUserId),
+            );
+
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({
+                  match_id: matchId,
+                  phase_id: phase.id,
+                  event_type: "execution_blocked_shield",
+                  visibility: "public",
+                  payload: {
+                    user_id: candidate.user_id,
+                    display_name: candidate.display_name,
+                    role: candidate.role,
+                    faction: candidate.faction,
+                  },
+                }),
+            );
+          } else {
+            executed = true;
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({
+                  alive: false,
+                  eliminated_at: endedAt,
+                  eliminated_phase_number: phase.phase_number,
+                  eliminated_cause: "vote",
+                })
+                .eq("match_id", matchId)
+                .eq("user_id", candidateUserId),
+            );
+
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({
+                  match_id: matchId,
+                  phase_id: phase.id,
+                  event_type: "player_eliminated",
+                  visibility: "public",
+                  payload: {
+                    user_id: candidate.user_id,
+                    display_name: candidate.display_name,
+                    role: candidate.role,
+                    faction: candidate.faction,
+                    cause: "vote",
+                  },
+                }),
+            );
+          }
         }
 
         requireNoError(
@@ -502,6 +538,7 @@ Deno.serve((req: Request) => {
                 skipped: verdict.skipped,
                 approved: verdict.approved,
                 executed,
+                blocked_by_shield: blockedByShield,
               },
             }),
         );

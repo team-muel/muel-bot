@@ -17,15 +17,15 @@ const initialState: MatchState = {
       baseVoteValue: 1, bonusVoteValue: 0, suspicionValue: 0, alive: true, markedForDeath: false, markedForAnnihilation: false, tags: [], counters: {}
     },
     "user2": {
-      userId: "user2", originalRole: "doctor", currentRole: "habreters", actualFaction: "angel", treatedAsFaction: "angel",
+      userId: "user2", originalRole: "doctor", currentRole: "doctor", actualFaction: "angel", treatedAsFaction: "angel",
       baseVoteValue: 1, bonusVoteValue: 0, suspicionValue: 0, alive: true, markedForDeath: false, markedForAnnihilation: false, tags: [], counters: {}
     },
     "user3": {
-      userId: "user3", originalRole: "demon", currentRole: "archdemon", actualFaction: "demon", treatedAsFaction: "demon",
-      baseVoteValue: 1, bonusVoteValue: 0, suspicionValue: 0, alive: true, markedForDeath: false, markedForAnnihilation: false, tags: [], counters: {}
+      userId: "user3", originalRole: "demon", currentRole: "demon", actualFaction: "demon", treatedAsFaction: "demon",
+      baseVoteValue: 1, bonusVoteValue: 0, suspicionValue: 0, alive: true, markedForDeath: false, markedForAnnihilation: false, tags: [], counters: { shield: 1 }
     },
     "user4": {
-      userId: "user4", originalRole: "helper", currentRole: "gain", actualFaction: "helper", treatedAsFaction: "angel", // 가인 (천사로 위장)
+      userId: "user4", originalRole: "helper", currentRole: "gain", actualFaction: "demon", treatedAsFaction: "demon",
       baseVoteValue: 1, bonusVoteValue: 0, suspicionValue: 0, alive: true, markedForDeath: false, markedForAnnihilation: false, tags: [], counters: {}
     },
     "user5": {
@@ -36,11 +36,11 @@ const initialState: MatchState = {
   actionStack: [
     { sourceUserId: "user3", targetUserId: "user1", actionType: "demon_kill", priority: 4 }, // 대악마가 시민(1) 공격
     { sourceUserId: "user2", targetUserId: "user1", actionType: "doctor_heal", priority: 3 }, // 의사가 시민(1) 보호
-    { sourceUserId: "user4", targetUserId: "user5", actionType: "gain_hypocrisy", priority: 1 } // 가인이 경찰(5) 지연시킴
+    { sourceUserId: "user5", targetUserId: "user3", actionType: "romaz_suspect", priority: 5 } // 로마즈가 악마를 용의자로 지목
   ]
 };
 
-console.log("시나리오: 대악마가 시민 공격 -> 의사가 시민 보호 -> 가인이 경찰 지연");
+console.log("시나리오: 악마가 시민 공격 -> 의사가 시민 보호 -> 로마즈가 악마를 용의자로 지목");
 
 // 2. 엔진 가동
 const { newState, events } = resolveNightActions(initialState);

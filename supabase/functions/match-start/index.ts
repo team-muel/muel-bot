@@ -4,8 +4,15 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 
-function generateRoles(playerCount: number): Array<{ role: string; faction: string }> {
-  // role: 'citizen', 'demon', 'helper', 'doctor', 'police'
+type RoleCard = { role: string; faction: "angel" | "demon" };
+
+function pushRole(cards: RoleCard[], count: number, role: string, faction: RoleCard["faction"]) {
+  for (let i = 0; i < count; i++) cards.push({ role, faction });
+}
+
+function generateRoles(playerCount: number): RoleCard[] {
+  // DB-facing faction stays 'angel' | 'demon'. Disguised roles such as gain are
+  // represented by role + engine_state, not by a third DB faction.
   // faction: 'angel', 'demon'
   let demon = 1;
   let doctor = 1;
@@ -23,12 +30,18 @@ function generateRoles(playerCount: number): Array<{ role: string; faction: stri
   else if (playerCount === 12) { helper = 2; citizen = 7; }
   else { throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다."); }
 
-  const roles: Array<{ role: string; faction: string }> = [];
-  for (let i = 0; i < demon; i++) roles.push({ role: 'demon', faction: 'demon' });
-  for (let i = 0; i < helper; i++) roles.push({ role: 'helper', faction: 'demon' });
-  for (let i = 0; i < doctor; i++) roles.push({ role: 'doctor', faction: 'angel' });
-  for (let i = 0; i < police; i++) roles.push({ role: 'police', faction: 'angel' });
-  for (let i = 0; i < citizen; i++) roles.push({ role: 'citizen', faction: 'angel' });
+  const roles: RoleCard[] = [];
+  pushRole(roles, demon, "demon", "demon");
+
+  if (helper > 0) {
+    pushRole(roles, 1, "gain", "demon");
+    pushRole(roles, helper - 1, "helper", "demon");
+  }
+
+  pushRole(roles, doctor, "doctor", "angel");
+  pushRole(roles, playerCount >= 7 ? 1 : police, playerCount >= 7 ? "romaz" : "police", "angel");
+  pushRole(roles, playerCount >= 8 ? 1 : 0, "rainer", "angel");
+  pushRole(roles, playerCount >= 8 ? citizen - 1 : citizen, "citizen", "angel");
 
   // Shuffle roles
   for (let i = roles.length - 1; i > 0; i--) {
@@ -37,6 +50,22 @@ function generateRoles(playerCount: number): Array<{ role: string; faction: stri
   }
 
   return roles;
+}
+
+function engineStateForAssignment(role: string, hasGain: boolean): Record<string, unknown> | null {
+  const counters: Record<string, number> = {};
+
+  if (role === "rainer") {
+    // Rainer counts as 3 angel count whether alive or dead.
+    counters.countBonus = 2;
+    counters.deadCountBonus = 3;
+  }
+
+  if (hasGain && role === "demon") {
+    counters.shield = 1;
+  }
+
+  return Object.keys(counters).length > 0 ? { counters } : null;
 }
 
 Deno.serve((req: Request) => {
@@ -85,10 +114,12 @@ Deno.serve((req: Request) => {
 
     // 1. Assign roles
     const roles = generateRoles(players.length);
+    const hasGain = roles.some((role) => role.role === "gain");
     const assignments = players.map((p, index) => ({
       user_id: p.user_id,
       role: roles[index].role,
       faction: roles[index].faction,
+      engine_state: engineStateForAssignment(roles[index].role, hasGain),
     }));
 
     // Update match_players roles in a loop (since no bulk update in pure Supabase JS easily without RPC, but we can do it via promise all or rpc. 
@@ -97,11 +128,14 @@ Deno.serve((req: Request) => {
       assignments.map((a) =>
         supabase
           .from("match_players")
-          .update({ role: a.role, faction: a.faction })
+          .update({ role: a.role, faction: a.faction, engine_state: a.engine_state })
           .eq("match_id", matchId)
           .eq("user_id", a.user_id)
       )
-    );
+    ).then((results) => {
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+    });
 
     // 2. Create phase
     const expectedEndedAt = new Date(Date.now() + 3000).toISOString(); // 3 seconds for role_assign

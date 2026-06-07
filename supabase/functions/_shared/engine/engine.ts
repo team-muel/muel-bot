@@ -87,7 +87,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "attack_prevented", userId: player.userId });
       } else if ((player.counters?.shield ?? 0) > 0) {
-        // 보호막(가인 등): 밤 살해 1회 무효 + 소비. (처형 차단은 phase-advance, 후속.)
+        // 보호막(가인 등): 밤 살해 1회 무효 + 소비. 처형 차단은 phase-advance에서 처리한다.
         player.counters.shield -= 1;
         player.markedForDeath = false;
         events.push({ type: "shield_blocked", userId: player.userId });
