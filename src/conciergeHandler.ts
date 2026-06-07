@@ -42,6 +42,8 @@ const HUB_SUB_ACTIVATE = '활성화';
 const HUB_SUB_DEACTIVATE = '비활성화';
 const HUB_SUB_LIST = '목록';
 const HUB_SUB_STATUS = '상태';
+const HUB_SUB_PROACTIVE_ON = '먼저켜기';
+const HUB_SUB_PROACTIVE_OFF = '먼저끄기';
 
 const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'cs_help',
@@ -78,11 +80,13 @@ export const buildHubSlashCommand = () =>
     .addStringOption((opt) =>
       opt
         .setName('동작')
-        .setDescription('활성화 / 비활성화 / 목록 / 상태')
+        .setDescription('활성화 / 비활성화 / 먼저켜기 / 먼저끄기 / 목록 / 상태')
         .setRequired(true)
         .addChoices(
           { name: '활성화', value: HUB_SUB_ACTIVATE },
           { name: '비활성화', value: HUB_SUB_DEACTIVATE },
+          { name: '먼저켜기 (가끔 먼저 말 걸기)', value: HUB_SUB_PROACTIVE_ON },
+          { name: '먼저끄기', value: HUB_SUB_PROACTIVE_OFF },
           { name: '목록', value: HUB_SUB_LIST },
           { name: '상태', value: HUB_SUB_STATUS },
         ),
@@ -236,12 +240,40 @@ export const handleHubSlashInteraction = async (
     return;
   }
 
+  if (subcommand === HUB_SUB_PROACTIVE_ON || subcommand === HUB_SUB_PROACTIVE_OFF) {
+    const on = subcommand === HUB_SUB_PROACTIVE_ON;
+    const { error } = await supabase.from('muel_proactive_configs').upsert(
+      on
+        ? { guild_id: guildId, channel_id: channelId, enabled: true, morning: true, spike: true }
+        : { guild_id: guildId, channel_id: channelId, enabled: false },
+      { onConflict: 'guild_id,channel_id' },
+    );
+    if (error) {
+      await interaction.editReply({ content: `못 ${on ? '켰' : '껐'}어: ${error.message}.` }).catch(() => {});
+      return;
+    }
+    await interaction.editReply({
+      content: on
+        ? '좋아, 이 채널에선 가끔 먼저 말 걸게 — 아침 인사랑 갑자기 북적일 때. 끄려면 `/허브 동작:먼저끄기`.'
+        : '알겠어, 여기선 먼저 말 안 걸게.',
+    }).catch(() => {});
+    return;
+  }
+
   if (subcommand === HUB_SUB_STATUS) {
     const active = await isHubChannelActive(supabase, { guildId, channelId }).catch(() => false);
+    const { data: pro } = await supabase
+      .from('muel_proactive_configs')
+      .select('enabled')
+      .eq('guild_id', guildId)
+      .eq('channel_id', channelId)
+      .maybeSingle();
+    const proactiveOn = !!(pro as { enabled?: boolean } | null)?.enabled;
     await interaction.editReply({
-      content: active
-        ? '여기선 나 평소 대화에도 껴. (허브 켜짐)'
-        : '여긴 아직 멘션해야 대답해. 평소에도 끼게 하려면 `/허브 동작:활성화`.',
+      content: [
+        active ? '여기선 나 평소 대화에도 껴. (허브 켜짐)' : '여긴 아직 멘션해야 대답해. 켜려면 `/허브 동작:활성화`.',
+        proactiveOn ? '가끔 먼저도 말 걸어. (먼저 켜짐)' : '먼저 말 걸진 않아. 켜려면 `/허브 동작:먼저켜기`.',
+      ].join('\n'),
     }).catch(() => {});
     return;
   }
