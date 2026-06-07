@@ -33,6 +33,24 @@ Deno.serve((req: Request) => {
     }
 
     const supabase = getSupabaseAdmin();
+
+    // M-2: enforce the 12-player cap. Existing players may rejoin (idempotent upsert).
+    const { data: existingRow } = await supabase
+      .from("match_players")
+      .select("user_id")
+      .eq("match_id", match.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!existingRow) {
+      const { count } = await supabase
+        .from("match_players")
+        .select("user_id", { count: "exact", head: true })
+        .eq("match_id", match.id);
+      if ((count ?? 0) >= 12) {
+        throw conflict("match_full", "정원이 가득 찼습니다 (최대 12명).");
+      }
+    }
+
     const { data: player, error: playerError } = await supabase
       .from("match_players")
       .upsert(

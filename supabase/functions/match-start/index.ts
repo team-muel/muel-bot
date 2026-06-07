@@ -131,7 +131,7 @@ Deno.serve((req: Request) => {
     });
 
     // 2. Create phase
-    const expectedEndedAt = new Date(Date.now() + 3000).toISOString(); // 3 seconds for role_assign
+    const expectedEndedAt = new Date(Date.now() + 8000).toISOString(); // 8s role_assign (GOMDORI_RULES.phases.roleAssign.durationSec)
     const { data: phase, error: phaseError } = await supabase
       .from("match_phases")
       .insert({
