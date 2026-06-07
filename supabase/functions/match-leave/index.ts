@@ -30,12 +30,18 @@ Deno.serve((req: Request) => {
 
     const supabase = getSupabaseAdmin();
 
-    const { error: deleteError } = await supabase
+    const { data: removed, error: deleteError } = await supabase
       .from("match_players")
       .delete()
       .eq("match_id", matchId)
-      .eq("user_id", claims.sub);
+      .eq("user_id", claims.sub)
+      .select("user_id");
     if (deleteError) throw deleteError;
+
+    // M-5: only emit player_left if the caller was actually in the match.
+    if (!removed || removed.length === 0) {
+      return jsonResponse({ success: true, skipped: "not_in_match" }, { origin });
+    }
 
     const { error: eventError } = await supabase.from("match_events").insert({
       match_id: matchId,

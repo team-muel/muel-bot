@@ -185,6 +185,16 @@ Deno.serve((req: Request) => {
       );
     }
 
+    // H-2: optional shared-secret gate for this public (verify_jwt=false) endpoint.
+    // Set PHASE_ADVANCE_CRON_SECRET and send it as x-cron-key from pg_cron to enforce.
+    const cronSecret = Deno.env.get("PHASE_ADVANCE_CRON_SECRET");
+    if (cronSecret && req.headers.get("x-cron-key") !== cronSecret) {
+      return jsonResponse(
+        { error: { code: "forbidden", message: "Invalid cron key." } },
+        { status: 403, origin },
+      );
+    }
+
     const supabase = getSupabaseAdmin();
     const now = new Date().toISOString();
 
@@ -207,12 +217,19 @@ Deno.serve((req: Request) => {
       const matchId = phase.match_id;
       const endedAt = new Date().toISOString();
 
-      requireNoError(
+      const claimedPhase = requireNoError(
         await supabase
           .from("match_phases")
           .update({ ended_at: endedAt })
-          .eq("id", phase.id),
-      );
+          .eq("id", phase.id)
+          .is("ended_at", null)
+          .select("id"),
+      ) as Array<{ id: string }>;
+      // GAME-1: if a concurrent invocation already claimed this phase, skip it to
+      // avoid double night-resolution, double votes, and duplicate next phases.
+      if (!claimedPhase || claimedPhase.length === 0) {
+        continue;
+      }
 
       let engineState = await loadMatchEngineState(supabase, matchId);
       let players = await loadPlayers(supabase, matchId);

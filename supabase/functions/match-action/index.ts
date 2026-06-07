@@ -72,11 +72,30 @@ Deno.serve((req: Request) => {
     if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 행동할 수 없습니다.");
 
     if (match.status === "night") {
+      // H-1: first night skips all abilities (GOMDORI_RULES.firstNight.skipsAbilities);
+      // phase-advance discards them anyway, so reject instead of silently accepting.
+      if (currentPhase.phase_number === 1) {
+        throw conflict("first_night", "첫 번째 밤에는 능력을 사용할 수 없습니다.");
+      }
       const allowedActions = NIGHT_ACTIONS_BY_ROLE[player.role] ?? [];
       if (!allowedActions.includes(actionType)) {
         throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
       }
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
+      // M-1: a demon cannot target itself.
+      if (actionType === "demon_kill" && targetUserId === claims.sub) {
+        throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
+      }
+      // H-4: night actions must target a living player.
+      const { data: targetState } = await supabase
+        .from("match_players")
+        .select("alive")
+        .eq("match_id", matchId)
+        .eq("user_id", targetUserId)
+        .single();
+      if (!targetState || !targetState.alive) {
+        throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
+      }
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
     } else if (match.status === "verdict") {

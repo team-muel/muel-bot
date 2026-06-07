@@ -43,6 +43,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   const sortedActions = [...newState.actionStack].sort((a, b) => a.priority - b.priority);
   newState.actionStack = [];
 
+  // GAME-2: voteBias/suspicionBias are per-round boosts (romaz). Clear last
+  // round's leftover before applying this night's effects so suspecting the same
+  // target on consecutive nights cannot accumulate an unbeatable bias.
+  for (const userId in newState.players) {
+    const counters = newState.players[userId].counters;
+    if (counters) {
+      counters.voteBias = 0;
+      counters.suspicionBias = 0;
+    }
+  }
+
   for (const action of sortedActions) {
     const sourcePlayer = newState.players[action.sourceUserId];
     const targetPlayer = action.targetUserId ? newState.players[action.targetUserId] : null;
