@@ -42,6 +42,7 @@ const HUB_SUB_ACTIVATE = '활성화';
 const HUB_SUB_DEACTIVATE = '비활성화';
 const HUB_SUB_LIST = '목록';
 const HUB_SUB_STATUS = '상태';
+const HUB_SUB_FULL = '100';
 
 const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'cs_help',
@@ -49,6 +50,13 @@ const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'memory_query',
   'meta',
 ]);
+
+// PA-0: a bare YouTube/link share gets classified as news_query but should NOT
+// trigger a reflexive reply — only engage news_query when it reads as a question.
+const looksLikeNewsQuestion = (text: string): boolean => {
+  if (/[?？]/.test(text)) return true;
+  return /(뭐|무슨|어때|어떤|추천|있어|있나|알려|찾아|봤|뉴스|소식|영상|업로드|recommend|news)/i.test(text);
+};
 
 const pickStringField = (record: Record<string, unknown> | undefined, key: string): string | null => {
   if (!record) return null;
@@ -71,10 +79,11 @@ export const buildHubSlashCommand = () =>
     .addStringOption((opt) =>
       opt
         .setName('동작')
-        .setDescription('활성화 / 비활성화 / 목록 / 상태')
+        .setDescription('활성화 / 100% / 비활성화 / 목록 / 상태')
         .setRequired(true)
         .addChoices(
-          { name: '활성화', value: HUB_SUB_ACTIVATE },
+          { name: '활성화 (평소 대화에 응답)', value: HUB_SUB_ACTIVATE },
+          { name: '100% (응답 + 가끔 먼저 말 걸기)', value: HUB_SUB_FULL },
           { name: '비활성화', value: HUB_SUB_DEACTIVATE },
           { name: '목록', value: HUB_SUB_LIST },
           { name: '상태', value: HUB_SUB_STATUS },
@@ -120,7 +129,8 @@ export const handleHubSlashInteraction = async (
 
   const subcommand = interaction.options.getString('동작', true);
 
-  if (subcommand === HUB_SUB_ACTIVATE) {
+  if (subcommand === HUB_SUB_ACTIVATE || subcommand === HUB_SUB_FULL) {
+    const full = subcommand === HUB_SUB_FULL;
     try {
       await activateHubChannel(supabase, {
         guildId,
@@ -128,17 +138,25 @@ export const handleHubSlashInteraction = async (
         activatedByUserId: interaction.user.id,
         activatedByUsername: interaction.user.username,
       });
+      await supabase.from('muel_proactive_configs').upsert(
+        full
+          ? { guild_id: guildId, channel_id: channelId, enabled: true, morning: true, spike: true }
+          : { guild_id: guildId, channel_id: channelId, enabled: false },
+        { onConflict: 'guild_id,channel_id' },
+      );
       await interaction.editReply({
-        content: '좋아, 이 채널에선 나도 평소처럼 떠들게. 끄려면 `/허브 동작:비활성화`.',
+        content: full
+          ? '좋아, 여기선 평소 대화에도 끼고 가끔 먼저도 말 걸게 (100%). 줄이려면 `/허브 동작:활성화`, 끄려면 `/허브 동작:비활성화`.'
+          : '좋아, 이 채널에선 나도 평소처럼 떠들게. 먼저도 말 걸게 하려면 `/허브 동작:100%`, 끄려면 `/허브 동작:비활성화`.',
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
-        triggerDetail: 'hub_activate',
+        triggerDetail: full ? 'hub_activate_full' : 'hub_activate',
         status: 'responded',
         discordGuildId: guildId,
         discordChannelId: channelId,
         discordUserId: interaction.user.id,
-        metadata: { username: interaction.user.username },
+        metadata: { username: interaction.user.username, full },
       });
     } catch (error) {
       console.error('[hub] activate failed', error);
@@ -161,8 +179,12 @@ export const handleHubSlashInteraction = async (
   if (subcommand === HUB_SUB_DEACTIVATE) {
     try {
       await deactivateHubChannel(supabase, { guildId, channelId });
+      await supabase.from('muel_proactive_configs').upsert(
+        { guild_id: guildId, channel_id: channelId, enabled: false },
+        { onConflict: 'guild_id,channel_id' },
+      );
       await interaction.editReply({
-        content: '이 채널의 뮤엘 허브를 비활성화했어. 다시 켜려면 `/허브 활성화`.',
+        content: '이 채널의 뮤엘 허브를 껐어. 다시 켜려면 `/허브 동작:활성화`.',
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -229,12 +251,22 @@ export const handleHubSlashInteraction = async (
     return;
   }
 
+
   if (subcommand === HUB_SUB_STATUS) {
     const active = await isHubChannelActive(supabase, { guildId, channelId }).catch(() => false);
+    const { data: pro } = await supabase
+      .from('muel_proactive_configs')
+      .select('enabled')
+      .eq('guild_id', guildId)
+      .eq('channel_id', channelId)
+      .maybeSingle();
+    const proactiveOn = !!(pro as { enabled?: boolean } | null)?.enabled;
     await interaction.editReply({
-      content: active
-        ? '여기선 나 평소 대화에도 껴. (허브 켜짐)'
-        : '여긴 아직 멘션해야 대답해. 평소에도 끼게 하려면 `/허브 동작:활성화`.',
+      content: !active
+        ? '여긴 꺼져 있어 — 멘션해야 대답해. 켜려면 `/허브 동작:활성화`, 먼저 말도 걸게 하려면 `/허브 동작:100%`.'
+        : proactiveOn
+          ? '현재: 100% (응답 + 먼저 말 걸기). 줄이려면 `/허브 동작:활성화`.'
+          : '현재: 활성화 (응답만). 먼저도 말 걸게 하려면 `/허브 동작:100%`.',
     }).catch(() => {});
     return;
   }
@@ -287,10 +319,13 @@ export const handleHubChannelMessage = async (
       discordUserId: userId,
     });
 
+    const newsReflexSuppressed =
+      decision?.intent === 'news_query' && !looksLikeNewsQuestion(userText);
     if (
       !decision ||
       !RESPONSIVE_INTENTS.has(decision.intent) ||
-      decision.confidence < responsiveMin
+      decision.confidence < responsiveMin ||
+      newsReflexSuppressed
     ) {
       void logMuelAgentAction(supabase, {
         triggerSource: 'allowlist_channel',
@@ -304,7 +339,7 @@ export const handleHubChannelMessage = async (
           confidence: decision?.confidence ?? null,
           intent: decision?.intent ?? null,
           channelResponsiveMin: responsiveMin,
-          reason: 'intent_not_responsive_or_low_confidence',
+          reason: newsReflexSuppressed ? 'news_query_link_share_suppressed' : 'intent_not_responsive_or_low_confidence',
         },
       });
       return;

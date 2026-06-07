@@ -29,6 +29,7 @@ import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { startProactiveScheduler } from './proactiveSpeaker.js';
 import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 
@@ -353,6 +354,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     startYouTubeMonitor(readyClient);
   }
 
+  startProactiveScheduler(readyClient, getSupabaseClient());
+
   if (config.enableJobWorker) {
     runJobWorkerLoop().catch(err => {
       console.error('[jobs] worker loop crashed', err);
@@ -411,6 +414,7 @@ if (!config.enableHttpInteractions) {
       await handleMemoCommand(interaction);
       return;
     }
+
 
     if (interaction.commandName === ROLLING_COMMAND_NAME) {
       await handleRollingCommand(interaction);

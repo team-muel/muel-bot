@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Message } from 'discord.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { enqueueJob } from './muelJobs.js';
+import { maybeSpeakOnSpike } from './proactiveSpeaker.js';
 import { getRecentMessages } from './channelBuffer.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
@@ -86,6 +87,8 @@ export const observeCommunityMessage = (
       `summarize_community_flow:${data.id}`,
       new Date(Date.now() + 2 * 60_000).toISOString(),
     );
+
+    await maybeSpeakOnSpike(supabase, message);
   })().catch((error) => {
     console.warn('[community-flow] observe failed', error);
   });
