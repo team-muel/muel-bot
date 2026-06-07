@@ -335,6 +335,7 @@ const buildHelpMessage = () => renderDiscordMessage([{
       ].join('\n'),
     },
   ],
+  footer: 'Muel = community AI / Gomdori = game Activity',
 }]);
 
 client.once(Events.ClientReady, async (readyClient) => {
