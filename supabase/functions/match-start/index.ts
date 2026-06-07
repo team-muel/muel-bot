@@ -11,37 +11,29 @@ function pushRole(cards: RoleCard[], count: number, role: string, faction: RoleC
 }
 
 function generateRoles(playerCount: number): RoleCard[] {
-  // DB-facing faction stays 'angel' | 'demon'. Disguised roles such as gain are
-  // represented by role + engine_state, not by a third DB faction.
-  // faction: 'angel', 'demon'
-  let demon = 1;
-  let doctor = 1;
-  let police = 1;
-  let helper = 0;
-  let citizen = 0;
-
-  if (playerCount === 5) { helper = 0; citizen = 2; }
-  else if (playerCount === 6) { helper = 1; citizen = 2; }
-  else if (playerCount === 7) { helper = 1; citizen = 3; }
-  else if (playerCount === 8) { helper = 1; citizen = 4; }
-  else if (playerCount === 9) { helper = 2; citizen = 4; }
-  else if (playerCount === 10) { helper = 2; citizen = 5; }
-  else if (playerCount === 11) { helper = 2; citizen = 6; }
-  else if (playerCount === 12) { helper = 2; citizen = 7; }
-  else { throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다."); }
-
-  const roles: RoleCard[] = [];
-  pushRole(roles, demon, "demon", "demon");
-
-  if (helper > 0) {
-    pushRole(roles, 1, "gain", "demon");
-    pushRole(roles, helper - 1, "helper", "demon");
+  // W4 v1: 가인/로마즈/라이너는 5인부터 항상 배정(전원이 직업을 받고 시작하는 원안).
+  // DB faction 은 'angel' | 'demon' — 가인 등 위장 직업은 role + engine_state 로 표현.
+  // 팀 구성:
+  //   악마팀 = 악마(1) + 가인(1, 항상) + 조력자(9인+ 1 → 원래 악마팀 3 복원)
+  //   천사팀 = 로마즈(1) + 라이너(1) + 의사(1, 5인+) + 경찰(1, 6인+) + 나머지 시민
+  // 악마팀 크기: 5~8인 2, 9~12인 3.
+  if (playerCount < 5 || playerCount > 12) {
+    throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
   }
 
-  pushRole(roles, doctor, "doctor", "angel");
-  pushRole(roles, playerCount >= 7 ? 1 : police, playerCount >= 7 ? "romaz" : "police", "angel");
-  pushRole(roles, playerCount >= 8 ? 1 : 0, "rainer", "angel");
-  pushRole(roles, playerCount >= 8 ? citizen - 1 : citizen, "citizen", "angel");
+  const roles: RoleCard[] = [];
+  // 악마팀
+  pushRole(roles, 1, "demon", "demon");
+  pushRole(roles, 1, "gain", "demon");
+  pushRole(roles, playerCount >= 9 ? 1 : 0, "helper", "demon");
+  // 천사팀
+  pushRole(roles, 1, "romaz", "angel");
+  pushRole(roles, 1, "rainer", "angel");
+  pushRole(roles, 1, "doctor", "angel");
+  pushRole(roles, playerCount >= 6 ? 1 : 0, "police", "angel");
+  // 나머지 슬롯은 시민으로 채움
+  const remaining = playerCount - roles.length;
+  pushRole(roles, remaining, "citizen", "angel");
 
   // Shuffle roles
   for (let i = roles.length - 1; i > 0; i--) {
@@ -56,9 +48,11 @@ function engineStateForAssignment(role: string, hasGain: boolean): Record<string
   const counters: Record<string, number> = {};
 
   if (role === "rainer") {
-    // Rainer counts as 3 angel count whether alive or dead.
-    counters.countBonus = 2;
-    counters.deadCountBonus = 3;
+    // 라이너 백호: 천사팀 카운트 +1, 생존 무관. canon 은 +3 이나, 5인부터 라이너를 항상
+    // 배정하므로 전멸 시에도 deadCountBonus 가 악마팀 카운트 이상이면 악마가 영영 못 이긴다.
+    // 그래서 v1 은 +1 (악마팀 최소 2 > 1). 표준 인원이 커지면 재상향 검토.
+    counters.countBonus = 1;
+    counters.deadCountBonus = 1;
   }
 
   if (hasGain && role === "demon") {
