@@ -308,10 +308,16 @@ export const generateMuelReply = async (
     }
   }
 
-  const messages: Array<any> = history.slice(-MAX_CONTEXT_MESSAGES)
-    .filter((msg) => msg.role !== 'system')
-    .map((msg) => {
+  const convo = history.slice(-MAX_CONTEXT_MESSAGES).filter((msg) => msg.role !== 'system');
+  const lastConvoIdx = convo.length - 1;
+  const messages: Array<any> = convo
+    .map((msg, idx) => {
       let content = msg.parts || [];
+      // Discord CDN image URLs expire — keep images only on the latest turn and
+      // replace older image parts with a placeholder so history replay doesn't fail.
+      if (idx !== lastConvoIdx) {
+        content = content.map((p: any) => (p.type === 'image' ? { type: 'text', text: '[이미지]' } : p));
+      }
       if (msg.role === 'user') {
         const name = msg.metadata?.discordUsername ?? authorName;
         content = content.map((p: any) => (

@@ -128,19 +128,24 @@ export const handleMuelMention = async (
   }
 
   const userText = stripBotMention(message.content, client.user.id);
-  if (!userText) {
+  const imageParts = [...message.attachments.values()]
+    .filter((a) => (a.contentType ?? '').startsWith('image/'))
+    .slice(0, 4)
+    .map((a) => ({ type: 'image' as const, image: a.url }));
+  if (!userText && imageParts.length === 0) {
     await message.reply({
-      content: '부를 때 할 말도 같이 적어줘.',
+      content: '부를 때 할 말이나 이미지를 같이 줘.',
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
   }
+  const dedupContent = userText || imageParts.map((p) => p.image).join('|');
 
   const requestKey = `${message.channelId}:${message.author.id}`;
   const now = Date.now();
   sweepRecentRequests(now);
   const previous = recentRequests.get(requestKey);
-  if (previous && previous.content === userText && now - previous.at < RECENT_REQUEST_TTL_MS) {
+  if (previous && previous.content === dedupContent && now - previous.at < RECENT_REQUEST_TTL_MS) {
     previous.at = now;
     await message.reply({
       content: '방금 본 내용이야. 너무 연속으로 보내면 곤란해.',
@@ -148,7 +153,7 @@ export const handleMuelMention = async (
     });
     return;
   }
-  recentRequests.set(requestKey, { content: userText, at: now });
+  recentRequests.set(requestKey, { content: dedupContent, at: now });
 
   const supabase = getSupabaseClient();
 
@@ -211,7 +216,7 @@ export const handleMuelMention = async (
       sourceChannelId: message.channelId,
       sourceThreadId: message.channelId,
       userMessageId,
-      userParts: [{ type: 'text', text: userText }],
+      userParts: userText ? [{ type: 'text', text: userText }, ...imageParts] : imageParts,
       metadata: {
         discordGuildId: message.guildId,
         discordChannelId: message.channelId,

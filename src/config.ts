@@ -43,7 +43,7 @@ export const config = {
   muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-001',
   muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 768),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),
-  nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'meta/llama-3.3-70b-instruct',
+  nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'meta/llama-3.2-90b-vision-instruct',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
