@@ -123,6 +123,17 @@ export const handleDiscordInteractions = async (request: IncomingMessage, respon
     return;
   }
 
+  if (commandName === '뮤엘') {
+    // /뮤엘 은 Muel 의 Activity entry point command (type=4, handler=2) 로 등록돼
+    // Discord 가 자동으로 Activity 를 띄운다. 정상 등록 시 이 분기까지 들어오지
+    // 않으며, entry point 등록 실패·구버전 클라이언트용 fallback 만 남긴다.
+    json(response, 200, {
+      type: 4,
+      data: { content: `Muel 활동\n\n${config.hubUrl}`, flags: EPHEMERAL_FLAG },
+    });
+    return;
+  }
+
   if (commandName === '구독') {
     const action = getStringOption(interaction, OPTION_ACTION);
     const kind = getStringOption(interaction, OPTION_KIND);
