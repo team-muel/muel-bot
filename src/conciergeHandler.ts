@@ -279,6 +279,10 @@ export const handleHubChannelMessage = async (
   if (message.author.bot) return;
   if (!message.guildId) return;
   const userText = message.content?.trim() ?? '';
+  const imageParts = [...message.attachments.values()]
+    .filter((a) => (a.contentType ?? '').startsWith('image/'))
+    .slice(0, 4)
+    .map((a) => ({ type: 'image' as const, image: a.url }));
   if (!userText) return;
 
   const supabase = getSupabaseClient();
@@ -360,7 +364,7 @@ export const handleHubChannelMessage = async (
       sourceChannelId: channelId,
       sourceThreadId: channelId,
       userMessageId,
-      userParts: [{ type: 'text', text: userText }],
+      userParts: [{ type: 'text', text: userText }, ...imageParts],
       metadata: {
         discordGuildId: guildId,
         discordChannelId: channelId,
