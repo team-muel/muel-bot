@@ -164,6 +164,17 @@ export const handleDiscordInteractions = async (request: IncomingMessage, respon
     return;
   }
 
+  if (commandName === '메모' || commandName === '허브') {
+    // 메모/허브는 게이트웨이(InteractionCreate)에서 처리한다. HTTP 상호작용
+    // 모드(enableHttpInteractions=true)에서는 아직 미구현이므로, 혼동을 주는
+    // 일반 fallback 대신 명시적으로 안내한다.
+    json(response, 200, {
+      type: 4,
+      data: { content: `\`/${commandName}\` 는 게이트웨이 모드에서 동작해. (HTTP 상호작용 모드는 아직 미지원)`, flags: EPHEMERAL_FLAG },
+    });
+    return;
+  }
+
   json(response, 200, {
     type: 4,
     data: { content: '지금 사용할 수 있는 명령어는 /도움말, /구독, /ping 이야.', flags: EPHEMERAL_FLAG },
