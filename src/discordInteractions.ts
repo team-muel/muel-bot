@@ -18,14 +18,15 @@ const INTERACTION_APPLICATION_COMMAND = 2;
 const EPHEMERAL_FLAG = 1 << 6;
 
 const HELP_TEXT = [
-  '나 뮤엘이야. 이 동네 상주하면서 같이 떠들고, 기억하고, 챙겨봐.',
+  '뮤엘 명령어',
   '',
-  `내가 보는 우리(Weave): <${config.hubUrl}/weave>`,
+  '/구독 - 유튜브 채널 구독 알림',
+  '/메모 - 뮤엘에게 기억시키기',
+  '/허브 - 이 채널에서 평소 대화에도 응답',
+  '/롤링페이퍼 - 멤버끼리 한 줄 남기기',
+  '/도움말 · /ping',
   '',
-  '명령: /도움말 /ping /구독 /메모 /허브',
-  '- /메모 동작:작성 내용:<...>  — 나한테 기억시킬 거',
-  '- /메모 동작:목록 [페이지:<n>]',
-  '- /메모 동작:지우기 번호:<n>',
+  `Weave: <${config.hubUrl}/weave>`,
 ].join('\n');
 
 const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {

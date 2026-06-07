@@ -34,7 +34,7 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 export const buildMemoSlashCommand = () => {
   const cmd = new SlashCommandBuilder()
     .setName(MEMO_COMMAND_NAME)
-    .setDescription('뮤엘 가르치기 — 기억시킬 내 톤·지침·사실을 박아둬.')
+    .setDescription('뮤엘 가르치기')
     .addStringOption((opt) =>
       opt
         .setName('동작')
