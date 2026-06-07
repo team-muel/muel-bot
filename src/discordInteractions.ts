@@ -18,14 +18,14 @@ const INTERACTION_APPLICATION_COMMAND = 2;
 const EPHEMERAL_FLAG = 1 << 6;
 
 const HELP_TEXT = [
-  '**Muel에서 사용할 수 있는 입구**',
+  '나 뮤엘이야. 이 동네 상주하면서 같이 떠들고, 기억하고, 챙겨봐.',
   '',
-  `Muel Hub: <${config.hubUrl}>`,
+  `내가 보는 우리(Weave): <${config.hubUrl}/weave>`,
   '',
-  '명령어: /도움말 /ping /구독 /메모 /허브',
-  '- /메모 동작:추가 내용:<...>  — 나한테 기억시킬 개인화 메모',
+  '명령: /도움말 /ping /구독 /메모 /허브',
+  '- /메모 동작:작성 내용:<...>  — 나한테 기억시킬 거',
   '- /메모 동작:목록 [페이지:<n>]',
-  '- /메모 동작:삭제 번호:<n>',
+  '- /메모 동작:지우기 번호:<n>',
 ].join('\n');
 
 const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {

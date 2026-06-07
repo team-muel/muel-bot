@@ -64,11 +64,11 @@ const getRuntimeStatus = () => {
 
 const pingCommand = new SlashCommandBuilder()
   .setName('ping')
-  .setDescription('Check whether Muel Bot is online.');
+  .setDescription('내가 깨어 있는지 확인.');
 
 const helpCommand = new SlashCommandBuilder()
   .setName('도움말')
-  .setDescription('Muel에서 사용할 수 있는 입구를 안내합니다.');
+  .setDescription('내가 뭘 할 수 있는지 알려줄게.');
 
 // 이전의 /일기 (Activity entry point, type=4) 는 제거되었다.
 // 사용자 결정 (2026-06-05): 일기는 노출 의도 X 였고, /메모 로 의도 재설계.
@@ -77,7 +77,7 @@ const helpCommand = new SlashCommandBuilder()
 
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
-  .setDescription('영상/게시글/뉴스 자동 구독을 관리합니다.')
+  .setDescription('유튜브 챙겨보는 뮤엘 — 새 영상·글 올라오면 알려줄게.')
   .addStringOption((option) =>
     option
       .setName(OPTION_ACTION)
@@ -257,7 +257,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   // 의 Muel 앱 Activity URL 로 결정된다.
   const muelActivityEntryPointCommand = {
     name: '뮤엘',
-    description: 'Muel 활동을 엽니다.',
+    description: '내가 보는 우리 — Weave 열기.',
     type: 4,
     handler: 2,
     integration_types: [0, 1],
@@ -309,28 +309,28 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
 const buildHelpMessage = () => renderDiscordMessage([{
   type: 'info-card',
   tone: 'muel',
-  title: 'Muel',
-  body: '커뮤니티 안에 상주하면서 대화, 외부 피드 큐레이션, 기억 파이프라인, Weave 연결을 맡습니다. Gomdori는 별도의 게임/Activity 실행체입니다.',
+  title: '나, 뮤엘',
+  body: '이 서버에 상주하면서 같이 떠들고, 챙겨보고, 기억하고, Weave를 돌봐. 마피아는 친구 곰돌이 담당이야.',
   fields: [
     {
-      name: '명령어',
+      name: '뭘 할 수 있냐면',
       value: [
-        '/구독 - YouTube 영상/게시글 자동 구독 관리',
-        '/메모 - DM에서도 쓰는 개인화 메모 목록/추가/삭제',
-        '/허브 - 이 채널에서 뮤엘이 자연어로 응답할지 켜고 끄기 (채널 관리 권한 필요)',
-        '/도움말 - 이 안내 보기',
-        '/ping - 온라인 확인',
+        '/구독 - 유튜브 채널 새 영상·글 올라오면 챙겨서 알려줄게',
+        '/메모 - 나 가르치기. 기억시킬 거 작성하고, 목록 보고, 지우고',
+        '/허브 - 이 채널 평소 대화에도 내가 끼게 할지 (채널 관리 권한 필요)',
+        '/도움말 - 지금 이거',
+        '/ping - 나 깨어 있나 확인',
       ].join('\n'),
     },
     {
-      name: 'Activity',
+      name: 'Weave',
       value: [
-        `일기: ${config.hubUrl}/weave`,
-        `Gomdori 게임: ${config.hubUrl}/game`,
+        `내가 보는 우리: ${config.hubUrl}/weave`,
+        `곰돌이 마피아: ${config.hubUrl}/game`,
       ].join('\n'),
     },
   ],
-  footer: 'Muel = community AI / Gomdori = game Activity',
+  footer: '뮤엘 = 이 동네 상주 / 곰돌이 = 마피아 담당 친구',
 }]);
 
 client.once(Events.ClientReady, async (readyClient) => {
@@ -380,7 +380,7 @@ if (!config.enableHttpInteractions) {
     }
 
     if (interaction.commandName === 'ping') {
-      await interaction.reply({ content: 'pong', flags: [MessageFlags.Ephemeral] });
+      await interaction.reply({ content: '응, 여기 있어.', flags: [MessageFlags.Ephemeral] });
       return;
     }
 
@@ -409,7 +409,7 @@ if (!config.enableHttpInteractions) {
         type: 'info-card',
         tone: 'warning',
         title: '알 수 없는 명령어',
-        body: '지금 사용할 수 있는 명령어는 /도움말, /구독, /메모, /허브, /ping 입니다.',
+        body: '내가 아는 명령은 /도움말 /구독 /메모 /허브 /ping 이야.',
       }]),
       flags: [MessageFlags.Ephemeral],
     });
