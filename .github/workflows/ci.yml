@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'supabase/migrations/**'
+      - 'supabase/functions/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
@@ -42,3 +43,15 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: smoke-test-dummy
         run: npm run test:smoke
+
+  edge-typecheck:
+    name: edge deno check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check edge functions
+        working-directory: supabase/functions
+        run: deno task check
