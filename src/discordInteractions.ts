@@ -23,9 +23,9 @@ const HELP_TEXT = [
   `Muel Hub: <${config.hubUrl}>`,
   '',
   '명령어: /도움말 /ping /구독 /메모 /허브',
-  '- /메모 add 내용:<...>  — 나한테 기억시킬 개인화 메모',
-  '- /메모 목록 [페이지:<n>]',
-  '- /메모 삭제 번호:<n>',
+  '- /메모 동작:추가 내용:<...>  — 나한테 기억시킬 개인화 메모',
+  '- /메모 동작:목록 [페이지:<n>]',
+  '- /메모 동작:삭제 번호:<n>',
 ].join('\n');
 
 const readRawBody = async (request: IncomingMessage): Promise<Buffer> => {
