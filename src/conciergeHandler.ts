@@ -68,17 +68,17 @@ export const buildHubSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(HUB_COMMAND_NAME)
     .setDescription('이 채널에서 뮤엘이 자연어로 응답할지 관리합니다.')
-    .addSubcommand((sub) =>
-      sub.setName(HUB_SUB_ACTIVATE).setDescription('이 채널을 뮤엘 허브로 활성화합니다.'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName(HUB_SUB_DEACTIVATE).setDescription('이 채널의 뮤엘 허브를 비활성화합니다.'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName(HUB_SUB_LIST).setDescription('이 서버의 활성화된 허브 채널 목록을 확인합니다.'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName(HUB_SUB_STATUS).setDescription('이 채널의 허브 상태를 확인합니다.'),
+    .addStringOption((opt) =>
+      opt
+        .setName('동작')
+        .setDescription('활성화 / 비활성화 / 목록 / 상태')
+        .setRequired(true)
+        .addChoices(
+          { name: '활성화', value: HUB_SUB_ACTIVATE },
+          { name: '비활성화', value: HUB_SUB_DEACTIVATE },
+          { name: '목록', value: HUB_SUB_LIST },
+          { name: '상태', value: HUB_SUB_STATUS },
+        ),
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .toJSON();
@@ -118,7 +118,7 @@ export const handleHubSlashInteraction = async (
     return;
   }
 
-  const subcommand = interaction.options.getSubcommand();
+  const subcommand = interaction.options.getString('동작', true);
 
   if (subcommand === HUB_SUB_ACTIVATE) {
     try {

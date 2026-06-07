@@ -35,41 +35,37 @@ export const buildMemoSlashCommand = () => {
   const cmd = new SlashCommandBuilder()
     .setName(MEMO_COMMAND_NAME)
     .setDescription('Muel 에게 기억시킬 개인화 메모 (자기 응답 스타일·지침·사실).')
-    .addSubcommand((sub) =>
-      sub
-        .setName(MEMO_SUB_ADD)
-        .setDescription('새 메모를 추가합니다. 다음 대화부터 Muel 이 이걸 기억합니다.')
-        .addStringOption((opt) =>
-          opt
-            .setName('내용')
-            .setDescription('기억시킬 내용 (예: 나한테 답할 땐 존댓말 써)')
-            .setRequired(true)
-            .setMaxLength(2000),
+    .addStringOption((opt) =>
+      opt
+        .setName('동작')
+        .setDescription('추가 / 목록 / 삭제')
+        .setRequired(true)
+        .addChoices(
+          { name: '추가', value: MEMO_SUB_ADD },
+          { name: '목록', value: MEMO_SUB_LIST },
+          { name: '삭제', value: MEMO_SUB_DELETE },
         ),
     )
-    .addSubcommand((sub) =>
-      sub
-        .setName(MEMO_SUB_LIST)
-        .setDescription('내 메모 목록을 봅니다. 직접 추가한 것 + Muel 이 자동 추출한 것 모두.')
-        .addIntegerOption((opt) =>
-          opt
-            .setName('페이지')
-            .setDescription('페이지 번호 (1부터)')
-            .setRequired(false)
-            .setMinValue(1),
-        ),
+    .addStringOption((opt) =>
+      opt
+        .setName('내용')
+        .setDescription('동작=추가 일 때 기억시킬 내용')
+        .setRequired(false)
+        .setMaxLength(2000),
     )
-    .addSubcommand((sub) =>
-      sub
-        .setName(MEMO_SUB_DELETE)
-        .setDescription('번호로 메모를 삭제합니다. (자동 추출 메모는 status 만 archived.)')
-        .addIntegerOption((opt) =>
-          opt
-            .setName('번호')
-            .setDescription('목록에서 본 카드 우측 하단 #번호')
-            .setRequired(true)
-            .setMinValue(1),
-        ),
+    .addIntegerOption((opt) =>
+      opt
+        .setName('번호')
+        .setDescription('동작=삭제 일 때 카드 #번호')
+        .setRequired(false)
+        .setMinValue(1),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('페이지')
+        .setDescription('동작=목록 일 때 페이지 (1부터)')
+        .setRequired(false)
+        .setMinValue(1),
     );
   return cmd;
 };
@@ -213,9 +209,9 @@ const buildListMessage = (memos: MemoRow[], page: number, ownerUserId: string) =
 };
 
 const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
-  const content = interaction.options.getString('내용', true).trim();
+  const content = (interaction.options.getString('내용') ?? '').trim();
   if (!content) {
-    await interaction.reply({ content: '내용이 비어 있어.', flags: EPHEMERAL });
+    await interaction.reply({ content: '`동작:추가` 에는 `내용` 을 함께 적어줘.', flags: EPHEMERAL });
     return;
   }
   const supabase = getSupabaseClient();
@@ -249,9 +245,9 @@ const handleMemoList = async (interaction: ChatInputCommandInteraction) => {
 };
 
 const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
-  const number = interaction.options.getInteger('번호', true);
+  const number = interaction.options.getInteger('번호') ?? 0;
   if (number < 1) {
-    await interaction.reply({ content: '번호는 1 이상이어야 해.', flags: EPHEMERAL });
+    await interaction.reply({ content: '`동작:삭제` 에는 `번호` 를 함께 적어줘. (1 이상)', flags: EPHEMERAL });
     return;
   }
   const memos = await fetchAllMemos(interaction.user.id);
@@ -371,7 +367,7 @@ export const handleMemoSelectMenu = async (interaction: StringSelectMenuInteract
 };
 
 export const handleMemoCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
-  const sub = interaction.options.getSubcommand();
+  const sub = interaction.options.getString('동작', true);
   try {
     if (sub === MEMO_SUB_ADD) await handleMemoAdd(interaction);
     else if (sub === MEMO_SUB_LIST) await handleMemoList(interaction);
