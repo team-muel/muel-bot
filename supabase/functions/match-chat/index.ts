@@ -47,7 +47,7 @@ Deno.serve((req: Request) => {
     // 2. Validate role
     const { data: player, error: playerError } = await supabase
       .from("match_players")
-      .select("role, alive")
+      .select("faction, alive")
       .eq("match_id", matchId)
       .eq("user_id", claims.sub)
       .single();
@@ -55,7 +55,7 @@ Deno.serve((req: Request) => {
     if (playerError || !player) throw forbidden("not_participant", "게임 참가자가 아닙니다.");
     if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 채팅할 수 없습니다.");
     
-    if (player.role !== "demon" && player.role !== "helper") {
+    if (player.faction !== "demon") {
       throw forbidden("invalid_role", "악마 진영만 야간 채팅을 사용할 수 있습니다.");
     }
 
@@ -65,7 +65,7 @@ Deno.serve((req: Request) => {
       .insert({
         match_id: matchId,
         phase_id: currentPhase.id,
-        channel_type: "demon_circle",
+        channel: "demon_circle",
         sender_user_id: claims.sub,
         message: message
       });

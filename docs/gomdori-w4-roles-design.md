@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-06-07 구현 상태
+
+- W4 v1 첫 트랜치는 **라이너 / 로마즈 / 가인**으로 반영.
+- DB runtime contract migration: `20260607111250_gomdori_w4_db_runtime_contract.sql`.
+- DB-facing faction은 기존과 같이 `angel` / `demon`만 사용한다. `gain`은 role로 구분되는 악마팀 조력자이며, 경찰 조사에서는 `role === 'demon'`만 악마로 나오므로 천사로 보인다.
+- `match-start` 분포: 6명 이상 첫 조력자 슬롯을 `gain`, 7명 이상 경찰 슬롯을 `romaz`, 8명 이상 시민 슬롯 하나를 `rainer`로 교체한다.
+- `rainer`는 `engine_state.counters = { countBonus: 2, deadCountBonus: 3 }`로 총 천사 카운트 3을 유지한다.
+- `gain`이 존재하면 `demon` role 플레이어에게 `engine_state.counters.shield = 1`을 부여한다. shield는 밤 살해와 낮 처형을 각각 소비형으로 1회 차단한다.
+- `romaz_suspect`는 밤 행동으로 제출되고, 대상에게 `voteBias +5`, `suspicionBias +10`을 부여한다.
+
+---
+
 ## 0. 핵심 현실: 엔진 갭
 
 현재 엔진(`_shared/engine`)의 능력 모델은 단순하다:

@@ -69,7 +69,7 @@ export const CORE_ROLES: RoleDefinition[] = [
   // --- W4 v1 트랜치 (canon §W4, 시그니처 한 줄만; 다단계는 v2) ---
   {
     // 라이너: 백호 패시브 = 천사팀 카운트 +3, 생존 무관.
-    // 카운트는 counters(countBonus/deadCountBonus)로 표현 — 배정 시 주입(match-start, 후속).
+    // 카운트는 counters(countBonus/deadCountBonus)로 표현 — 배정 시 주입(match-start).
     id: "rainer",
     name: "라이너",
     faction: "angel",
@@ -98,10 +98,10 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입, 후속).
+    // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입).
     id: "gain",
     name: "가인",
-    faction: "helper",
+    faction: "demon",
     passives: [],
     actions: {},
   },

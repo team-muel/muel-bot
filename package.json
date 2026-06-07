@@ -16,7 +16,7 @@
     "test:regression:agent-actions": "tsx tests/regression/agent-capability-actions.test.ts",
     "test:registry": "tsx tests/registry/registry.smoke.test.ts",
     "test:router": "tsx tests/router/router.smoke.test.ts",
-    "test:gomdori": "tsx tests/gomdori/phase1-simulation.test.ts",
+    "test:gomdori": "tsx tests/gomdori/phase1-simulation.test.ts && tsx tests/gomdori/w4-runtime-contract.test.ts",
     "test:smoke": "npm run test:regression && npm run test:regression:research && npm run test:regression:discord-polish && npm run test:regression:agent-actions && npm run test:registry && npm run test:router && npm run test:preflight",
     "eval:embeddings": "tsx tests/embeddings/embedding-eval.ts",
     "test:preflight": "tsx tests/regression/preflight-finance.test.ts"
