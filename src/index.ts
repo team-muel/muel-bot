@@ -249,12 +249,28 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     contexts: [0, 1, 2],
   };
 
+  // Muel Activity entry point command (type=4, handler=2). 클릭 시 Discord 가 자동으로
+  // Muel 앱의 Activity 를 띄운다(런치 버튼). 예전 /일기 entry point 가 /메모(일반 명령)로
+  // 재설계되며 사라졌던 것을 복원 — registerCommands PUT 이 매 시작 글로벌 명령을 덮어쓰므로
+  // 이 set 에 포함시켜야 Discord 자동 생성 entry point 가 지워지지 않는다.
+  // 이름은 type=1 명령과 충돌하면 안 됨(도움말/구독/ping/메모/허브). 런치 대상은 Dev Portal
+  // 의 Muel 앱 Activity URL 로 결정된다.
+  const muelActivityEntryPointCommand = {
+    name: '뮤엘',
+    description: 'Muel 활동을 엽니다.',
+    type: 4,
+    handler: 2,
+    integration_types: [0, 1],
+    contexts: [0, 1, 2],
+  };
+
   const commands: any[] = [
     helpCommand.toJSON(),
     subscribeCommandPayload,
     pingCommand.toJSON(),
     memoCommandPayload,
     buildHubSlashCommand(),
+    muelActivityEntryPointCommand,
   ];
 
   const intendedNames = commands.map((c: any) => c.name);
