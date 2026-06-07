@@ -209,9 +209,10 @@ const buildListMessage = (memos: MemoRow[], page: number, ownerUserId: string) =
 };
 
 const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
+  await interaction.deferReply({ flags: EPHEMERAL });
   const content = (interaction.options.getString('내용') ?? '').trim();
   if (!content) {
-    await interaction.reply({ content: '`동작:추가` 에는 `내용` 을 함께 적어줘.', flags: EPHEMERAL });
+    await interaction.editReply({ content: '`동작:추가` 에는 `내용` 을 함께 적어줘.' });
     return;
   }
   const supabase = getSupabaseClient();
@@ -225,7 +226,7 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     .single();
   if (error) {
     console.warn('[memo] add failed', error);
-    await interaction.reply({ content: `저장 실패: ${error.message}`, flags: EPHEMERAL });
+    await interaction.editReply({ content: `저장 실패: ${error.message}` });
     return;
   }
   // ADR-002: 직접 메모도 weave 지식 노드로 남긴다 (private, owner=본인). fire-and-forget.
@@ -235,26 +236,27 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     body: content,
     sourceRef: { muel_user_memos_id: inserted?.id ?? null },
   });
-  await interaction.reply({ ...buildAddSuccess(content), flags: EPHEMERAL });
+  await interaction.editReply({ ...buildAddSuccess(content) });
 };
 
 const handleMemoList = async (interaction: ChatInputCommandInteraction) => {
+  await interaction.deferReply({ flags: EPHEMERAL });
   const page = interaction.options.getInteger('페이지') ?? 1;
   const memos = await fetchAllMemos(interaction.user.id);
-  await interaction.reply({ ...buildListMessage(memos, page, interaction.user.id), flags: EPHEMERAL });
+  await interaction.editReply({ ...buildListMessage(memos, page, interaction.user.id) });
 };
 
 const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
+  await interaction.deferReply({ flags: EPHEMERAL });
   const number = interaction.options.getInteger('번호') ?? 0;
   if (number < 1) {
-    await interaction.reply({ content: '`동작:삭제` 에는 `번호` 를 함께 적어줘. (1 이상)', flags: EPHEMERAL });
+    await interaction.editReply({ content: '`동작:삭제` 에는 `번호` 를 함께 적어줘. (1 이상)' });
     return;
   }
   const memos = await fetchAllMemos(interaction.user.id);
   if (number > memos.length) {
-    await interaction.reply({
+    await interaction.editReply({
       content: `#${number} 은 없는 번호야. 총 ${memos.length}건.`,
-      flags: EPHEMERAL,
     });
     return;
   }
@@ -265,12 +267,11 @@ const handleMemoDelete = async (interaction: ChatInputCommandInteraction) => {
     ownerUserId: interaction.user.id,
   });
   if (!result.ok) {
-    await interaction.reply({ content: result.message, flags: EPHEMERAL });
+    await interaction.editReply({ content: result.message });
     return;
   }
-  await interaction.reply({
+  await interaction.editReply({
     content: `메모 #${number} 처리됨 (${target.source === 'user_direct' ? '직접 삭제' : '자동 비활성'}).`,
-    flags: EPHEMERAL,
   });
 };
 
@@ -377,8 +378,9 @@ export const handleMemoCommand = async (interaction: ChatInputCommandInteraction
     }
   } catch (err) {
     console.error('[memo] handler failed', err);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: '메모 처리 중 오류.', flags: EPHEMERAL }).catch(() => {});
-    }
+    try {
+      if (interaction.deferred) await interaction.editReply({ content: '메모 처리 중 오류.' });
+      else if (!interaction.replied) await interaction.reply({ content: '메모 처리 중 오류.', flags: EPHEMERAL });
+    } catch { /* ignore */ }
   }
 };

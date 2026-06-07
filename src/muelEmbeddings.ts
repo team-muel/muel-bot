@@ -95,7 +95,8 @@ export const listSemanticMemories = async (
     });
 
     if (error) {
-      throw error;
+      console.warn('[memory] match_user_memories failed for a user; skipping', error);
+      return [];
     }
 
     return ((data ?? []) as Array<{
