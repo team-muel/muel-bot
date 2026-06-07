@@ -23,7 +23,7 @@ const booleanEnv = (key: string, fallback: boolean): boolean => {
 // escalation only). MUEL_AI_MODEL still acts as the cross-lane default when a
 // lane-specific env is unset; flip it once to move everything together.
 const DEFAULT_LANE_MODEL = 'gemini-2.5-flash';
-const DEFAULT_HEAVY_MODEL = 'gemini-3.5-flash';
+const DEFAULT_HEAVY_MODEL = 'gemini-2.5-flash';
 
 export const config = {
   discordBotToken: requiredEnv('DISCORD_BOT_TOKEN'),

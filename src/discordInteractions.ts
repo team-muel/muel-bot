@@ -86,7 +86,13 @@ export const handleDiscordInteractions = async (request: IncomingMessage, respon
     return;
   }
 
-  const interaction = JSON.parse(rawBody.toString('utf8'));
+  let interaction: any;
+  try {
+    interaction = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    json(response, 400, { error: 'invalid_json' });
+    return;
+  }
   if (interaction.type === INTERACTION_PING) {
     json(response, 200, { type: 1 });
     return;

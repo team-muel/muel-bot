@@ -90,10 +90,11 @@ export const handleHubSlashInteraction = async (
   const guildId = interaction.guildId;
   const channelId = interaction.channelId;
 
+  await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
   if (!guildId) {
-    await interaction.reply({
+    await interaction.editReply({
       content: '서버 안에서만 쓸 수 있어.',
-      flags: [MessageFlags.Ephemeral],
     }).catch(() => {});
     return;
   }
@@ -102,13 +103,12 @@ export const handleHubSlashInteraction = async (
   // ManageChannels via setDefaultMemberPermissions, but the cache can lag.
   const hasPermission = interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels) ?? false;
   if (!hasPermission) {
-    await interaction.reply({
+    await interaction.editReply({
       content: '이 명령은 채널 관리 권한이 있는 사용자만 쓸 수 있어.',
-      flags: [MessageFlags.Ephemeral],
     }).catch(() => {});
     void logMuelAgentAction(supabase, {
       triggerSource: 'slash_command',
-      triggerDetail: `hub_${interaction.options.getSubcommand()}_denied`,
+      triggerDetail: `hub_${interaction.options.getString('동작', false) ?? 'unknown'}_denied`,
       status: 'denied',
       discordGuildId: guildId,
       discordChannelId: channelId,
@@ -128,9 +128,8 @@ export const handleHubSlashInteraction = async (
         activatedByUserId: interaction.user.id,
         activatedByUsername: interaction.user.username,
       });
-      await interaction.reply({
+      await interaction.editReply({
         content: '이 채널에서 뮤엘이 살아 움직여요. 비활성화하려면 `/허브 비활성화`.',
-        flags: [MessageFlags.Ephemeral],
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -143,9 +142,8 @@ export const handleHubSlashInteraction = async (
       });
     } catch (error) {
       console.error('[hub] activate failed', error);
-      await interaction.reply({
+      await interaction.editReply({
         content: '허브 활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
-        flags: [MessageFlags.Ephemeral],
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -163,9 +161,8 @@ export const handleHubSlashInteraction = async (
   if (subcommand === HUB_SUB_DEACTIVATE) {
     try {
       await deactivateHubChannel(supabase, { guildId, channelId });
-      await interaction.reply({
+      await interaction.editReply({
         content: '이 채널의 뮤엘 허브를 비활성화했어. 다시 켜려면 `/허브 활성화`.',
-        flags: [MessageFlags.Ephemeral],
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -177,9 +174,8 @@ export const handleHubSlashInteraction = async (
       });
     } catch (error) {
       console.error('[hub] deactivate failed', error);
-      await interaction.reply({
+      await interaction.editReply({
         content: '허브 비활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
-        flags: [MessageFlags.Ephemeral],
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -198,9 +194,8 @@ export const handleHubSlashInteraction = async (
     try {
       const channels = await listHubChannels(supabase, { guildId });
       if (channels.length === 0) {
-        await interaction.reply({
+        await interaction.editReply({
           content: '이 서버에 활성화된 허브 채널이 없어.',
-          flags: [MessageFlags.Ephemeral],
         }).catch(() => {});
         return;
       }
@@ -209,13 +204,12 @@ export const handleHubSlashInteraction = async (
         const who = row.activatedByUsername ? ` (by ${row.activatedByUsername})` : '';
         return `- <#${row.channelId}> · 응답 임계값 ${conf}${who}`;
       });
-      await interaction.reply({
+      await interaction.editReply({
         content: [
           `활성 허브 채널 ${channels.length}개:`,
           ...lines,
         ].join('\n'),
         allowedMentions: { parse: [] },
-        flags: [MessageFlags.Ephemeral],
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -228,9 +222,8 @@ export const handleHubSlashInteraction = async (
       });
     } catch (error) {
       console.error('[hub] list failed', error);
-      await interaction.reply({
+      await interaction.editReply({
         content: '허브 목록 조회에 실패했어.',
-        flags: [MessageFlags.Ephemeral],
       }).catch(() => {});
     }
     return;
@@ -238,11 +231,10 @@ export const handleHubSlashInteraction = async (
 
   if (subcommand === HUB_SUB_STATUS) {
     const active = await isHubChannelActive(supabase, { guildId, channelId }).catch(() => false);
-    await interaction.reply({
+    await interaction.editReply({
       content: active
         ? '이 채널은 뮤엘 허브로 활성화되어 있어. 일반 메시지에도 응답할 수 있어.'
         : '이 채널은 뮤엘 허브가 아니야. 활성화하려면 `/허브 활성화`.',
-      flags: [MessageFlags.Ephemeral],
     }).catch(() => {});
     return;
   }

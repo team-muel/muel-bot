@@ -183,9 +183,12 @@ export async function processMemoryJob(job: any) {
   const memoOwnerUserId = sourceUserId ?? resolveMemoOwnerId();
 
   // Fetch existing active memories for this user to deduplicate/merge
-  const { data: userMemories } = await supabase.rpc('fetch_active_memories_by_user', {
-    p_user_id: sourceUserId,
+  const { data: userMemories, error: userMemoriesError } = await supabase.rpc('fetch_active_memories_by_user', {
+    p_user_id: memoOwnerUserId,
   });
+  if (userMemoriesError) {
+    console.warn('[memory] fetch_active_memories_by_user failed; proceeding without dedup', userMemoriesError);
+  }
 
   // 4. Process each candidate memory
   for (const memory of object.memories) {
