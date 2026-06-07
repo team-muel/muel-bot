@@ -29,6 +29,7 @@ import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 
 let readyAt: string | null = null;
@@ -271,6 +272,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
     pingCommand.toJSON(),
     memoCommandPayload,
     buildHubSlashCommand(),
+    buildRollingSlashCommand().toJSON(),
     buildWelcomeSlashCommand().toJSON(),
     muelActivityEntryPointCommand,
   ];
@@ -368,12 +370,16 @@ if (!config.enableHttpInteractions) {
         await handleResearchDeepButton(client as Client<true>, interaction);
       } else if (isMuelActionButton(interaction.customId)) {
         await handleMuelActionButton(getSupabaseClient(), interaction);
+      } else if (isRollingButton(interaction.customId)) {
+        await handleRollingButton(interaction);
       }
       return;
     }
     if (interaction.isStringSelectMenu()) {
       if (isMemoSelectMenu(interaction.customId)) {
         await handleMemoSelectMenu(interaction);
+      } else if (isRollingSelect(interaction.customId)) {
+        await handleRollingSelect(interaction);
       }
       return;
     }
@@ -403,6 +409,11 @@ if (!config.enableHttpInteractions) {
 
     if (interaction.commandName === MEMO_COMMAND_NAME) {
       await handleMemoCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === ROLLING_COMMAND_NAME) {
+      await handleRollingCommand(interaction);
       return;
     }
 
