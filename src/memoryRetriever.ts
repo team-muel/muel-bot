@@ -11,14 +11,13 @@ const MEMORY_MIN_SIMILARITY = 0.72;
 const MEMORY_OBSERVE_THRESHOLD = 0.3;
 const MEMORY_OBSERVE_COUNT = 8;
 
+// 사용자가 /메모 또는 Weave '알려주기' 로 직접 남긴 지침. 의미 유사도와 무관하게
+// 항상 우선 주입한다(직접 지시라 늘 유효). 너무 많으면 프롬프트 비대 → 최근 N 개로 제한.
+const DIRECT_MEMO_LIMIT = 8;
+const DIRECT_MEMO_MAX_CHARS = 300;
+
 type ObservedMemory = { content: string; similarity: number };
 
-/**
- * Fire-and-forget instrumentation row. Never throws.
- * returned_count = candidates observed at the loose threshold; avg_score = mean
- * observed similarity. Compare against MEMORY_MIN_SIMILARITY to see how much
- * relevant context the 0.72 injection bar is currently discarding.
- */
 const logRetrieval = async (
   supabase: SupabaseClient,
   row: {
@@ -53,12 +52,34 @@ const logRetrieval = async (
   }
 };
 
+// 사용자가 직접 남긴 지침(muel_user_memos)을 가져온다. 임베딩/유사도 없이 최근 것 우선.
+const fetchDirectMemos = async (supabase: SupabaseClient, userId: string): Promise<string[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('muel_user_memos')
+      .select('content')
+      .eq('discord_user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(DIRECT_MEMO_LIMIT);
+    if (error) {
+      console.warn('[memory-retrieval] user_memos fetch failed', error);
+      return [];
+    }
+    return (data ?? [])
+      .map((m: { content: string | null }) => (m.content ?? '').trim())
+      .filter((c): c is string => c.length > 0)
+      .map((c) => (c.length > DIRECT_MEMO_MAX_CHARS ? `${c.slice(0, DIRECT_MEMO_MAX_CHARS - 1)}…` : c));
+  } catch (err) {
+    console.warn('[memory-retrieval] user_memos fetch threw', err);
+    return [];
+  }
+};
+
 /**
- * Retrieve relevant long-term memories for a user based on the current message.
- * Returns a formatted string ready to inject into the system prompt,
- * or an empty string if no relevant memories are found.
- *
- * Designed to fail silently — a retrieval error must never block the chat flow.
+ * Retrieve long-term + user-directed memory for a user, formatted for the system prompt.
+ * - 사용자 직접 지침(muel_user_memos): 항상 우선 주입 (/메모·Weave 알려주기 → 실제 반영).
+ * - 의미 기반 장기 기억(muel_memory_entries): 임베딩 유사도 임계 이상만 주입.
+ * Returns '' if nothing to inject. Fails silently — never blocks chat.
  */
 export async function retrieveRelevantMemories(
   supabase: SupabaseClient,
@@ -68,54 +89,63 @@ export async function retrieveRelevantMemories(
   }
 ): Promise<string> {
   const { userId, query } = opts;
+  const sections: string[] = [];
 
-  const startedAt = Date.now();
-  const embedding = await embedMuelText(query);
-  if (!embedding) return '';
-
-  // Observe a wider band than we inject (see constants above).
-  const { data: observed, error } = await supabase.rpc('match_user_memories', {
-    p_user_id: userId,
-    p_query_embedding: embedding,
-    p_match_threshold: MEMORY_OBSERVE_THRESHOLD,
-    p_match_count: MEMORY_OBSERVE_COUNT,
-  });
-
-  if (error) {
-    console.warn('[memory-retrieval] match_user_memories RPC failed', error);
-    return '';
+  // 1) 사용자 직접 지침 — 늘 우선.
+  const directLines = await fetchDirectMemos(supabase, userId);
+  if (directLines.length > 0) {
+    sections.push(
+      '사용자가 너에게 직접 남긴 지침 (별도 언급 없이 항상 반영):',
+      ...directLines.map((c) => `- ${c}`),
+    );
   }
 
-  const observedRows = (observed ?? []) as ObservedMemory[];
+  // 2) 의미 기반 장기 기억.
+  const startedAt = Date.now();
+  const embedding = await embedMuelText(query);
+  if (embedding) {
+    const { data: observed, error } = await supabase.rpc('match_user_memories', {
+      p_user_id: userId,
+      p_query_embedding: embedding,
+      p_match_threshold: MEMORY_OBSERVE_THRESHOLD,
+      p_match_count: MEMORY_OBSERVE_COUNT,
+    });
 
-  // Inject only high-confidence matches (chat behavior unchanged vs. before).
-  const matches = observedRows
-    .filter((m) => Number(m.similarity) >= MEMORY_MIN_SIMILARITY)
-    .slice(0, MEMORY_RETRIEVAL_LIMIT);
+    if (error) {
+      console.warn('[memory-retrieval] match_user_memories RPC failed', error);
+    } else {
+      const observedRows = (observed ?? []) as ObservedMemory[];
+      const matches = observedRows
+        .filter((m) => Number(m.similarity) >= MEMORY_MIN_SIMILARITY)
+        .slice(0, MEMORY_RETRIEVAL_LIMIT);
 
-  void logRetrieval(supabase, {
-    query,
-    observedCount: observedRows.length,
-    usedCount: matches.length,
-    avgObservedScore: observedRows.length
-      ? observedRows.reduce((sum, m) => sum + Number(m.similarity), 0) / observedRows.length
-      : null,
-    topScore: observedRows.length
-      ? Math.max(...observedRows.map((m) => Number(m.similarity)))
-      : null,
-    latencyMs: Date.now() - startedAt,
-  });
+      void logRetrieval(supabase, {
+        query,
+        observedCount: observedRows.length,
+        usedCount: matches.length,
+        avgObservedScore: observedRows.length
+          ? observedRows.reduce((sum, m) => sum + Number(m.similarity), 0) / observedRows.length
+          : null,
+        topScore: observedRows.length ? Math.max(...observedRows.map((m) => Number(m.similarity))) : null,
+        latencyMs: Date.now() - startedAt,
+      });
 
-  if (matches.length === 0) return '';
+      if (matches.length > 0) {
+        if (sections.length > 0) sections.push('');
+        sections.push(
+          'Relevant long-term user context:',
+          ...matches.map((m) => `- ${m.content}`),
+        );
+      }
+    }
+  }
 
-  const lines = matches.map((m) => `- ${m.content}`);
+  if (sections.length === 0) return '';
 
-  return [
-    'Relevant long-term user context:',
-    ...lines,
+  sections.push(
     '',
-    'Use these memories only when they directly help answer the current request.',
     "If the user's current message contradicts any stored memory, follow the current message.",
     'Do not mention that you are using memory.',
-  ].join('\n');
+  );
+  return sections.join('\n');
 }
