@@ -16,7 +16,7 @@ const ACTION_CANCEL = '취소';
 export const buildWelcomeSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(WELCOME_COMMAND_NAME)
-    .setDescription('새 멤버 들어오면 내가 이 채널에서 맞이할게.')
+    .setDescription('새 멤버 환영')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption((opt) =>
       opt

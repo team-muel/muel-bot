@@ -36,9 +36,9 @@ export const isRollingSelect = (customId: string): boolean => customId.startsWit
 export const buildRollingSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(ROLLING_COMMAND_NAME)
-    .setDescription('서로한테 한 줄 남기는 롤링페이퍼. 그냥 실행하면 받은 걸 보여줄게.')
+    .setDescription('서로한테 한 줄 남기는 롤링페이퍼')
     .addStringOption((o) =>
-      o.setName(ACTION).setDescription('작성 / 보낸 (비우면 받은 목록)').addChoices(
+      o.setName(ACTION).setDescription('작성 / 보낸').addChoices(
         { name: '작성', value: ACTION_WRITE },
         { name: '보낸', value: ACTION_SENT },
       ),

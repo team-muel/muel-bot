@@ -80,7 +80,7 @@ const helpCommand = new SlashCommandBuilder()
 
 const subscribeCommand = new SlashCommandBuilder()
   .setName(SUBSCRIBE_COMMAND_NAME)
-  .setDescription('유튜브 챙겨보는 뮤엘 — 새 영상·글 올라오면 알려줄게.')
+  .setDescription('YouTube 보는 뮤엘')
   .addStringOption((option) =>
     option
       .setName(OPTION_ACTION)
@@ -260,7 +260,7 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   // 의 Muel 앱 Activity URL 로 결정된다.
   const muelActivityEntryPointCommand = {
     name: '뮤엘',
-    description: '내가 보는 우리 — Weave 열기.',
+    description: '내가 보는 우리',
     type: 4,
     handler: 2,
     integration_types: [0, 1],
@@ -314,17 +314,17 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
 const buildHelpMessage = () => renderDiscordMessage([{
   type: 'info-card',
   tone: 'muel',
-  title: '나, 뮤엘',
-  body: '이 서버에 상주하면서 같이 떠들고, 챙겨보고, 기억하고, Weave를 돌봐. 마피아는 친구 곰돌이 담당이야.',
+  title: '뮤엘',
+  body: '이 서버에서 대화·구독·기억을 돕는 뮤엘. 마피아 게임은 곰돌이 담당.',
   fields: [
     {
-      name: '뭘 할 수 있냐면',
+      name: '명령어',
       value: [
-        '/구독 - 유튜브 채널 새 영상·글 올라오면 챙겨서 알려줄게',
-        '/메모 - 나 가르치기. 기억시킬 거 작성하고, 목록 보고, 지우고',
-        '/허브 - 이 채널 평소 대화에도 내가 끼게 할지 (채널 관리 권한 필요)',
-        '/도움말 - 지금 이거',
-        '/ping - 나 깨어 있나 확인',
+        '/구독 - 유튜브 채널 구독 알림',
+        '/메모 - 뮤엘에게 기억시키기',
+        '/허브 - 이 채널에서 평소 대화에도 응답',
+        '/롤링페이퍼 - 멤버끼리 한 줄 남기기',
+        '/도움말 · /ping',
       ].join('\n'),
     },
     {
@@ -335,7 +335,7 @@ const buildHelpMessage = () => renderDiscordMessage([{
       ].join('\n'),
     },
   ],
-  footer: '뮤엘 = 이 동네 상주 / 곰돌이 = 마피아 담당 친구',
+  footer: 'Muel = community AI / Gomdori = game Activity',
 }]);
 
 client.once(Events.ClientReady, async (readyClient) => {

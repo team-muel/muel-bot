@@ -75,15 +75,15 @@ const pickNumberField = (record: Record<string, unknown> | undefined, key: strin
 export const buildHubSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(HUB_COMMAND_NAME)
-    .setDescription('뮤엘 등장 — 이 채널 평소 대화에도 내가 끼게 할지 정해.')
+    .setDescription('뮤엘 등장')
     .addStringOption((opt) =>
       opt
         .setName('동작')
         .setDescription('활성화 / 100% / 비활성화 / 목록 / 상태')
         .setRequired(true)
         .addChoices(
-          { name: '활성화 (평소 대화에 응답)', value: HUB_SUB_ACTIVATE },
-          { name: '100% (응답 + 가끔 먼저 말 걸기)', value: HUB_SUB_FULL },
+          { name: '활성화', value: HUB_SUB_ACTIVATE },
+          { name: '100%', value: HUB_SUB_FULL },
           { name: '비활성화', value: HUB_SUB_DEACTIVATE },
           { name: '목록', value: HUB_SUB_LIST },
           { name: '상태', value: HUB_SUB_STATUS },
