@@ -315,10 +315,19 @@ export const generateMuelReply = async (
   const messages: Array<any> = convo
     .map((msg, idx) => {
       let content = msg.parts || [];
-      // Discord CDN image URLs expire — keep images only on the latest turn and
-      // replace older image parts with a placeholder so history replay doesn't fail.
+      // Discord CDN image URLs expire — keep the actual image only on the latest turn
+      // (stale URLs would fail on replay). For older turns, drop the URL but leave an
+      // explicit note instead of a bare "[이미지]" so the model knows an image WAS
+      // shared and never falsely claims it is text-only / cannot see images.
       if (idx !== lastConvoIdx) {
-        content = content.map((p: any) => (p.type === 'image' ? { type: 'text', text: '[이미지]' } : p));
+        content = content.map((p: any) =>
+          p.type === 'image'
+            ? {
+                type: 'text',
+                text: '[사용자가 이전 메시지에 이미지를 첨부했음 — 그 이미지는 지금 다시 볼 수 없음. "이미지를 못 본다"거나 "텍스트로만 대화한다"고 말하지 말 것]',
+              }
+            : p,
+        );
       }
       if (msg.role === 'user') {
         const name = msg.metadata?.discordUsername ?? authorName;
