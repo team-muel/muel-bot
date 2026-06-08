@@ -18,6 +18,7 @@ import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
+import { startFeedbackObserver } from './feedbackObserver.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -359,6 +360,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
 
   startProactiveScheduler(readyClient, getSupabaseClient());
+  startFeedbackObserver(readyClient, getSupabaseClient());
 
   if (config.enableJobWorker) {
     runJobWorkerLoop().catch(err => {
