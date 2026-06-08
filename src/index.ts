@@ -316,24 +316,22 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
   }
 };
 
-const buildHelpMessage = () => {
-  const msg = renderDiscordMessage([{
-    type: 'info-card',
-    tone: 'muel',
-    title: '뮤엘',
-    body: [
-      '/구독 - 유튜브 채널 구독 알림',
-      '/메모 - 뮤엘에게 기억시키기',
-      '/허브 - 이 채널에서 평소 대화에도 응답',
-      '/롤링페이퍼 - 멤버끼리 한 줄 남기기',
-      '/도움말 · /ping',
-      '',
-      `팀뮤엘: ${config.hubUrl}`,
-      `뮤엘: ${config.hubUrl}/weave`,
-    ].join('\n'),
-  }]);
-  return { ...msg, content: '-# Muel은 AI이며 실수할 수 있어요. 중요한 건 한 번 더 확인해줘.' };
-};
+const buildHelpMessage = () => renderDiscordMessage([{
+  type: 'info-card',
+  tone: 'muel',
+  title: '명령어',
+  body: [
+    '/구독 - 유튜브 채널 구독 알림',
+    '/메모 - 뮤엘에게 기억시키기',
+    '/허브 - 이 채널에서 평소 대화에도 응답',
+    '/롤링페이퍼 - 멤버끼리 한 줄 남기기',
+    '/도움말 · /ping',
+    '',
+    `팀뮤엘: ${config.hubUrl}`,
+    `뮤엘: ${config.hubUrl}/weave`,
+  ].join('\n'),
+  footer: 'Muel은 AI이며 실수할 수 있어요. 중요한 건 한 번 더 확인해줘.',
+}]);
 
 client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
