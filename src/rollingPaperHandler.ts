@@ -17,6 +17,7 @@ import { getSupabaseClient } from './supabase.js';
 // UX (2026-06-08 사용자 결정):
 // - 옵션은 *작성* + *대상* 두 개만. `동작=작성` 같은 별도 동작 옵션 제거.
 // - 둘 다 채워서 호출 → 그 사람에게 한 줄 남김 (덮어쓰기).
+// - 대상만 골라서 호출 → 그 대상에게 *남겨진* 카드 구경 (공개 레이어, 읽기 전용).
 // - 둘 다 비워서 호출 → 내가 *받은* 카드 목록 + 차단 관리.
 // - *내가 보낸 카드 목록* 은 별도 슬래시 명령으로 후속 분리 (이전의 `동작=보낸` 제거).
 export const ROLLING_COMMAND_NAME = '롤링페이퍼';
@@ -42,14 +43,14 @@ export const isRollingSelect = (customId: string): boolean => customId.startsWit
 export const buildRollingSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(ROLLING_COMMAND_NAME)
-    .setDescription('서로한테 한 줄 남기는 롤링페이퍼 — 둘 다 채우면 작성, 비우면 내가 받은 목록')
+    .setDescription('롤링페이퍼 — 작성+대상이면 남기기, 대상만이면 그 사람이 받은 목록 구경, 둘 다 비우면 내가 받은 목록')
     .addStringOption((o) =>
       o
         .setName(OPT_WRITE)
-        .setDescription('남길 한 줄 (대상도 같이 골라야 함)')
+        .setDescription('남길 한 줄 (대상도 같이 골라야 남겨짐)')
         .setMaxLength(MAX_LEN),
     )
-    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('받을 사람 (작성도 같이 적어야 함)'));
+    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('받을 사람 — 작성을 비우면 그 사람이 받은 롤링페이퍼만 구경'));
 
 type AnyInteraction =
   | ChatInputCommandInteraction
@@ -79,7 +80,24 @@ export const handleRollingCommand = async (
   // - 둘 다 빔 → 받은 목록 (기존 default 흐름)
   // - 하나만 → 안내
   if (target && !content) {
-    await interaction.editReply({ content: '`작성` 도 같이 적어줘.' });
+    // 대상만 골랐을 때 → 그 대상에게 *남겨진* 롤링페이퍼 구경(공개 레이어, 읽기 전용).
+    if (target.bot) { await interaction.editReply({ content: '봇한텐 롤링페이퍼가 없어.' }); return; }
+    const { data: forTarget } = await supabase
+      .from('muel_rolling_papers')
+      .select('author_id, content, created_at')
+      .eq('target_id', target.id)
+      .order('created_at', { ascending: false });
+    const rows = ((forTarget ?? []) as Array<{ author_id: string; content: string }>).slice(0, MAX_OPTIONS);
+    const named = await Promise.all(rows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.author_id) })));
+    const targetName = await nameOf(interaction, target.id);
+    const lines = named.length
+      ? named.map((n, i) => `**${i + 1}.** ${n.name} — ${n.content}`)
+      : ['아직 남겨진 롤링페이퍼가 없어. `작성`도 같이 적으면 네가 첫 줄을 남길 수 있어.'];
+    const embed = new EmbedBuilder()
+      .setTitle(`${targetName} 에게 온 롤링페이퍼`)
+      .setColor(COLOR)
+      .setDescription(lines.join('\n').slice(0, 4000));
+    await interaction.editReply({ embeds: [embed] });
     return;
   }
   if (!target && content) {
