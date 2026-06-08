@@ -43,14 +43,14 @@ export const isRollingSelect = (customId: string): boolean => customId.startsWit
 export const buildRollingSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(ROLLING_COMMAND_NAME)
-    .setDescription('롤링페이퍼 — 작성+대상이면 남기기, 대상만이면 그 사람이 받은 목록 구경, 둘 다 비우면 내가 받은 목록')
+    .setDescription('멤버끼리 한 줄 남기는 롤링페이퍼')
     .addStringOption((o) =>
       o
         .setName(OPT_WRITE)
-        .setDescription('남길 한 줄 (대상도 같이 골라야 남겨짐)')
+        .setDescription('남길 한 줄')
         .setMaxLength(MAX_LEN),
     )
-    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('받을 사람 — 작성을 비우면 그 사람이 받은 롤링페이퍼만 구경'));
+    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('받을 사람'));
 
 type AnyInteraction =
   | ChatInputCommandInteraction
