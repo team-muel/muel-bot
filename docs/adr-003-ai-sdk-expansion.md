@@ -106,6 +106,149 @@
 - **사용자 confirm 피로** — P4 write-tools 가 너무 많으면 사용자가 *Yes 만 누름*. 의미 있는 제안만.
 - **모델 응답 일관성** — P9 provider 다양화 시 페르소나 톤 일관 유지 필요.
 
+---
+
+## (보강) 의존성 그래프
+
+각 P 의 *기술적 선행 조건*. 비용/효과 tier 와 다름.
+
+```
+P2 (middleware)
+   ├── 선행 의무 X (지금 도입 가능)
+   ├── 후행 의무: P9 provider 다양화 (rotation 의 베이스)
+   └── 후행 권장: P10 telemetry (middleware 가 hook point)
+
+P1 (generateObject 광역화)
+   ├── 선행 의무 X (memoryWorker 가 이미 패턴 갖고 있음)
+   ├── 후행 권장: P4 write-tools (제안 schema 가 zod object)
+   └── 의존: muel_user_memos 에 metadata jsonb 컬럼 추가 (작은 migration)
+
+P3 (multi-step 강화)
+   ├── 선행 권장: P5 (search tool) — 그래야 multi-step 이 자기 db 검색 가능
+   ├── 선행 권장: P4 (write tools) — multi-step 끝에 *제안*으로 마무리
+   └── 후행: P6 streamText (중간 단계 가시화)
+
+P4 (write-tools)
+   ├── 선행 의무: actionConfirmations 패턴 확장
+   ├── 선행 권장: P1 (zod schema 가 제안 payload)
+   └── 의존: weaveNodes producer (ADR-002 P1)
+
+P5 (embed 통합 + search tool)
+   ├── 선행 의무 X (현 muelEmbeddings 그대로 사용 가능)
+   └── 후행: P3 multi-step 의 자기 회상
+
+P6 (streamText deferred edit)
+   ├── 선행 의무 X
+   └── Discord rate-limit 검토 필요 (edit 5/5s)
+
+P7 (web 채팅 surface) — 별도 ADR-004
+   ├── 선행 의무: Discord OAuth 재사용 (있음)
+   ├── 선행 의무: visibility 정책 (ADR-002 의 weave_nodes)
+   └── 큰 작업 — 인증/UI/메모 isolation/RLS 검증
+
+P8 (image/speech)
+   ├── 선행 권장: P2 middleware (비용 통제)
+   └── 사용자 결정 필요 (모델·예산)
+
+P9 (provider 다양화)
+   ├── 선행 의무: P2 middleware (rotation hook)
+   └── 사용자 결정: 어떤 provider, 어떤 lane
+
+P10 (telemetry)
+   ├── 선행 권장: P2 middleware (hook point)
+   └── muel_ai_events schema 확장 가능
+```
+
+**임계 경로** (최단 도달 = P7 웹 채팅):
+P1 → P5 → P3 → P4 → P7 (= 자기 회상 + 다단계 + 제안 + 웹 surface).
+
+**임계 경로** (운영 안전):
+P2 → P10 → P9 (= middleware + telemetry + provider 분기).
+
+## (보강) 현재 코드 → P 매핑
+
+| 모듈 | 현재 상태 | 해당 P | 보강 방향 |
+|---|---|---|---|
+| `muelAgent.ts` `generateText` | mention 답 | P3, P6 | multi-step 늘림, streamText 전환 |
+| `memoryWorker.ts` `generateObject` | extract schema | P1 | tag/importance 정확도 ↑, importance 임계값 자율 조정 |
+| `buildAgentTools` (read-only 8) | 도구 사용 | P5 | + `search_my_memos`, `search_weave_tree` |
+| `actionConfirmations.ts` | 버튼 confirm 패턴 | P4 | propose_memo / propose_weave_node 추가 |
+| `modelRegistry.ts` | 2 lane (Gemini + NVIDIA) | P2, P9 | wrapLanguageModel + Claude lane |
+| `muelEmbeddings.ts` | 자체 fn | P5 | SDK `embed` 로 교체 |
+| `muel_ai_events` 적재 | 직접 insert | P10 | middleware hook 으로 자동 |
+| `proactiveSpeaker.ts` (신규) | 자율 trigger | P3 의 한 형태 | multi-step + write-tools 와 결합 시 *진짜 자율* |
+| `welcomeHandler.ts` (신규) | DM 환영 일관 | (외) | identity surface 일관성 |
+| `rollingPaperHandler.ts` (신규) | 멤버 활동 도구 | P4 의 한 형태 (write) | confirm 패턴 적용 검토 |
+| `weaveNodes.ts` (신규) | ADR-002 producer | P4 의 한 형태 | LLM 제안 → weave_node insert |
+
+## (보강) PR 단위 세분화
+
+각 PR = *한 턴 (Claude or Codex) 안에 가능한 크기*. 너무 큰 P 는 a/b/c 로 쪼갬.
+
+| PR 단위 | 작업 | 담당 | migration 필요 | 사용자 결정 포인트 |
+|---|---|---|---|---|
+| P1a | `muel_user_memos` + `muel_memory_entries` 의 metadata jsonb 컬럼 (이미 있다면 skip) | Claude | yes | metadata schema 결정 |
+| P1b | `/메모 add` 후 `generateObject` 로 tag/kind/visibility 자동 추출 (fire-and-forget) | Claude | no | tag 자동 생성 OK 인지 |
+| P1c | AI-Q 리포트 발행 시 generateObject 로 카테고리/태그 추출 | Codex | no | — |
+| P1d | YouTube 구독 신호 발행 시 generateObject 로 주제 분류 | Codex | no | — |
+| P2a | `wrapLanguageModel` 래퍼 신규 + `modelRegistry` 통합 | Codex | no | — |
+| P2b | rate-limit middleware (per-user, per-provider) | Codex | yes (rate_limit 테이블) | 한도 값 |
+| P2c | caching middleware (semantic cache 또는 단순 fingerprint) | Codex | yes (cache 테이블) | 캐시 정책 |
+| P3a | `stepCountIs(N>4)` + 단계별 시스템 프롬프트 (`prepareStep`) | Claude | no | step 한도 |
+| P3b | multi-step 의 turn-level audit (어느 step 에서 어느 tool 호출) | Codex | yes (확장) | — |
+| P4a | `propose_memo` write-tool + confirm 버튼 → `/메모 add` 호출 | Claude | no | 자동 제안 빈도 |
+| P4b | `propose_weave_node` write-tool + confirm → weave_nodes insert | Claude | no | community 승격 동의 UX |
+| P4c | `propose_subscription` write-tool — `/구독 add` 우선 채택 안 | Codex | no | — |
+| P5a | `search_my_memos` tool (직접+자동 memo embeddings) | Claude | no | — |
+| P5b | `search_weave_tree` tool (community visibility 노드) | Claude | no | — |
+| P5c | `muelEmbeddings` → SDK `embed` 교체 | Codex | no | embedding 모델 (Gemini vs Cohere) |
+| P6a | mention 답의 deferred + edit 점진 표시 | Claude | no | — |
+| P6b | rate-limit 회피 (edit 5/5s) — 청크 크기/주기 | Codex | no | — |
+| P7a-z | ADR-004 별도 | Claude/Codex | yes | — |
+| P8a | `experimental_generateImage` — propose_image tool | Claude | no | 비용 한도 |
+| P8b | voice transcribe — Discord voice 채널 hook | Codex | yes (transcript) | — |
+| P9a | Claude lane 추가 (modelRegistry) | Codex | no | API key |
+| P9b | Mistral / Cohere lane | Codex | no | — |
+| P10 | `experimental_telemetry` → muel_ai_events 자동 hook | Codex | yes (schema 확장) | retention 정책 |
+
+## (보강) 권장 라운드 순서 (Claude n턴 / Codex n턴)
+
+라운드 알터네이팅 가정. 각 라운드 = 1 PR.
+
+| 라운드 | 담당 | 작업 |
+|---|---|---|
+| 1 | Claude | P1a — `muel_user_memos.metadata jsonb` migration |
+| 2 | Codex | P2a — `wrapLanguageModel` 래퍼 + modelRegistry 통합 |
+| 3 | Claude | P1b — `/메모 add` 의 generateObject 자동 tagging |
+| 4 | Codex | P10 — telemetry middleware → muel_ai_events |
+| 5 | Claude | P5a — `search_my_memos` read-only tool |
+| 6 | Codex | P2b — rate-limit middleware |
+| 7 | Claude | P4a — `propose_memo` write-tool + confirm |
+| 8 | Codex | P9a — Claude lane 추가 |
+| 9 | Claude | P3a — multi-step 강화 (`prepareStep` + step N↑) |
+| 10 | Codex | P5c — `muelEmbeddings` → SDK `embed` 교체 |
+| 11+ | … | P4b, P6, P7 ADR-004, P8 |
+
+각 라운드 *typecheck + small PR + 머지* 까지 1 턴.
+
+## (보강) 사용자 결정 포인트 모음
+
+다음 PR 들에 *사용자 입력* 필요:
+
+1. **metadata schema** (P1a) — tags / kind / visibility 의 zod 필드.
+2. **rate-limit 한도** (P2b) — 분당 / 일당 요청 수 사용자별.
+3. **cache 정책** (P2c) — semantic cache TTL, hit threshold.
+4. **multi-step 한도** (P3a) — 4 → N (5? 8? 12?).
+5. **자동 제안 빈도** (P4a) — *매번 propose* 일 너무 많음, *trigger 조건* 결정.
+6. **community 승격 UX** (P4b) — `/메모 add --share` 또는 별도 버튼.
+7. **embedding 모델** (P5c) — Gemini-embedding-001 유지 vs Cohere / OpenAI.
+8. **이미지 비용 한도** (P8a) — 일당 생성 횟수.
+9. **provider rotation 정책** (P9) — random / cost-optimized / quality-optimized.
+10. **telemetry retention** (P10) — muel_ai_events 적재 기간.
+
+각 결정은 *PR 시작 전 사용자 확인* 또는 *PR 안에 default + 사용자가 매니페스트로 조정*.
+
 ## 변경 이력
 
 - 2026-06-08: 초안. 사용자 결정 (ALL) + 현재 master 진행 상태 반영.
+- 2026-06-08 (보강): 사용자 정정 (Claude n턴 / Codex n턴 = 라운드 알터네이팅 / 충돌 X). 의존성 그래프 + 현재 코드→P 매핑 + PR 단위 세분화 + 라운드 순서 + 사용자 결정 포인트 모음 추가.
