@@ -36,6 +36,8 @@ const BTN_NOBLOCK = 'rp:btn:noblock';
 // 작성 직후 ephemeral 응답에 *이 채널에 공개로 보여주기* 버튼 (2026-06-08).
 // customId 에 target_id 를 박아서 DB 재조회 시 그 대상의 카드만 가져온다.
 const BTN_SHOW = 'rp:btn:show:';
+// 받은 카드 전체를 채널에 공개로 보여주기 (받은 목록 화면 버튼).
+const BTN_SHOWRECV = 'rp:btn:showrecv';
 
 export const isRollingButton = (customId: string): boolean => customId.startsWith('rp:btn:');
 export const isRollingSelect = (customId: string): boolean => customId.startsWith('rp:sel:');
@@ -97,7 +99,14 @@ export const handleRollingCommand = async (
       .setTitle(`${targetName} 에게 온 롤링페이퍼`)
       .setColor(COLOR)
       .setDescription(lines.join('\n').slice(0, 4000));
-    await interaction.editReply({ embeds: [embed] });
+    // 내가 이 대상한테 남긴 카드가 있으면 — 작성(덮어쓰기) 없이 공개로 보여주기 버튼.
+    const iLeftOne = rows.some((r) => r.author_id === me);
+    const browseComponents = iLeftOne
+      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(`${BTN_SHOW}${target.id}`).setLabel('내가 남긴 카드 공개로 보여주기').setStyle(ButtonStyle.Primary),
+        )]
+      : [];
+    await interaction.editReply({ embeds: [embed], components: browseComponents });
     return;
   }
   if (!target && content) {
@@ -163,7 +172,12 @@ export const handleRollingCommand = async (
         .addOptions(namedBlocks.map((b) => ({ label: b.name.slice(0, 100), value: b.author_id }))),
     ));
   }
-  await interaction.editReply({ embeds: [embed], components });
+  const showAllRow = named.length
+    ? new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(BTN_SHOWRECV).setLabel('받은 카드 전체 공개로 보여주기').setStyle(ButtonStyle.Secondary),
+      )
+    : null;
+  await interaction.editReply({ embeds: [embed], components: [...(showAllRow ? [showAllRow] : []), ...components] });
 };
 
 export const handleRollingSelect = async (interaction: StringSelectMenuInteraction): Promise<void> => {
@@ -202,6 +216,36 @@ export const handleRollingButton = async (interaction: ButtonInteraction): Promi
   const supabase = getSupabaseClient();
   const cid = interaction.customId;
   if (cid === BTN_NOBLOCK) { await interaction.update({ content: '응, 안 차단할게.', embeds: [], components: [] }); return; }
+  if (cid === BTN_SHOWRECV) {
+    const { data: recv } = await supabase
+      .from('muel_rolling_papers')
+      .select('author_id, content, created_at')
+      .eq('target_id', me)
+      .order('created_at', { ascending: false });
+    const rows = ((recv ?? []) as Array<{ author_id: string; content: string }>).slice(0, MAX_OPTIONS);
+    if (rows.length === 0) {
+      await interaction.update({ content: '받은 카드가 없어.', embeds: [], components: [] });
+      return;
+    }
+    const named = await Promise.all(rows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.author_id) })));
+    const myName = await nameOf(interaction, me);
+    const embed = new EmbedBuilder()
+      .setTitle(`${myName} 에게 온 롤링페이퍼`)
+      .setColor(COLOR)
+      .setDescription(named.map((n, i) => `**${i + 1}.** ${n.name} — ${n.content}`).join('\n').slice(0, 4000));
+    const channel = interaction.channel;
+    if (channel && 'send' in channel && typeof channel.send === 'function') {
+      try {
+        await (channel as { send: (opts: { embeds: EmbedBuilder[] }) => Promise<unknown> }).send({ embeds: [embed] });
+        await interaction.update({ content: '받은 카드를 채널에 공개했어.', embeds: [], components: [] });
+      } catch (err) {
+        await interaction.update({ content: `이 채널엔 못 보냈어. (${err instanceof Error ? err.message : '권한 X'})`, components: [] });
+      }
+    } else {
+      await interaction.update({ content: '이 컨텍스트에선 공개 채널이 없어.', components: [] });
+    }
+    return;
+  }
   if (cid.startsWith(BTN_BLOCK)) {
     const authorId = cid.slice(BTN_BLOCK.length);
     await supabase.from('muel_rolling_blocks').upsert(
