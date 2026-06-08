@@ -1,8 +1,11 @@
 import { type ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder, type StringSelectMenuInteraction } from 'discord.js';
+import { generateObject } from 'ai';
+import { z } from 'zod';
 import { getSupabaseClient } from './supabase.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import { deleteWeaveNodesBySourceRef, insertWeaveNode } from './weaveNodes.js';
 import { config } from './config.js';
+import { getPrimaryTextModel } from './modelRegistry.js';
 
 /**
  * /메모 명령 — 사용자가 Muel 에게 *기억해줘* 라고 직접 지시하는 메모 CRUD.
@@ -76,7 +79,45 @@ type MemoRow = {
   content: string;
   kind: string | null;
   importance: number | null;
+  tags: string[];
   created_at: string;
+};
+
+/**
+ * ADR-003 P1b — /메모 add 직후 generateObject 로 자동 추출하는 메타데이터 schema.
+ * fire-and-forget 으로 muel_user_memos.metadata 에 저장. 실패 시 메모 자체는 영향 X.
+ */
+const MemoMetadataSchema = z.object({
+  tags: z.array(z.string()).min(1).max(5).describe('1-5개 짧고 구체적인 한국어 태그. 예: 톤, 존댓말, 일정, 운영, 음악.'),
+  kind: z.enum(['preference', 'fact', 'project', 'decision', 'context']).describe('메모의 종류.'),
+  importance: z.number().int().min(1).max(5).describe('중요도. 1=사소, 5=핵심 응답 정책.'),
+  summary: z.string().max(120).optional().describe('한 줄 요약 (선택, 한국어).'),
+});
+
+type MemoMetadata = z.infer<typeof MemoMetadataSchema> & { enriched_at?: string };
+
+const enrichMemoMetadata = async (memoId: string, content: string): Promise<void> => {
+  try {
+    const resolved = getPrimaryTextModel('extract');
+    if (!resolved) return;
+    const { object } = await generateObject({
+      model: resolved.model,
+      schema: MemoMetadataSchema,
+      system: '너는 사용자가 Muel 에게 박아둔 개인화 메모의 메타데이터를 뽑는다. 명확한 한국어 태그 1-3개, 종류, 중요도. 보고서 톤 X, JSON 만 반환 (스키마가 강제).',
+      prompt: content,
+      temperature: 0.2,
+      maxOutputTokens: 256,
+    });
+    const supabase = getSupabaseClient();
+    const metadata: MemoMetadata = { ...object, enriched_at: new Date().toISOString() };
+    const { error } = await supabase
+      .from('muel_user_memos')
+      .update({ metadata })
+      .eq('id', memoId);
+    if (error) console.warn('[memo] metadata update failed', error);
+  } catch (err) {
+    console.warn('[memo] enrich metadata failed', err);
+  }
 };
 
 const memoSelectValue = (memo: MemoRow): string =>
@@ -97,13 +138,13 @@ const fetchAllMemos = async (discordUserId: string): Promise<MemoRow[]> => {
   const [{ data: direct, error: e1 }, { data: auto, error: e2 }] = await Promise.all([
     supabase
       .from('muel_user_memos')
-      .select('id, content, created_at')
+      .select('id, content, created_at, metadata')
       .eq('discord_user_id', discordUserId)
       .order('created_at', { ascending: false })
       .limit(MEMO_MAX_LIST),
     supabase
       .from('muel_memory_entries')
-      .select('id, content, kind, importance, created_at, muel_chats!inner(source_user_id)')
+      .select('id, content, kind, importance, created_at, metadata, muel_chats!inner(source_user_id)')
       .eq('muel_chats.source_user_id', discordUserId)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
@@ -115,22 +156,34 @@ const fetchAllMemos = async (discordUserId: string): Promise<MemoRow[]> => {
 
   const merged: MemoRow[] = [];
   for (const row of direct ?? []) {
+    const m = (row as { metadata?: Record<string, unknown> }).metadata ?? {};
+    const tagsRaw = (m as Record<string, unknown>).tags;
+    const tags = Array.isArray(tagsRaw) ? tagsRaw.filter((t): t is string => typeof t === 'string') : [];
+    const kind = typeof (m as Record<string, unknown>).kind === 'string' ? String((m as Record<string, unknown>).kind) : null;
+    const importance = typeof (m as Record<string, unknown>).importance === 'number'
+      ? Number((m as Record<string, unknown>).importance)
+      : null;
     merged.push({
       source: 'user_direct',
       id: String(row.id),
       content: String(row.content),
-      kind: null,
-      importance: null,
+      kind,
+      importance,
+      tags,
       created_at: String(row.created_at),
     });
   }
   for (const row of auto ?? []) {
+    const m = (row as { metadata?: Record<string, unknown> }).metadata ?? {};
+    const tagsRaw = (m as Record<string, unknown>).tags;
+    const tags = Array.isArray(tagsRaw) ? tagsRaw.filter((t): t is string => typeof t === 'string') : [];
     merged.push({
       source: 'auto_extracted',
       id: String(row.id),
       content: String(row.content),
       kind: typeof row.kind === 'string' ? row.kind : null,
       importance: typeof row.importance === 'number' ? row.importance : null,
+      tags,
       created_at: String(row.created_at),
     });
   }
@@ -148,12 +201,17 @@ const formatMemoCard = (memo: MemoRow, indexNumber: number) => {
     new Date(memo.created_at).toISOString().slice(0, 10),
   ].filter(Boolean).join(' · ');
 
+  const fields: Array<{ name: string; value: string }> = [{ name: '​', value: meta }];
+  if (memo.tags.length > 0) {
+    fields.push({ name: '​', value: memo.tags.map((t) => `\`#${t}\``).join(' ') });
+  }
+
   return {
     type: 'info-card' as const,
     tone: 'muel' as const,
     title: `메모 #${indexNumber}`,
     body: memo.content,
-    fields: [{ name: '​', value: meta }],
+    fields,
   };
 };
 
@@ -236,6 +294,9 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     body: content,
     sourceRef: { muel_user_memos_id: inserted?.id ?? null },
   });
+  // ADR-003 P1b: generateObject 로 tags/kind/importance 자동 추출 + metadata update.
+  // fire-and-forget — 실패해도 메모는 이미 저장됨.
+  if (inserted?.id) void enrichMemoMetadata(String(inserted.id), content);
   await interaction.editReply({ ...buildAddSuccess(content) });
 };
 
