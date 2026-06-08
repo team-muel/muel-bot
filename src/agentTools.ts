@@ -41,6 +41,12 @@ export type AgentToolContext = {
   currentChannelId: string | null;
   currentGuildId: string | null;
   relevantUserIds: string[];
+  /**
+   * ADR-003 P5a — 사용자 본인의 discord user id.
+   * 모델이 `search_my_memos` 로 *본인의 직접+자동 메모* 만 안전하게 조회하도록 필터.
+   * null 이면 tool 이 *그 사용자 컨텍스트 없음* 메시지 반환.
+   */
+  currentUserId: string | null;
 };
 
 const truncateText = (text: string, max = 200): string => {
@@ -112,6 +118,84 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
         } catch (error) {
           disableUserMemorySearch(error as { code?: string });
           return '기억을 검색하는 데 실패했어.';
+        }
+      },
+    }),
+
+    /**
+     * ADR-003 P5a — *나의 메모* 명시적 조회 tool (read-only).
+     *
+     * 두 출처 union:
+     * - `muel_user_memos` (사용자 직접 /메모 add) — discord_user_id 직접 매핑.
+     * - `muel_memory_entries` JOIN `muel_chats.source_user_id` (LLM 자동 추출, status='active').
+     *
+     * 임베딩 검색은 P5b 후속. 이번 단계는 *최근순 read*. 사용자가 *내가 너한테 뭐
+     * 박아뒀더라?* / *내 메모 보여줘* 같은 요청 시 모델이 호출.
+     */
+    search_my_memos: tool({
+      description:
+        '사용자(요청자) 본인이 Muel 에게 박아둔 메모 목록을 최신순으로 가져온다. /메모 add 로 직접 박은 것과 LLM 이 자동 추출한 활성 메모리 둘 다 포함. 사용자가 자기 메모/지침/스타일을 묻거나 *너 나에 대해 뭐 알아?* 류 질문 시 사용. limit 기본 8.',
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(20).optional().describe('가져올 최대 메모 수 (기본 8)'),
+      }),
+      // @ts-ignore AI SDK v6 tool typing.
+      execute: async ({ limit }: { limit?: number }) => {
+        if (!ctx.currentUserId) {
+          return '지금 누구의 메모를 봐야 할지 모르겠어. (사용자 컨텍스트 없음)';
+        }
+        const cap = Math.min(Math.max(1, limit ?? 8), 20);
+        try {
+          const [{ data: direct, error: e1 }, { data: auto, error: e2 }] = await Promise.all([
+            ctx.supabase
+              .from('muel_user_memos')
+              .select('id, content, created_at, metadata')
+              .eq('discord_user_id', ctx.currentUserId)
+              .order('created_at', { ascending: false })
+              .limit(cap),
+            ctx.supabase
+              .from('muel_memory_entries')
+              .select('id, content, kind, importance, created_at, muel_chats!inner(source_user_id)')
+              .eq('muel_chats.source_user_id', ctx.currentUserId)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false })
+              .limit(cap),
+          ]);
+          if (e1) console.warn('[search_my_memos] direct fetch failed', e1);
+          if (e2) console.warn('[search_my_memos] auto fetch failed', e2);
+
+          type Row = { source: '직접' | '자동'; content: string; tags: string[]; kind: string | null; created_at: string };
+          const rows: Row[] = [];
+          for (const r of direct ?? []) {
+            const md = (r as { metadata?: Record<string, unknown> }).metadata ?? {};
+            const tagsRaw = (md as Record<string, unknown>).tags;
+            const tags = Array.isArray(tagsRaw) ? tagsRaw.filter((t): t is string => typeof t === 'string') : [];
+            const kind = typeof (md as Record<string, unknown>).kind === 'string' ? String((md as Record<string, unknown>).kind) : null;
+            rows.push({ source: '직접', content: String(r.content), tags, kind, created_at: String(r.created_at) });
+          }
+          for (const r of auto ?? []) {
+            rows.push({
+              source: '자동',
+              content: String(r.content),
+              tags: [],
+              kind: typeof r.kind === 'string' ? r.kind : null,
+              created_at: String(r.created_at),
+            });
+          }
+          rows.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+          const slice = rows.slice(0, cap);
+          if (slice.length === 0) return '저장된 메모가 없어.';
+
+          return slice
+            .map((r, i) => {
+              const date = new Date(r.created_at).toISOString().slice(0, 10);
+              const meta = [r.source, r.kind ?? null, date].filter(Boolean).join(' · ');
+              const tagLine = r.tags.length > 0 ? ` [${r.tags.map((t) => `#${t}`).join(' ')}]` : '';
+              return `${i + 1}. (${meta})${tagLine} ${truncateText(r.content, 280)}`;
+            })
+            .join('\n');
+        } catch (err) {
+          console.warn('[search_my_memos] failed', err);
+          return '메모 조회에 실패했어.';
         }
       },
     }),
