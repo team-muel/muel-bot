@@ -87,6 +87,29 @@ export const getFallbackTextModel = (task: MuelModelTask = 'heavy'): ResolvedMue
   };
 };
 
+export const getNvidiaTextModel = (modelId: string, task: MuelModelTask): ResolvedMuelModel | null => {
+  const nvidia = getNvidiaProvider();
+  if (!nvidia) return null;
+  const fullId = `nvidia:${modelId}`;
+  const baseModel = nvidia(modelId);
+  return {
+    model: withTelemetry(baseModel as any, { provider: 'nvidia', modelId: fullId, task }),
+    provider: 'nvidia',
+    modelId: fullId,
+    task,
+  };
+};
+
+// 레인 주력 모델. heavy 레인은 MUEL_HEAVY_PROVIDER=nvidia 면 NVIDIA(예: deepseek-v4-flash)로
+// 라우팅 — 단가가 Gemini 3.5-flash 보다 싸서 substantive 턴 실험용. NVIDIA 미가용 시 Gemini 로 폴백.
+// 그 외 레인(chat/vision 등)과 기본값은 Gemini.
+export const getLaneModel = (task: MuelModelTask): ResolvedMuelModel | null => {
+  if (task === 'heavy' && config.heavyProvider === 'nvidia') {
+    return getNvidiaTextModel(config.nvidiaHeavyModel, task) ?? getGeminiTextModel(task);
+  }
+  return getGeminiTextModel(task);
+};
+
 export const getGoogleSearchTool = () => {
   const google = getGoogleProvider();
   if (!google) return null;

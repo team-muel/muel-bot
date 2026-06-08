@@ -11,6 +11,7 @@ import {
   getFallbackTextModel,
   getGeminiTextModel,
   getGoogleSearchTool,
+  getLaneModel,
   type MuelModelTask,
 } from './modelRegistry.js';
 import { buildAgentTools } from './agentTools.js';
@@ -425,16 +426,19 @@ export const generateMuelReply = async (
       : lightweightTurn
         ? CHAT_MODEL_TASK
         : 'heavy';
-    const gemini = getGeminiTextModel(chatLane);
+    const gemini = getLaneModel(chatLane);
     if (gemini) {
       try {
         // Web search (Google grounding) is always attached so the model can answer
         // current-events / news / general-knowledge questions instead of refusing.
         // DB tools stay gated behind shouldEnableTools for cost.
         const agentTools: Record<string, any> = shouldEnableTools(userText) ? { ...tools } : {};
-        const googleSearch = getGoogleSearchTool();
-        if (googleSearch) {
-          agentTools.googleSearch = googleSearch;
+        // Google grounding 은 Gemini 전용 — NVIDIA 레인엔 안 붙인다.
+        if (gemini.provider === 'gemini') {
+          const googleSearch = getGoogleSearchTool();
+          if (googleSearch) {
+            agentTools.googleSearch = googleSearch;
+          }
         }
         const result = await tryGenerate(
           gemini.model,
