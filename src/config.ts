@@ -24,6 +24,9 @@ const booleanEnv = (key: string, fallback: boolean): boolean => {
 // lane-specific env is unset; flip it once to move everything together.
 const DEFAULT_LANE_MODEL = 'gemini-2.5-flash';
 const DEFAULT_HEAVY_MODEL = 'gemini-2.5-flash';
+// Vision lane — image-bearing turns escalate to 3.5-flash (best multimodal,
+// Flash-tier cost, GA 2026-05). Text lanes stay on 2.5-flash.
+const DEFAULT_VISION_MODEL = 'gemini-3.5-flash';
 
 export const config = {
   discordBotToken: requiredEnv('DISCORD_BOT_TOKEN'),
@@ -40,6 +43,7 @@ export const config = {
   muelExtractModel: optionalEnv('MUEL_EXTRACT_MODEL') ?? DEFAULT_HEAVY_MODEL,
   muelSummaryModel: optionalEnv('MUEL_SUMMARY_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
   muelHeavyModel: optionalEnv('MUEL_HEAVY_MODEL') ?? DEFAULT_HEAVY_MODEL,
+  muelVisionModel: optionalEnv('MUEL_VISION_MODEL') ?? DEFAULT_VISION_MODEL,
   muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-001',
   muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 768),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),

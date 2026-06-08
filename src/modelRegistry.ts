@@ -3,7 +3,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { config } from './config.js';
 import { withTelemetry } from './aiMiddleware.js';
 
-export type MuelModelTask = 'chat' | 'router' | 'extract' | 'summary' | 'heavy';
+export type MuelModelTask = 'chat' | 'router' | 'extract' | 'summary' | 'heavy' | 'vision';
 export type MuelModelProvider = 'gemini' | 'nvidia';
 
 export type ResolvedMuelModel = {
@@ -51,6 +51,8 @@ export const getModelIdForTask = (task: MuelModelTask): string => {
       return config.muelSummaryModel;
     case 'heavy':
       return config.muelHeavyModel;
+    case 'vision':
+      return config.muelVisionModel;
   }
 };
 

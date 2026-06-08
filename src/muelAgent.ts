@@ -330,6 +330,17 @@ export const generateMuelReply = async (
       return { role: msg.role, content };
     });
 
+  // 이미지 첨부 turn 감지 — vision 레인(3.5-flash) escalate + 과신 완화 지시.
+  const hasImage = messages.some(
+    (m: any) => Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image'),
+  );
+  if (hasImage) {
+    systemParts.push(
+      '',
+      '[이미지 판단] 이미지가 흐리거나 불확실하면 단정하지 말고 모른다고 말해라. 안 보이는 글자나 세부를 추측해서 단언하지 마라.',
+    );
+  }
+
   const tools = buildAgentTools({
     supabase,
     currentChannelId,
@@ -406,7 +417,11 @@ export const generateMuelReply = async (
   if (config.googleGenerativeAiApiKey) {
     // Casual/lightweight turns stay on the cheap lane; substantive turns get
     // the stronger reasoning model.
-    const chatLane: MuelModelTask = lightweightTurn ? CHAT_MODEL_TASK : 'heavy';
+    const chatLane: MuelModelTask = hasImage
+      ? 'vision'
+      : lightweightTurn
+        ? CHAT_MODEL_TASK
+        : 'heavy';
     const gemini = getGeminiTextModel(chatLane);
     if (gemini) {
       try {
