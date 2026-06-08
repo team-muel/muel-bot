@@ -146,8 +146,8 @@ export const handleHubSlashInteraction = async (
       );
       await interaction.editReply({
         content: full
-          ? '좋아, 여기선 대답도 하고 가끔 먼저도 말 걸게.'
-          : '좋아, 이 채널에선 평소처럼 대답할게.',
+          ? '앞으로 자주 인사할게.'
+          : '좋아, 여긴 이제 내 허브야.',
       });
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -263,10 +263,10 @@ export const handleHubSlashInteraction = async (
     const proactiveOn = !!(pro as { enabled?: boolean } | null)?.enabled;
     await interaction.editReply({
       content: !active
-        ? '여긴 꺼져 있어 — 멘션해야 대답해.'
+        ? '여긴 허브가 아니야, 멘션해줄래?'
         : proactiveOn
-          ? '현재: 100% — 응답 + 먼저 말 걸기.'
-          : '현재: 활성화 — 응답만.',
+          ? '안녕? Muel은 지금 100%야!'
+          : '여긴 내가 지켜보는 허브야.',
     }).catch(() => {});
     return;
   }
