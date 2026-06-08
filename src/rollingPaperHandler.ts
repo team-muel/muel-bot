@@ -13,13 +13,16 @@ import {
 import { getSupabaseClient } from './supabase.js';
 
 // /롤링페이퍼 — 멤버끼리 서로에게 남기는 한 줄(공개 레이어). /메모(나만 보는 Muel 기억)와 별개.
+//
+// UX (2026-06-08 사용자 결정):
+// - 옵션은 *작성* + *대상* 두 개만. `동작=작성` 같은 별도 동작 옵션 제거.
+// - 둘 다 채워서 호출 → 그 사람에게 한 줄 남김 (덮어쓰기).
+// - 둘 다 비워서 호출 → 내가 *받은* 카드 목록 + 차단 관리.
+// - *내가 보낸 카드 목록* 은 별도 슬래시 명령으로 후속 분리 (이전의 `동작=보낸` 제거).
 export const ROLLING_COMMAND_NAME = '롤링페이퍼';
 const EPHEMERAL = MessageFlags.Ephemeral;
-const ACTION = '동작';
-const ACTION_WRITE = '작성';
-const ACTION_SENT = '보낸';
 const OPT_TARGET = '대상';
-const OPT_CONTENT = '내용';
+const OPT_WRITE = '작성';
 const MAX_LEN = 500;
 const MAX_OPTIONS = 25;
 const COLOR = 0x9b87f5;
@@ -36,15 +39,14 @@ export const isRollingSelect = (customId: string): boolean => customId.startsWit
 export const buildRollingSlashCommand = () =>
   new SlashCommandBuilder()
     .setName(ROLLING_COMMAND_NAME)
-    .setDescription('서로한테 한 줄 남기는 롤링페이퍼')
+    .setDescription('서로한테 한 줄 남기는 롤링페이퍼 — 둘 다 채우면 작성, 비우면 내가 받은 목록')
     .addStringOption((o) =>
-      o.setName(ACTION).setDescription('작성 / 보낸').addChoices(
-        { name: '작성', value: ACTION_WRITE },
-        { name: '보낸', value: ACTION_SENT },
-      ),
+      o
+        .setName(OPT_WRITE)
+        .setDescription('남길 한 줄 (대상도 같이 골라야 함)')
+        .setMaxLength(MAX_LEN),
     )
-    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('동작=작성 일 때 받을 사람'))
-    .addStringOption((o) => o.setName(OPT_CONTENT).setDescription('동작=작성 일 때 남길 한 줄'));
+    .addUserOption((o) => o.setName(OPT_TARGET).setDescription('받을 사람 (작성도 같이 적어야 함)'));
 
 type AnyInteraction =
   | ChatInputCommandInteraction
@@ -66,13 +68,23 @@ export const handleRollingCommand = async (
   await interaction.deferReply({ flags: EPHEMERAL });
   const me = interaction.user.id;
   const supabase = getSupabaseClient();
-  const action = interaction.options.getString(ACTION, false);
+  const target = interaction.options.getUser(OPT_TARGET, false);
+  const content = (interaction.options.getString(OPT_WRITE, false) ?? '').trim();
 
-  if (action === ACTION_WRITE) {
-    const target = interaction.options.getUser(OPT_TARGET, false);
-    const content = (interaction.options.getString(OPT_CONTENT, false) ?? '').trim();
-    if (!target) { await interaction.editReply({ content: '`동작:작성` 엔 `대상` 도 골라줘.' }); return; }
-    if (!content) { await interaction.editReply({ content: '`동작:작성` 엔 `내용` 도 적어줘.' }); return; }
+  // 옵션 분기 (2026-06-08 UX 변경): action 옵션 제거, 옵션 두 개의 조합으로 결정.
+  // - 작성+대상 둘 다 → 작성
+  // - 둘 다 빔 → 받은 목록 (기존 default 흐름)
+  // - 하나만 → 안내
+  if (target && !content) {
+    await interaction.editReply({ content: '`작성` 도 같이 적어줘.' });
+    return;
+  }
+  if (!target && content) {
+    await interaction.editReply({ content: '`대상` 도 같이 골라줘.' });
+    return;
+  }
+
+  if (target && content) {
     if (content.length > MAX_LEN) { await interaction.editReply({ content: `${MAX_LEN}자 이하로 적어줘.` }); return; }
     if (target.id === me) { await interaction.editReply({ content: '자기 자신한텐 못 남겨.' }); return; }
     if (target.bot) { await interaction.editReply({ content: '봇한텐 못 남겨.' }); return; }
@@ -87,26 +99,11 @@ export const handleRollingCommand = async (
       { onConflict: 'author_id,target_id' },
     );
     if (error) { await interaction.editReply({ content: `못 남겼어: ${error.message}.` }); return; }
-    await interaction.editReply({ content: `<@${target.id}> 한테 남겼어. 바꾸려면 다시 작성(덮어쓰기), 지우려면 /롤링페이퍼 동작:보낸.` });
+    await interaction.editReply({ content: `<@${target.id}> 한테 남겼어. 바꾸려면 다시 작성(덮어쓰기).` });
     return;
   }
 
-  if (action === ACTION_SENT) {
-    const { data: notes } = await supabase
-      .from('muel_rolling_papers').select('id, target_id, content, created_at')
-      .eq('author_id', me).order('created_at', { ascending: false });
-    const rows = ((notes ?? []) as Array<{ id: string; target_id: string; content: string }>).slice(0, MAX_OPTIONS);
-    if (rows.length === 0) { await interaction.editReply({ content: '아직 아무한테도 안 남겼어.' }); return; }
-    const named = await Promise.all(rows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.target_id) })));
-    const embed = new EmbedBuilder().setTitle('내가 보낸 롤링페이퍼').setColor(COLOR)
-      .setDescription(named.map((n, i) => `**${i + 1}.** → ${n.name} — ${n.content}`).join('\n').slice(0, 4000));
-    const select = new StringSelectMenuBuilder().setCustomId(SEL_DELSENT).setPlaceholder('지울 카드 고르기')
-      .addOptions(named.map((n, i) => ({ label: `${i + 1}. → ${n.name}`.slice(0, 100), description: n.content.slice(0, 90), value: n.id })));
-    await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)] });
-    return;
-  }
-
-  // 받은 (default)
+  // 받은 (default — 둘 다 비웠을 때)
   const [{ data: notes }, { data: blocks }] = await Promise.all([
     supabase.from('muel_rolling_papers').select('id, author_id, content, created_at').eq('target_id', me).order('created_at', { ascending: false }),
     supabase.from('muel_rolling_blocks').select('author_id, created_at').eq('target_id', me).order('created_at', { ascending: false }),
