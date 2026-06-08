@@ -383,7 +383,7 @@ export const handleMuelMention = async (
       guildTopology,
       message.author.id,
       message.channelId,
-    ), config.mentionReplyTimeoutMs, 'generateMuelReply');
+    ), imageParts.length > 0 ? config.mentionImageReplyTimeoutMs : config.mentionReplyTimeoutMs, 'generateMuelReply');
 
     const sent = await message.reply({
       content: toDiscordReply(reply.text),

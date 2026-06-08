@@ -53,6 +53,7 @@ export const config = {
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
   youtubeDataApiKey: optionalEnv('YOUTUBE_DATA_API_KEY'),
   mentionReplyTimeoutMs: Number(process.env.MENTION_REPLY_TIMEOUT_MS ?? 15_000),
+  mentionImageReplyTimeoutMs: Number(process.env.MENTION_IMAGE_REPLY_TIMEOUT_MS ?? 35_000),
   spamBlockEnabled: booleanEnv('MUEL_SPAM_BLOCK_ENABLED', true),
   spamBlockMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MIN_CONFIDENCE ?? 0.75),
   enableJobWorker: booleanEnv('ENABLE_JOB_WORKER', booleanEnv('ENABLE_MEMORY_WORKER', true)),
