@@ -17,6 +17,7 @@ import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
+import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -155,10 +156,13 @@ const client = new Client({
     // Discord Developer Portal → Bot → Privileged Gateway Intents 에서
     // "SERVER MEMBERS INTENT" 활성화 필수. 100 서버 이상 되면 verification 필요.
     GatewayIntentBits.GuildMembers,
+    // 부정 피드백 신호(👎 등 리액션) 수집용.
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.DirectMessageReactions,
   ],
   // 봇이 아직 캐시하지 않은 DM 채널의 messageCreate 이벤트를 partial 로라도 받기 위해 필요.
   // discord.js 의 표준 패턴 (DM 봇이 채널을 미리 알 길이 없음).
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
 /**
@@ -481,6 +485,35 @@ client.on(Events.MessageCreate, async (message) => {
     } catch (error) {
       console.warn('[community-flow] skipped observe', error);
     }
+  }
+});
+
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  try {
+    if (user.bot) return;
+    if (reaction.partial) {
+      try { await reaction.fetch(); } catch { return; }
+    }
+    const msg = reaction.message;
+    if (msg.partial) {
+      try { await msg.fetch(); } catch { return; }
+    }
+    if (!client.user || msg.author?.id !== client.user.id) return; // Muel 자기 메시지에 달린 리액션만
+    if (!isNegativeEmoji(reaction.emoji.name)) return;
+    await recordFeedbackSignal(getSupabaseClient(), {
+      signalType: 'reaction_negative',
+      sentiment: 'negative',
+      guildId: msg.guildId ?? null,
+      channelId: msg.channelId,
+      channelType: msg.guildId ? 'guild' : 'dm',
+      muelMessageId: msg.id,
+      userId: user.id,
+      severity: 2,
+      evidence: `reaction:${reaction.emoji.name ?? '?'}`,
+      metadata: { emoji: reaction.emoji.name },
+    });
+  } catch (err) {
+    console.warn('[feedback-signal] reaction handler failed', err);
   }
 });
 

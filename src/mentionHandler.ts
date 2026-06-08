@@ -8,6 +8,7 @@ import {
   prepareChatTurn,
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
+import { classifyNegativeText, recordFeedbackSignal } from './feedbackSignals.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
@@ -156,6 +157,24 @@ export const handleMuelMention = async (
   recentRequests.set(requestKey, { content: dedupContent, at: now });
 
   const supabase = getSupabaseClient();
+
+  // 부정 피드백 신호 — Muel 을 부르며 욕/부정 표현이 섞였으면 적재(응답 흐름 비차단).
+  {
+    const neg = classifyNegativeText(userText);
+    if (neg.negative) {
+      void recordFeedbackSignal(supabase, {
+        signalType: neg.abuse ? 'abuse' : 'reply_negative',
+        sentiment: neg.abuse ? 'abuse' : 'negative',
+        guildId: message.guildId ?? null,
+        channelId: message.channelId,
+        channelType: message.guildId ? 'guild' : 'dm',
+        messageId: message.id,
+        userId: message.author.id,
+        severity: neg.abuse ? 4 : 2,
+        evidence: userText.slice(0, 300),
+      });
+    }
+  }
 
   // Rate limit / concurrency guard. Runs before any LLM work.
   const limitDecision = acquireMentionSlot({ userId: message.author.id, channelId: message.channelId });
