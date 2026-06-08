@@ -9,6 +9,7 @@ import {
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { classifyNegativeText, recordFeedbackSignal } from './feedbackSignals.js';
+import { schedulePendingObservation } from './feedbackObserver.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
@@ -413,6 +414,15 @@ export const handleMuelMention = async (
     });
 
     void tagMessage(message, REACTION_DONE);
+
+    // 지연 관찰 등록 — 답변 ~90초 뒤 이 메시지의 리액션/후속 반응을 보고 부정 피드백 적재.
+    void schedulePendingObservation(supabase, {
+      guildId: message.guildId ?? null,
+      channelId: message.channelId,
+      muelMessageId: sent.id,
+      userId: message.author.id,
+      replyExcerpt: reply.text.slice(0, 200),
+    });
 
     const meta = (reply.metadata ?? {}) as Record<string, unknown>;
     const taskType = pickStringField(meta, 'taskType') ?? 'chat';
