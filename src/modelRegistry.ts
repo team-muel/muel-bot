@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { config } from './config.js';
+import { withTelemetry } from './aiMiddleware.js';
 
 export type MuelModelTask = 'chat' | 'router' | 'extract' | 'summary' | 'heavy';
 export type MuelModelProvider = 'gemini' | 'nvidia';
@@ -57,8 +58,10 @@ export const getGeminiTextModel = (task: MuelModelTask): ResolvedMuelModel | nul
   const google = getGoogleProvider();
   if (!google) return null;
   const modelId = normalizeGeminiModelName(getModelIdForTask(task));
+  // ADR-003 P2a/P10 — telemetry middleware 로 모든 호출에 latency/usage 로그.
+  const baseModel = google(modelId);
   return {
-    model: google(modelId),
+    model: withTelemetry(baseModel as any, { provider: 'gemini', modelId, task }),
     provider: 'gemini',
     modelId,
     task,
@@ -72,10 +75,12 @@ export const getPrimaryTextModel = (task: MuelModelTask): ResolvedMuelModel | nu
 export const getFallbackTextModel = (task: MuelModelTask = 'heavy'): ResolvedMuelModel | null => {
   const nvidia = getNvidiaProvider();
   if (!nvidia) return null;
+  const modelId = `nvidia:${config.nvidiaModel}`;
+  const baseModel = nvidia(config.nvidiaModel);
   return {
-    model: nvidia(config.nvidiaModel),
+    model: withTelemetry(baseModel as any, { provider: 'nvidia', modelId, task }),
     provider: 'nvidia',
-    modelId: `nvidia:${config.nvidiaModel}`,
+    modelId,
     task,
   };
 };
