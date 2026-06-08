@@ -32,6 +32,9 @@ const SEL_UNBLOCK = 'rp:sel:unblock';
 const SEL_DELSENT = 'rp:sel:delsent';
 const BTN_BLOCK = 'rp:btn:block:';
 const BTN_NOBLOCK = 'rp:btn:noblock';
+// 작성 직후 ephemeral 응답에 *이 채널에 공개로 보여주기* 버튼 (2026-06-08).
+// customId 에 target_id 를 박아서 DB 재조회 시 그 대상의 카드만 가져온다.
+const BTN_SHOW = 'rp:btn:show:';
 
 export const isRollingButton = (customId: string): boolean => customId.startsWith('rp:btn:');
 export const isRollingSelect = (customId: string): boolean => customId.startsWith('rp:sel:');
@@ -99,7 +102,17 @@ export const handleRollingCommand = async (
       { onConflict: 'author_id,target_id' },
     );
     if (error) { await interaction.editReply({ content: `못 남겼어: ${error.message}.` }); return; }
-    await interaction.editReply({ content: `<@${target.id}> 한테 남겼어. 바꾸려면 다시 작성(덮어쓰기).` });
+    // 작성 성공 — ephemeral 답에 *공개로 보여주기* 버튼 추가. 누르면 같은 채널에 카드 발행.
+    const showRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${BTN_SHOW}${target.id}`)
+        .setLabel('이 채널에 공개로 보여주기')
+        .setStyle(ButtonStyle.Primary),
+    );
+    await interaction.editReply({
+      content: `<@${target.id}> 한테 남겼어. 바꾸려면 다시 작성(덮어쓰기).`,
+      components: [showRow],
+    });
     return;
   }
 
@@ -179,6 +192,42 @@ export const handleRollingButton = async (interaction: ButtonInteraction): Promi
     );
     const name = await nameOf(interaction, authorId);
     await interaction.update({ content: `${name} 차단했어. /롤링페이퍼에서 풀 수 있어.`, embeds: [], components: [] });
+    return;
+  }
+  if (cid.startsWith(BTN_SHOW)) {
+    const targetId = cid.slice(BTN_SHOW.length);
+    const { data: note } = await supabase
+      .from('muel_rolling_papers')
+      .select('content')
+      .eq('author_id', me)
+      .eq('target_id', targetId)
+      .maybeSingle();
+    if (!note) {
+      await interaction.update({ content: '카드가 사라졌어. 다시 작성해줘.', embeds: [], components: [] });
+      return;
+    }
+    const targetName = await nameOf(interaction, targetId);
+    const myName = await nameOf(interaction, me);
+    const content = (note as { content: string }).content;
+    const embed = new EmbedBuilder()
+      .setTitle('롤링페이퍼')
+      .setColor(COLOR)
+      .setDescription(`**${myName}** → **${targetName}**\n${content}`);
+    // 채널에 공개 메시지로 카드 발행. 채널이 null (DM context 등) 이면 안내만.
+    const channel = interaction.channel;
+    if (channel && 'send' in channel && typeof channel.send === 'function') {
+      try {
+        await (channel as { send: (opts: { embeds: EmbedBuilder[] }) => Promise<unknown> }).send({ embeds: [embed] });
+        await interaction.update({ content: '공개로 보여줬어.', components: [] });
+      } catch (err) {
+        await interaction.update({
+          content: `이 채널엔 못 보냈어. (${err instanceof Error ? err.message : '권한 X'})`,
+          components: [],
+        });
+      }
+    } else {
+      await interaction.update({ content: '이 컨텍스트에선 공개 채널이 없어.', components: [] });
+    }
     return;
   }
 };
