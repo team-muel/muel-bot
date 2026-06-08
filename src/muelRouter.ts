@@ -72,7 +72,8 @@ export const classifyMentionIntent = async (
       model: routerModel.model,
       schema: RouterSchema,
       experimental_repairText: repairJsonText,
-      providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
+      // thinkingBudget:0 은 2.5-flash 의 구조화 출력 스키마 준수를 무너뜨려(라우터 No-object 에러 급증). 소량 thinking 부여.
+      providerOptions: { google: { thinkingConfig: { thinkingBudget: 512 } } },
       temperature: 0,
       prompt: `${ROUTER_PROMPT}\n\nUser text:\n"""\n${trimmed}\n"""`,
     });
