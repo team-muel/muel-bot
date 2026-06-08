@@ -328,7 +328,7 @@ const buildHelpMessage = () => renderDiscordMessage([{
     '/도움말 · /ping',
     '',
     `팀뮤엘: ${config.hubUrl}`,
-    `뮤엘: ${config.hubUrl}/weave`,
+    `기록: ${config.hubUrl}/weave`,
   ].join('\n'),
   footer: 'Muel은 AI이며 인물 등에 관한 정보 제공 시 실수를 할 수 있어요.',
 }]);
