@@ -341,6 +341,14 @@ export const generateMuelReply = async (
   const activeTools = shouldEnableTools(userText) ? tools : {};
   const providerFailures: string[] = [];
 
+  // ADR-003 P3a — multi-step 한도 + 단계별 prompt.
+  // 이전: stepCountIs(4). tool-heavy turn 에서 *검색 → 정리* 두 번째 step 직후 끊겨
+  // 답이 짧거나 tool raw 가 새는 경우 있었음. 8 까지 늘리고 후반 step 에는 *압축 + 캐릭터 톤*
+  // 강조 prompt 를 prepareStep 으로 주입. 비용은 turn 당 평균 1-2 step 증가, 최악 4 step
+  // 증가 — middleware 의 rate-limit (P2b, 후속) 가 들어가면 안전.
+  const MULTI_STEP_LIMIT = 8;
+  const LATE_STEP_THRESHOLD = 2;
+
   const tryGenerate = async (
     aiModel: any,
     provider: 'gemini' | 'nvidia',
@@ -352,7 +360,22 @@ export const generateMuelReply = async (
       system: systemParts.join('\n'),
       messages,
       tools: modelTools,
-      stopWhen: stepCountIs(4),
+      stopWhen: stepCountIs(MULTI_STEP_LIMIT),
+      // 단계별 prompt 조정: 후반 step (tool 결과 정리 시) 에 *압축 + 보고서 톤 금지* 강조.
+      // @ts-ignore AI SDK v6 prepareStep typing 이 일부 모델 wrapper 와 안 맞아 정성적 cast.
+      prepareStep: async ({ stepNumber }: { stepNumber: number }) => {
+        if (stepNumber < LATE_STEP_THRESHOLD) return undefined;
+        return {
+          system: [
+            systemParts.join('\n'),
+            '',
+            '--- LATE STEP (압축) ---',
+            '도구 호출이 충분히 됐으면 더 부르지 말고 답을 마무리해라.',
+            '결과를 너의 말로 1-3 문장 한국어 반말로 압축. heading/bullet/보고서 마커 절대 금지.',
+            '도구 raw 텍스트를 그대로 옮기지 말고 캐릭터의 한 마디로 바꿔라.',
+          ].join('\n'),
+        };
+      },
       temperature: 0.7,
       maxOutputTokens: 2048,
     });
