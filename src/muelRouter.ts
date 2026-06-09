@@ -70,6 +70,7 @@ export const classifyMentionIntent = async (
   try {
     const { object, usage } = await generateObject({
       model: routerModel.model,
+      maxRetries: 1,
       schema: RouterSchema,
       experimental_repairText: repairJsonText,
       // thinkingBudget:0 은 2.5-flash 의 구조화 출력 스키마 준수를 무너뜨려(라우터 No-object 에러 급증). 소량 thinking 부여.
