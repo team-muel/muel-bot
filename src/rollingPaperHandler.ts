@@ -144,6 +144,42 @@ export const handleRollingCommand = async (
   }
 
   // 받은 (default — 둘 다 비웠을 때)
+  // Muel 의 *첫 카드* (2026-06-09): 사용자가 처음으로 받은 목록을 열었는데 카드가
+  // 0건이면, Muel author 로 한 줄 자동으로 박아둔다 (덮어쓰기 안 함). 한 번만 작동:
+  // (Muel, me) 카드가 이미 있으면 onConflict 가 막아줌. 또 차단 상태면 skip.
+  const muelAuthorId = interaction.client.user?.id ?? null;
+  if (muelAuthorId) {
+    const { data: muelExisting } = await supabase
+      .from('muel_rolling_papers')
+      .select('id')
+      .eq('author_id', muelAuthorId)
+      .eq('target_id', me)
+      .maybeSingle();
+    if (!muelExisting) {
+      const { data: muelBlocked } = await supabase
+        .from('muel_rolling_blocks')
+        .select('author_id')
+        .eq('target_id', me)
+        .eq('author_id', muelAuthorId)
+        .maybeSingle();
+      if (!muelBlocked) {
+        // 사용자 결정 (2026-06-09): "아직 서먹한 사이 / 괜찮은 사이 / 반가운 사이" 톤.
+        // 랜덤으로 하나. 자기 자리 잡아주는 느낌 — Muel 페르소나(반말 + dense).
+        const FIRST_CARD_TEMPLATES = [
+          '아직 서먹한 사이지만, 잘 부탁해.',
+          '괜찮은 사이로 지내자. 모르면 물어봐.',
+          '반가운 사이가 되면 좋겠어. 천천히 알아가.',
+        ];
+        const pick = FIRST_CARD_TEMPLATES[Math.floor(Math.random() * FIRST_CARD_TEMPLATES.length)];
+        // fire-and-forget — 실패해도 받은 목록 표시는 진행.
+        await supabase.from('muel_rolling_papers').upsert(
+          { author_id: muelAuthorId, target_id: me, content: pick, created_at: new Date().toISOString() },
+          { onConflict: 'author_id,target_id' },
+        );
+      }
+    }
+  }
+
   const [{ data: notes }, { data: blocks }] = await Promise.all([
     supabase.from('muel_rolling_papers').select('id, author_id, content, created_at').eq('target_id', me).order('created_at', { ascending: false }),
     supabase.from('muel_rolling_blocks').select('author_id, created_at').eq('target_id', me).order('created_at', { ascending: false }),
