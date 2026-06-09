@@ -19,7 +19,7 @@ import { buildAgentTools } from './agentTools.js';
 export type MuelAgentResult = {
   text: string;
   model: string;
-  provider: 'gemini' | 'nvidia' | 'none';
+  provider: 'gemini' | 'nvidia' | 'mindlogic' | 'none';
   metadata?: Record<string, unknown>;
 };
 
@@ -375,12 +375,13 @@ export const generateMuelReply = async (
 
   const tryGenerate = async (
     aiModel: any,
-    provider: 'gemini' | 'nvidia',
+    provider: 'gemini' | 'nvidia' | 'mindlogic',
     modelName: string,
     modelTools: Record<string, any>,
   ): Promise<MuelAgentResult> => {
     const { text, usage } = await generateText({
       model: aiModel,
+      maxRetries: 1,
       system: systemParts.join('\n'),
       messages,
       tools: modelTools,

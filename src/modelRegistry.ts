@@ -4,7 +4,7 @@ import { config } from './config.js';
 import { withTelemetry } from './aiMiddleware.js';
 
 export type MuelModelTask = 'chat' | 'router' | 'extract' | 'summary' | 'heavy' | 'vision';
-export type MuelModelProvider = 'gemini' | 'nvidia';
+export type MuelModelProvider = 'gemini' | 'nvidia' | 'mindlogic';
 
 export type ResolvedMuelModel = {
   model: any;
@@ -15,6 +15,7 @@ export type ResolvedMuelModel = {
 
 let googleProvider: ReturnType<typeof createGoogleGenerativeAI> | null = null;
 let nvidiaProvider: ReturnType<typeof createOpenAICompatible> | null = null;
+let mindlogicProvider: ReturnType<typeof createOpenAICompatible> | null = null;
 
 export const normalizeGeminiModelName = (modelName: string): string =>
   modelName.replace(/^models\//, '').trim();
@@ -37,6 +38,19 @@ const getNvidiaProvider = () => {
     });
   }
   return nvidiaProvider;
+};
+
+// MindLogic(명지전문대) API Gateway — OpenAI 호환. 한 키로 OpenAI/Anthropic/Gemini 등 통합.
+const getMindlogicProvider = () => {
+  if (!config.mindlogicApiKey) return null;
+  if (!mindlogicProvider) {
+    mindlogicProvider = createOpenAICompatible({
+      name: 'mindlogic',
+      baseURL: 'https://factchat-cloud.mindlogic.ai/v1/gateway',
+      apiKey: config.mindlogicApiKey,
+    });
+  }
+  return mindlogicProvider;
 };
 
 export const getModelIdForTask = (task: MuelModelTask): string => {
@@ -75,6 +89,19 @@ export const getPrimaryTextModel = (task: MuelModelTask): ResolvedMuelModel | nu
 };
 
 export const getFallbackTextModel = (task: MuelModelTask = 'heavy'): ResolvedMuelModel | null => {
+  // 1순위 폴백: MindLogic 게이트웨이(OpenAI 호환, 조직 크레딧). Gemini 직접 결제가 말라도 여기로.
+  const mindlogic = getMindlogicProvider();
+  if (mindlogic) {
+    const mlId = `mindlogic:${config.mindlogicModel}`;
+    const mlModel = mindlogic(config.mindlogicModel);
+    return {
+      model: withTelemetry(mlModel as any, { provider: 'mindlogic', modelId: mlId, task }),
+      provider: 'mindlogic',
+      modelId: mlId,
+      task,
+    };
+  }
+  // 2순위 폴백: NVIDIA NIM.
   const nvidia = getNvidiaProvider();
   if (!nvidia) return null;
   const modelId = `nvidia:${config.nvidiaModel}`;
