@@ -49,6 +49,8 @@ export const config = {
   muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 768),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),
   nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'meta/llama-3.2-90b-vision-instruct',
+  mindlogicApiKey: optionalEnv('MINDLOGIC_API_KEY'),
+  mindlogicModel: optionalEnv('MINDLOGIC_MODEL') ?? 'gemini-2.5-flash',
   nvidiaHeavyModel: optionalEnv('NVIDIA_HEAVY_MODEL') ?? 'deepseek-ai/deepseek-v4-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
