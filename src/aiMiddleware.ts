@@ -105,3 +105,48 @@ export const withTelemetry = (model: WrappableLM, ctx: TelemetryContext): Wrappa
     },
   });
 };
+
+/**
+ * Primary 모델 호출이 실패하면(예: Gemini 크레딧 고갈) fallback 모델로 *투명하게* 재시도.
+ * params 를 그대로 fallback 에 넘긴다(LanguageModel doGenerate/doStream 스펙 공통).
+ * 적용처: getGeminiTextModel — 전 레인(router/extract/summary/chat 등)이 자동 폴백.
+ */
+export const withFallback = (
+  primary: WrappableLM,
+  fallback: WrappableLM | null,
+  ctx: { fromModelId: string; toModelId: string; task?: string },
+): WrappableLM => {
+  if (!fallback) return primary;
+  return wrapLanguageModel({
+    model: primary,
+    middleware: {
+      // @ts-ignore AI SDK v6 middleware typing 미세 차이 — 정성적 cast.
+      wrapGenerate: async ({ doGenerate, params }: { doGenerate: () => Promise<any>; params: any }) => {
+        try {
+          return await doGenerate();
+        } catch (err) {
+          console.warn('[ai-fallback] generate primary->fallback', {
+            from: ctx.fromModelId,
+            to: ctx.toModelId,
+            task: ctx.task ?? '?',
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return await (fallback as any).doGenerate(params);
+        }
+      },
+      // @ts-ignore
+      wrapStream: async ({ doStream, params }: { doStream: () => Promise<any>; params: any }) => {
+        try {
+          return await doStream();
+        } catch (err) {
+          console.warn('[ai-fallback] stream primary->fallback', {
+            from: ctx.fromModelId,
+            to: ctx.toModelId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return await (fallback as any).doStream(params);
+        }
+      },
+    },
+  });
+};

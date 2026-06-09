@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { config } from './config.js';
-import { withTelemetry } from './aiMiddleware.js';
+import { withTelemetry, withFallback } from './aiMiddleware.js';
 
 export type MuelModelTask = 'chat' | 'router' | 'extract' | 'summary' | 'heavy' | 'vision';
 export type MuelModelProvider = 'gemini' | 'nvidia' | 'mindlogic';
@@ -70,14 +70,23 @@ export const getModelIdForTask = (task: MuelModelTask): string => {
   }
 };
 
+// Gemini 실패(크레딧 고갈 등) 시 폴백할 MindLogic 게이트웨이 모델(telemetry 포함).
+const buildGatewayLaneModel = (task: MuelModelTask): any => {
+  const mindlogic = getMindlogicProvider();
+  if (!mindlogic) return null;
+  const mlId = config.mindlogicModel;
+  return withTelemetry(mindlogic(mlId) as any, { provider: 'mindlogic', modelId: `mindlogic:${mlId}`, task });
+};
+
 export const getGeminiTextModel = (task: MuelModelTask): ResolvedMuelModel | null => {
   const google = getGoogleProvider();
   if (!google) return null;
   const modelId = normalizeGeminiModelName(getModelIdForTask(task));
-  // ADR-003 P2a/P10 — telemetry middleware 로 모든 호출에 latency/usage 로그.
-  const baseModel = google(modelId);
+  // ADR-003 P2a/P10 — telemetry middleware. + 전 레인 자동 폴백: Gemini 실패 시 MindLogic 게이트웨이로 투명 재시도.
+  const primary = withTelemetry(google(modelId) as any, { provider: 'gemini', modelId, task });
+  const gateway = buildGatewayLaneModel(task);
   return {
-    model: withTelemetry(baseModel as any, { provider: 'gemini', modelId, task }),
+    model: withFallback(primary, gateway, { fromModelId: modelId, toModelId: `mindlogic:${config.mindlogicModel}`, task }),
     provider: 'gemini',
     modelId,
     task,
