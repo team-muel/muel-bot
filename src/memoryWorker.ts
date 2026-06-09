@@ -138,17 +138,23 @@ export async function processMemoryJob(job: any) {
       prompt: `${SYSTEM_PROMPT}\n\nCONVERSATION:\n${conversationText}`,
     });
   } catch (aiError) {
+    const errClass = aiError instanceof Error ? aiError.name : typeof aiError;
+    const errMsg = aiError instanceof Error ? aiError.message : String(aiError);
+    const isSchemaFailure = errClass === 'AI_NoObjectGeneratedError' || errMsg.includes('did not match schema');
     void logMuelBackgroundAiEvent(supabase, {
       source: 'memory_worker',
-      status: 'error',
+      status: isSchemaFailure ? 'fallback' : 'error',
       taskType: 'extract',
       resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
       startedAt: extractStartedAt,
       chatId,
-      errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
-      errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+      errorClass: errClass,
+      errorMessage: errMsg.slice(0, 240),
+      fallbackReason: isSchemaFailure ? 'extract_schema_match_failed' : null,
       metadata: { step: 'extract', messageId },
     });
+    // schema 실패는 *추출 품질 실패* — 이 turn 만 skip, 다음 메시지에서 재시도. 진짜 인프라 에러만 throw.
+    if (isSchemaFailure) return;
     throw aiError;
   }
 
@@ -226,18 +232,27 @@ Task:
 - Choose "insert" if the new candidate is related but DISTINCT (e.g. "dislikes AI-branded UX" is distinct from "values technical transparency"), or completely new. DO NOT over-merge independent preferences.`,
         });
       } catch (aiError) {
+        const errClass = aiError instanceof Error ? aiError.name : typeof aiError;
+        const errMsg = aiError instanceof Error ? aiError.message : String(aiError);
+        const isSchemaFailure = errClass === 'AI_NoObjectGeneratedError' || errMsg.includes('did not match schema');
         void logMuelBackgroundAiEvent(supabase, {
           source: 'memory_worker',
-          status: 'error',
+          status: isSchemaFailure ? 'fallback' : 'error',
           taskType: 'extract',
           resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
           startedAt: mergeStartedAt,
           chatId,
-          errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
-          errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+          errorClass: errClass,
+          errorMessage: errMsg.slice(0, 240),
+          fallbackReason: isSchemaFailure ? 'merge_schema_match_failed' : null,
           metadata: { step: 'merge', messageId },
         });
-        throw aiError;
+        // merge schema 실패 → action='insert' default 로 진행 (안전한 쪽: 중복 가능성 약간 ↑ 보다 메모 누락이 더 큼).
+        if (isSchemaFailure) {
+          mergeResult = { object: { action: 'insert' as const, mergedContent: '', targetId: null }, usage: undefined };
+        } else {
+          throw aiError;
+        }
       }
 
       void logMuelBackgroundAiEvent(supabase, {
