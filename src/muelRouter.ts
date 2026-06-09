@@ -16,21 +16,36 @@ import { repairJsonText } from './aiRepair.js';
  * specific intents (e.g. 'spam') into actual decisions.
  */
 
+const ALLOWED_INTENTS = [
+  'cs_help',
+  'small_talk',
+  'news_query',
+  'memory_query',
+  'meta',
+  'spam',
+  'other',
+] as const;
+export type MuelRouterIntent = (typeof ALLOWED_INTENTS)[number];
+
+const isAllowedIntent = (v: unknown): v is MuelRouterIntent =>
+  typeof v === 'string' && (ALLOWED_INTENTS as readonly string[]).includes(v);
+
+/**
+ * 라우터 스키마 완화 (2026-06-09):
+ * - enum 강제 + thinkingBudget:512 에도 router 가 *No-object schema* 에러 빈번 (1h 18+건).
+ *   특히 mindlogic gateway 로 폴백된 경우 google providerOptions 미적용 → 모델이 enum 못 맞춤.
+ * - z.enum → z.string + transform 으로 *어떤 응답도 허용*, 후처리에서 allowed 가 아니면 'other'.
+ * - confidence/reason 도 누락 허용 + default. AI_NoObjectGeneratedError 빈도 ↓.
+ */
 const RouterSchema = z.object({
-  intent: z.enum([
-    'cs_help',
-    'small_talk',
-    'news_query',
-    'memory_query',
-    'meta',
-    'spam',
-    'other',
-  ]),
-  confidence: z.number().min(0).max(1),
-  reason: z.string().max(120).optional(),
+  intent: z
+    .string()
+    .describe('one of: cs_help | small_talk | news_query | memory_query | meta | spam | other')
+    .transform((v) => (isAllowedIntent(v) ? v : 'other')),
+  confidence: z.number().min(0).max(1).optional().default(0.5),
+  reason: z.string().max(240).optional(),
 });
 
-export type MuelRouterIntent = z.infer<typeof RouterSchema>['intent'];
 export type MuelRouterDecision = z.infer<typeof RouterSchema>;
 
 const ROUTER_PROMPT = [
@@ -99,21 +114,37 @@ export const classifyMentionIntent = async (
 
     return object;
   } catch (error) {
+    const errClass = error instanceof Error ? error.name : typeof error;
+    const errMsg = error instanceof Error ? error.message : String(error);
+
+    // 2026-06-09: schema 매칭 실패류 (AI_NoObjectGeneratedError) 는 *분류 실패* 일 뿐
+    // 시스템 에러가 아님. fallback intent='other' 로 적재해 alert 노이즈 제거. 진짜
+    // 인프라/결제 에러 (AI_RetryError 등) 만 status='error' 로 남긴다.
+    const isSchemaFailure = errClass === 'AI_NoObjectGeneratedError' || errMsg.includes('did not match schema');
+
     void logMuelBackgroundAiEvent(supabase, {
       source: 'discord',
-      status: 'error',
+      status: isSchemaFailure ? 'fallback' : 'error',
       taskType: 'router',
       resolvedModel: { provider: routerModel.provider, modelId: routerModel.modelId, task: routerModel.task },
       startedAt,
       chatId: args.chatId,
-      errorClass: error instanceof Error ? error.name : typeof error,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorClass: errClass,
+      errorMessage: errMsg.slice(0, 240),
+      fallbackReason: isSchemaFailure ? 'router_schema_match_failed' : null,
       metadata: {
+        intent: isSchemaFailure ? 'other' : null,
+        confidence: isSchemaFailure ? 0 : null,
+        reason: isSchemaFailure ? 'schema_match_failed' : null,
         discordGuildId: args.discordGuildId ?? null,
         discordChannelId: args.discordChannelId ?? null,
         discordUserId: args.discordUserId ?? null,
       },
     });
+
+    if (isSchemaFailure) {
+      return { intent: 'other', confidence: 0, reason: 'schema_match_failed' } satisfies MuelRouterDecision;
+    }
     return null;
   }
 };

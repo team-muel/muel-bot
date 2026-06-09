@@ -125,6 +125,7 @@ export const logMuelBackgroundAiEvent = (
     errorClass?: string | null;
     errorMessage?: string | null;
     chatId?: string | null;
+    fallbackReason?: string | null;
     metadata?: Record<string, unknown>;
   },
 ): Promise<string | null> => {
@@ -136,6 +137,7 @@ export const logMuelBackgroundAiEvent = (
     provider: args.resolvedModel.provider,
     model: args.resolvedModel.modelId,
     latencyMs: Date.now() - args.startedAt,
+    fallbackReason: args.fallbackReason ?? null,
     taskType: args.taskType,
     modelLane: args.resolvedModel.task,
     inputTokens: tokens.inputTokens,
