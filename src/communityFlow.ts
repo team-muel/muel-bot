@@ -17,10 +17,12 @@ type CommunityFlowPayload = {
   signalId: string;
 };
 
+// 스키마 완화 (2026-06-09): 모델이 max-길이 초과 응답해 AI_NoObjectGeneratedError 빈발 (30+건/h).
+// max → optional/큰 한도 + 후처리에서 trim. enum 제약은 없으므로 z.string 그대로 둠.
 const digestSchema = z.object({
-  title: z.string().max(80),
-  summary: z.string().max(800),
-  highlights: z.array(z.string().max(160)).max(5),
+  title: z.string().max(200).optional().default('대화 요약'),
+  summary: z.string().max(2000).optional().default(''),
+  highlights: z.array(z.string().max(300)).max(10).optional().default([]),
 });
 
 const bucketStartFor = (timestamp: number): number => Math.floor(timestamp / BUCKET_MS) * BUCKET_MS;
@@ -146,20 +148,34 @@ export const summarizeCommunityFlowJob = async (
       ].join('\n'),
     });
   } catch (aiError) {
+    const errClass = aiError instanceof Error ? aiError.name : typeof aiError;
+    const errMsg = aiError instanceof Error ? aiError.message : String(aiError);
+    // 2026-06-09: schema 매칭 실패는 *요약 품질 실패* — 시스템 에러 아님. signal 은
+    // 'ignored' 로 마감해서 cron retry 안 돌게 하고, 이벤트는 status='fallback' 으로 적재.
+    // triage alert 임계에서 빠짐. 진짜 인프라/결제 에러만 status='error'.
+    const isSchemaFailure = errClass === 'AI_NoObjectGeneratedError' || errMsg.includes('did not match schema');
     void logMuelBackgroundAiEvent(supabase, {
       source: 'community_flow',
-      status: 'error',
+      status: isSchemaFailure ? 'fallback' : 'error',
       taskType: 'summary',
       resolvedModel: { provider: summaryModel.provider, modelId: summaryModel.modelId, task: summaryModel.task },
       startedAt,
-      errorClass: aiError instanceof Error ? aiError.name : typeof aiError,
-      errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+      errorClass: errClass,
+      errorMessage: errMsg.slice(0, 240),
+      fallbackReason: isSchemaFailure ? 'summary_schema_match_failed' : null,
       metadata: {
         signalId: signal.id,
         guildId: signal.guild_id,
         channelId: signal.channel_id,
       },
     });
+    if (isSchemaFailure) {
+      await supabase.from('muel_community_signals').update({
+        status: 'ignored',
+        metadata: { ...(signal.metadata ?? {}), schema_match_failed: true },
+      }).eq('id', signal.id);
+      return;
+    }
     throw aiError;
   }
 

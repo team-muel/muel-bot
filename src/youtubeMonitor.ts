@@ -371,14 +371,18 @@ ${rawContent}`,
     });
     return { data: preserveSourceLiterals(rawContent, object), modelId: resolvedModel.modelId };
   } catch (error) {
+    const errClass = error instanceof Error ? error.name : typeof error;
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const isSchemaFailure = errClass === 'AI_NoObjectGeneratedError' || errMsg.includes('did not match schema');
     void logMuelBackgroundAiEvent(supabase, {
       source: 'youtube_monitor',
-      status: 'error',
+      status: isSchemaFailure ? 'fallback' : 'error',
       taskType: 'summary',
       resolvedModel: { provider: resolvedModel.provider, modelId: resolvedModel.modelId, task: resolvedModel.task },
       startedAt,
-      errorClass: error instanceof Error ? error.name : typeof error,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorClass: errClass,
+      errorMessage: errMsg.slice(0, 240),
+      fallbackReason: isSchemaFailure ? 'summary_schema_match_failed' : null,
       metadata: { step: 'edit_community_post', authorName },
     });
     console.warn('[youtube] failed to edit community post with AI', error);
