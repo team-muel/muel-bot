@@ -33,6 +33,7 @@ import { handleMuelActionButton, isMuelActionButton } from './actionConfirmation
 import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
 import { startProactiveScheduler } from './proactiveSpeaker.js';
 import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
+import { handleMemoProposalButton, isMemoProposalButton } from './memoProposal.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 
 let readyAt: string | null = null;
@@ -371,6 +372,8 @@ if (!config.enableHttpInteractions) {
         await handleMuelActionButton(getSupabaseClient(), interaction);
       } else if (isRollingButton(interaction.customId)) {
         await handleRollingButton(interaction);
+      } else if (isMemoProposalButton(interaction.customId)) {
+        await handleMemoProposalButton(interaction);
       }
       return;
     }

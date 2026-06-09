@@ -20,6 +20,7 @@ import { acquireMentionSlot, formatLimitReplyMessage } from './mentionRateLimit.
 import { logMuelAgentAction } from './agentActions.js';
 import { REACTION_DONE, tagMessage } from './agentReactions.js';
 import { classifyActionDraft } from './actionDraft.js';
+import { classifyProposeMemo, buildMemoProposalCard } from './memoProposal.js';
 import { buildHubActionConfirmation } from './actionConfirmations.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
@@ -414,6 +415,25 @@ export const handleMuelMention = async (
     });
 
     void tagMessage(message, REACTION_DONE);
+
+    // ADR-003 P4a propose_memo (2026-06-09): Muel 답 직후 사용자 발언이 *기억 가치* 있는지
+    // fire-and-forget 분류. should_propose=true 면 [가르치기][아니] 카드 발행. silent 멘션.
+    void (async () => {
+      try {
+        const proposal = await classifyProposeMemo(supabase, {
+          userText: userText,
+          chatId,
+          discordUserId: message.author.id,
+        });
+        if (!proposal?.should_propose || !proposal.content || proposal.content.trim().length < 5) return;
+        await message.reply({
+          ...buildMemoProposalCard(proposal.content),
+          allowedMentions: { parse: [], repliedUser: false },
+        });
+      } catch (err) {
+        console.warn('[propose-memo] follow-up failed', err);
+      }
+    })();
 
     // 지연 관찰 등록 — 답변 ~90초 뒤 이 메시지의 리액션/후속 반응을 보고 부정 피드백 적재.
     void schedulePendingObservation(supabase, {
