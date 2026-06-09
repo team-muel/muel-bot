@@ -111,6 +111,46 @@ export const withTelemetry = (model: WrappableLM, ctx: TelemetryContext): Wrappa
  * params 를 그대로 fallback 에 넘긴다(LanguageModel doGenerate/doStream 스펙 공통).
  * 적용처: getGeminiTextModel — 전 레인(router/extract/summary/chat 등)이 자동 폴백.
  */
+/**
+ * Fallback 호출 시 *Gemini native tools (googleSearch 등)* 를 params 에서 제거.
+ *
+ * 2026-06-09 (PR #103 후속): mindlogic gateway 의 OpenAI 호환 모델은 Gemini native
+ * tool 형식을 못 알아 듣고, *함수 호출 syntax 만* 텍스트로 emit → 사용자 노출.
+ * sanitizer (PR #103) 가 잡아주지만 root fix 는 *애초에 tools 안 넘기기*.
+ *
+ * 결과: fallback 모델은 search 결과 없이 답 — 단, *깨진 답 X*. 검색 기반 답을
+ * 굳이 fallback 까지 끌고 가지 않는 게 안전.
+ */
+const stripGoogleNativeTools = (params: any): any => {
+  if (!params || typeof params !== 'object') return params;
+  const cloned = { ...params };
+  if ('tools' in cloned) cloned.tools = undefined;
+  if ('toolChoice' in cloned) cloned.toolChoice = undefined;
+  return cloned;
+};
+
+/**
+ * fallback 응답에 *muel.fallback_used* 마커 박기.
+ * 호출자 (muelAgent 등) 가 `result.providerMetadata.muel.fallback_used` 확인 후
+ * muel_ai_events.provider 컬럼에 fallback provider 정확히 적재 가능.
+ */
+const markFallback = (result: any, ctx: { fromModelId: string; toModelId: string; task?: string }) => {
+  if (!result || typeof result !== 'object') return result;
+  return {
+    ...result,
+    providerMetadata: {
+      ...(result.providerMetadata ?? {}),
+      muel: {
+        ...(result.providerMetadata?.muel ?? {}),
+        fallback_used: true,
+        fallback_from: ctx.fromModelId,
+        fallback_to: ctx.toModelId,
+        fallback_task: ctx.task ?? null,
+      },
+    },
+  };
+};
+
 export const withFallback = (
   primary: WrappableLM,
   fallback: WrappableLM | null,
@@ -131,7 +171,9 @@ export const withFallback = (
             task: ctx.task ?? '?',
             error: err instanceof Error ? err.message : String(err),
           });
-          return await (fallback as any).doGenerate(params);
+          const fallbackParams = stripGoogleNativeTools(params);
+          const result = await (fallback as any).doGenerate(fallbackParams);
+          return markFallback(result, ctx);
         }
       },
       // @ts-ignore
@@ -144,7 +186,9 @@ export const withFallback = (
             to: ctx.toModelId,
             error: err instanceof Error ? err.message : String(err),
           });
-          return await (fallback as any).doStream(params);
+          const fallbackParams = stripGoogleNativeTools(params);
+          const result = await (fallback as any).doStream(fallbackParams);
+          return markFallback(result, ctx);
         }
       },
     },
