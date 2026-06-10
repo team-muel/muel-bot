@@ -3,12 +3,25 @@ import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/e
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
+import { isDemonKillerRole } from "../_shared/engine/roles.ts";
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
+  // 악마 풀(전부 처치)
   demon: ["demon_kill"],
+  phantom: ["demon_kill"],
+  malen: ["demon_kill"],
+  besto: ["demon_kill"],
+  // 천사 능동
+  dordan: ["police_investigate"], // 도르단 = 탐정 조사
+  habreterus: ["doctor_heal"],
+  mizlet: ["doctor_heal"],
+  helen: ["doctor_heal"],
+  romaz: ["romaz_suspect"],
+  // 중립
+  pasua: ["pasua_convert"],
+  // 레거시(현 로스터 미배정이나 정의는 유지)
   doctor: ["doctor_heal"],
   police: ["police_investigate"],
-  romaz: ["romaz_suspect"],
 };
 
 export function readOptionalString(
@@ -86,15 +99,27 @@ Deno.serve((req: Request) => {
       if (actionType === "demon_kill" && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
+      // 포교(파스아): 자기 자신 불가.
+      if (actionType === "pasua_convert" && targetUserId === claims.sub) {
+        throw badRequest("invalid_target", "자기 자신을 포교할 수 없습니다.");
+      }
       // H-4: night actions must target a living player.
       const { data: targetState } = await supabase
         .from("match_players")
-        .select("alive")
+        .select("alive, role")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
       if (!targetState || !targetState.alive) {
         throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
+      }
+      // 포교(파스아): 악마(처치자)·중립 포교 불가(canon §파스아). 가인 등 조력자·천사는 가능.
+      // 처치자 집합으로 판정 — 가인/루나 등 조력자는 faction='demon' 이나 처치자가 아니라 허용.
+      if (
+        actionType === "pasua_convert" &&
+        (isDemonKillerRole(targetState.role) || targetState.role === "pasua" || targetState.role === "converted")
+      ) {
+        throw badRequest("invalid_target", "악마와 중립은 포교할 수 없습니다.");
       }
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
@@ -120,8 +145,8 @@ Deno.serve((req: Request) => {
         .single();
       
       if (target) {
-        // Only the exact "demon" role shows up as demon. "helper" shows up as "angel" (not demon).
-        investigationResult = target.role === "demon" ? "demon" : "angel";
+        // 처치자(악마 풀)만 '악마'로 보인다. 조력자(가인 등)·천사·중립은 '천사'(=악마 아님).
+        investigationResult = isDemonKillerRole(target.role) ? "demon" : "angel";
       }
     }
 

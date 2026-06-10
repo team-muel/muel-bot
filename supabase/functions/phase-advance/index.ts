@@ -10,6 +10,7 @@ import {
   tallyVerdictVotes,
 } from "../_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
+import { DEMON_KILLER_ROLES } from "../_shared/engine/roles.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 import {
   firstNightTransition,
@@ -65,6 +66,9 @@ function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseN
     const engineState = row.engine_state || {};
     const currentRole = typeof engineState.currentRole === "string" ? engineState.currentRole : row.role;
     const treatedAsFaction = typeof engineState.treatedAsFaction === "string" ? engineState.treatedAsFaction : row.faction;
+    // 포교(파스아)로 진영이 바뀌면 DB faction 컬럼이 아니라 engine_state.currentFaction
+    // 에 영속화된다(전향자는 천사→중립). 없으면 DB faction 으로 폴백.
+    const currentFaction = typeof engineState.currentFaction === "string" ? engineState.currentFaction : row.faction;
 
     state.players[row.user_id] = {
       userId: row.user_id,
@@ -73,7 +77,7 @@ function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseN
       baseVoteValue: typeof engineState.baseVoteValue === "number" ? engineState.baseVoteValue : 1,
       bonusVoteValue: typeof engineState.bonusVoteValue === "number" ? engineState.bonusVoteValue : 0,
       suspicionValue: typeof engineState.suspicionValue === "number" ? engineState.suspicionValue : 0,
-      actualFaction: row.faction as PlayerState["actualFaction"],
+      actualFaction: currentFaction as PlayerState["actualFaction"],
       treatedAsFaction: treatedAsFaction as PlayerState["treatedAsFaction"],
       alive: row.alive,
       markedForDeath: false,
@@ -108,6 +112,52 @@ function revealedPlayers(players: DbPlayer[]) {
     faction: player.faction,
     alive: player.alive,
   }));
+}
+
+// 변종 선택 마감(role_assign → 첫째 밤 직전). 미선택(악마/조력자) 슬롯은 풀에서 랜덤
+// 폴백하고, 변종 확정 후 가인이 있으면 악마에게 보호막 1을 재계산해 심는다.
+async function finalizeRoleSelection(supabase: ReturnType<typeof getSupabaseAdmin>, matchId: string) {
+  const rows = requireNoError(
+    await supabase
+      .from("match_players")
+      .select("user_id, role, engine_state")
+      .eq("match_id", matchId),
+  ) as Array<{ user_id: string; role: string; engine_state: Record<string, unknown> | null }>;
+
+  // 1. 미선택 변종 랜덤 폴백
+  for (const p of rows) {
+    const es = (p.engine_state ?? {}) as Record<string, unknown>;
+    const pending = es.pendingSelection as { pool?: unknown } | undefined;
+    const pool = pending && Array.isArray(pending.pool) ? (pending.pool as string[]) : null;
+    if (pool && pool.length > 0) {
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const next = { ...es };
+      delete next.pendingSelection;
+      requireNoError(
+        await supabase.from("match_players").update({ role: pick, engine_state: next }).eq("match_id", matchId).eq("user_id", p.user_id),
+      );
+      p.role = pick;
+      p.engine_state = next;
+    }
+  }
+
+  // 2. 가인 → 악마 보호막 재계산 (선택이 끝나야 가인 여부가 확정되므로 여기서)
+  if (rows.some((p) => p.role === "gain")) {
+    const demon = rows.find((p) => DEMON_KILLER_ROLES.includes(p.role));
+    if (demon) {
+      const es = (demon.engine_state ?? {}) as Record<string, unknown>;
+      const counters =
+        es.counters && typeof es.counters === "object" && !Array.isArray(es.counters)
+          ? { ...(es.counters as Record<string, number>) }
+          : {};
+      if (!((counters.shield ?? 0) > 0)) {
+        counters.shield = 1;
+        requireNoError(
+          await supabase.from("match_players").update({ engine_state: { ...es, counters } }).eq("match_id", matchId).eq("user_id", demon.user_id),
+        );
+      }
+    }
+  }
 }
 
 async function loadPlayers(supabase: ReturnType<typeof getSupabaseAdmin>, matchId: string): Promise<DbPlayer[]> {
@@ -159,7 +209,8 @@ async function finishMatchIfWon(
         visibility: "public",
         payload: {
           winner: win.winner,
-          winning_faction: win.winner === "angels" ? "angel" : "demon",
+          winning_faction:
+            win.winner === "angels" ? "angel" : win.winner === "neutral" ? "neutral" : "demon",
           alive_angels: win.aliveAngels,
           alive_demons: win.aliveDemons,
           players: revealedPlayers(players),
@@ -238,7 +289,8 @@ Deno.serve((req: Request) => {
       let nextPhaseNumber = phase.phase_number;
 
       if (phase.phase_type === "role_assign") {
-        // role 배정 직후 첫째 밤으로. 첫째 밤은 안내성으로 짧게.
+        // 변종 선택 마감: 미선택 폴백 + 가인→악마 보호막 재계산. 그 뒤 첫째 밤으로.
+        await finalizeRoleSelection(supabase, matchId);
         const transition = firstNightTransition();
         nextPhaseType = transition.phaseType;
         nextDurationSec = transition.durationSec;
@@ -296,6 +348,9 @@ Deno.serve((req: Request) => {
               tags: playerState.tags,
               counters: playerState.counters,
               currentRole: playerState.currentRole,
+              // 포교로 바뀐 진영을 영속화(전향자 → neutral). 다음 리로드에서
+              // playerStateFromRows 가 이 값을 actualFaction 으로 복원한다.
+              currentFaction: playerState.actualFaction,
             };
 
             const updatePayload: Record<string, unknown> = { engine_state: nextEngineState };
