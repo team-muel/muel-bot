@@ -8,7 +8,7 @@
  * - 'neutral': Colorless/unset. Used for external feeds (YouTube, News) to act as a neutral container.
  * - 'warning': For errors or destructive actions.
  */
-export type RenderTone = 'muel' | 'neutral' | 'warning' | 'success' | 'game';
+export type RenderTone = 'muel' | 'neutral' | 'warning' | 'success';
 
 /**
  * A structured section inside a card — rendered as a Discord embed field with a
