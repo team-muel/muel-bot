@@ -5,6 +5,7 @@ import {
   TAG_SUSPECTED,
   checkWinCondition,
   resolveNightActions,
+  resolveNightmares,
   tallyEliminationVotes,
   tallySuspicionVotes,
   tallyVerdictVotes,
@@ -338,7 +339,7 @@ Deno.serve((req: Request) => {
             // 부활/치료=3, 처치=4, 조사·색출·포교=5.
             priority:
               action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" ? 1
-                : action.actionType === "demon_kill" ? 4
+                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" ? 4
                 : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" || action.actionType === "arthur_emberblade" ? 3
                 : 5,
           }));
@@ -453,6 +454,30 @@ Deno.serve((req: Request) => {
         nextDurationSec = transition.durationSec;
         nextPhaseNumber = transition.phaseNumber;
       } else if (phase.phase_type === "night_resolve") {
+        // 아침 해소: 악몽(팬텀) 표식 보유 생존자 탈락. 밤 능력 해소와 분리된 단계라
+        // 1_NIGHT 보호로 막히지 않는다(canon 악몽).
+        const nmState = playerStateFromRows(matchId, "day", phase.phase_number, players);
+        const nmEvents = resolveNightmares(nmState.players) as Array<{ payload?: { user_id?: string } }>;
+        for (const ev of nmEvents) {
+          const uid = ev.payload?.user_id;
+          if (!uid) continue;
+          const dbp = players.find((p) => p.user_id === uid);
+          const nextEngineState = { ...(dbp?.engine_state || {}), counters: nmState.players[uid]?.counters ?? {} };
+          requireNoError(
+            await supabase
+              .from("match_players")
+              .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "night_kill", engine_state: nextEngineState })
+              .eq("match_id", matchId)
+              .eq("user_id", uid),
+          );
+          requireNoError(
+            await supabase
+              .from("match_events")
+              .insert({ match_id: matchId, phase_id: phase.id, event_type: "nightmare_death", visibility: "public", payload: { user_id: uid } }),
+          );
+        }
+        if (nmEvents.length > 0) players = await loadPlayers(supabase, matchId);
+
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
           results.push({ matchId, advancedTo: "ended", winner: win.winner });
