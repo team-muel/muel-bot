@@ -304,4 +304,21 @@ for (const v of ["corrupted", "luna_corrupt", "logen_nullify"]) {
   assert.match(helperMig, new RegExp(`'${v}'`), `migration allows ${v}`);
 }
 
+// --- M4-1 변환 이력 reveal (canon §9): 종료 시 이전→최종 직업/진영 공개 ---
+assert.match(
+  phaseAdvanceSrc,
+  /final_role: finalRole,\s*final_faction: finalFaction/,
+  "reveal 에 최종 직업/진영 포함",
+);
+assert.match(
+  phaseAdvanceSrc,
+  /es\.currentRole === "string" \? es\.currentRole : player\.role/,
+  "최종 직업은 engine_state.currentRole 우선",
+);
+assert.match(
+  phaseAdvanceSrc,
+  /changed: finalRole !== player\.role \|\| finalFaction !== player\.faction/,
+  "변환 여부 플래그",
+);
+
 console.log("Gomdori v2 abilities (봉인/부활/변환) checks passed");
