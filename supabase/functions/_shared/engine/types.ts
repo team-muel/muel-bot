@@ -49,7 +49,10 @@ export interface Effect {
   //   해소(resolveNightmares)에서 탈락. 재적용 시 영면(나중 단계).
   // Possess(말렌 빙의): 대상 그 밤 행동 봉인(silencedNights) + 그 라운드 악마팀으로 카운트
   //   (counters.possessed, 라운드 한정 — checkWinCondition 이 demon 버킷으로 셈).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess";
+  // Disguise(베스토 변신): self 토글 — counters.disguised(0 하베스토→악마 판정 / 1 솔→조사 시 천사).
+  // Rebrand(대악마 낙인): 대상의 currentRole 을 임의의 천사 직업으로 재배정(직업 삭제→비밀 재배정).
+  // Eclipse(팬텀 일식): self.counters.eclipse=1 — phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀 소멸.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse";
   target: "self" | "Target" | "All";
   amount?: number;
   tag?: string;

@@ -24,7 +24,7 @@ for (const id of [...DEMON_KILLER_ROLES, ...HELPER_ROLES, ...ANGEL_ROLES]) {
 // --- 2. 진영/능력 형상 ---
 for (const id of DEMON_KILLER_ROLES) {
   assert.equal(def(id)!.faction, "demon", `${id} faction demon`);
-  assert.ok(def(id)!.actions.night?.some((a) => a.id === "demon_kill" || a.id === "phantom_nightmare" || a.id === "malen_release"), `${id} 처치 능력(처치/악몽/혼령 방출)`);
+  assert.ok(def(id)!.actions.night?.some((a) => a.id === "demon_kill" || a.id === "phantom_nightmare" || a.id === "malen_release" || a.id === "besto_hidden"), `${id} 처치 능력(처치/악몽/혼령 방출/히든)`);
   assert.ok(isDemonKillerRole(id), `${id} 처치자 판정`);
 }
 for (const id of HELPER_ROLES) {

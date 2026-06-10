@@ -335,11 +335,11 @@ Deno.serve((req: Request) => {
             sourceUserId: action.actorUserId,
             targetUserId: action.targetUserId,
             actionType: action.actionType || "",
-            // 봉인(세이카/팬텀)은 가장 먼저(1) — 대상 능력보다 앞서 처리돼 그 밤을 막는다.
-            // 부활/치료=3, 처치=4, 조사·색출·포교=5.
+            // 봉인(세이카/팬텀)·변신(베스토 self)은 가장 먼저(1) — 대상 능력보다 앞서 처리.
+            // 부활/치료=3, 처치=4, 조사·색출·포교·낙인·일식=5.
             priority:
-              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" ? 1
-                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" ? 4
+              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" || action.actionType === "besto_shift" ? 1
+                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "besto_hidden" ? 4
                 : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" || action.actionType === "arthur_emberblade" ? 3
                 : 5,
           }));
@@ -478,14 +478,46 @@ Deno.serve((req: Request) => {
         }
         if (nmEvents.length > 0) players = await loadPlayers(supabase, matchId);
 
+        // 일식(팬텀): counters.eclipse 표식 보유자는 이 아침에 소멸하고, 아침(day) 대신
+        // 다음 밤으로 넘어간다. 표식은 소비(0). 팬텀 소멸이 승패에 영향하므로 win 체크 전에.
+        let eclipseActive = false;
+        for (const p of players) {
+          const counters = (p.engine_state as { counters?: { eclipse?: number } } | null)?.counters;
+          if (p.alive && (counters?.eclipse ?? 0) > 0) {
+            eclipseActive = true;
+            const nextCounters = { ...(counters as Record<string, number>), eclipse: 0 };
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "night_kill", engine_state: { ...(p.engine_state || {}), counters: nextCounters } })
+                .eq("match_id", matchId)
+                .eq("user_id", p.user_id),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({ match_id: matchId, phase_id: phase.id, event_type: "eclipse_annihilation", visibility: "public", payload: { user_id: p.user_id } }),
+            );
+          }
+        }
+        if (eclipseActive) players = await loadPlayers(supabase, matchId);
+
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
           results.push({ matchId, advancedTo: "ended", winner: win.winner });
           continue;
         }
 
-        nextPhaseType = "day";
-        nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
+        if (eclipseActive) {
+          // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로.
+          const transition = nextNightSuspectTransition(phase.phase_number);
+          nextPhaseType = transition.phaseType;
+          nextDurationSec = transition.durationSec;
+          nextPhaseNumber = transition.phaseNumber;
+        } else {
+          nextPhaseType = "day";
+          nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
+        }
       } else if (phase.phase_type === "day") {
         nextPhaseType = "vote";
         nextDurationSec = GOMDORI_RULES.phases.vote.durationSec;

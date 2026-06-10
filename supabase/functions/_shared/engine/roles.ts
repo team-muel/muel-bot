@@ -43,7 +43,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 대악마(악마-1): 만악의 근원·메피스토 낙인. v1 시그니처 = 처치(낙인 재배정 v2). vault [[대악마]].
+    // 대악마(악마-1): 처치 + 메피스토 낙인(대상 직업 삭제→임의 천사 직업으로 비밀 재배정). vault [[대악마]].
     id: "demon",
     name: "대악마",
     faction: "demon",
@@ -57,6 +57,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           priority: 4,
           effects: [{ type: "Kill", target: "Target" }],
         },
+        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Rebrand", target: "Target" }] },
       ],
     },
   },
@@ -162,6 +163,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Nightmare", target: "Target" }] },
         { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
+        { id: "phantom_eclipse", name: "일식", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Eclipse", target: "self" }] },
       ],
     },
   },
@@ -180,14 +182,15 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 베스토(악마-14): 변신(솔/하베스토)·히든 포지션. v1 처치(변신/히든 v2). vault [[베스토]].
+    // 베스토(악마-14): 히든 포지션(처치) + 변신(솔/하베스토 토글 — 조사 회피). 배후 다단계는 후속.
     id: "besto",
     name: "베스토",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "besto_shift", name: "변신", targetType: "SELF", priority: 1, effects: [{ type: "Disguise", target: "self" }] },
       ],
     },
   },
