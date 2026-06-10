@@ -140,6 +140,8 @@ const read = (p: string) => readFileSync(p, "utf8");
 const migration = read("supabase/migrations/20260610120000_gomdori_w6_pasua_neutral.sql");
 const matchStart = read("supabase/functions/match-start/index.ts");
 const matchAction = read("supabase/functions/match-action/index.ts");
+const matchSettings = read("supabase/functions/match-settings/index.ts");
+const sharedGame = read("supabase/functions/_shared/game.ts");
 const roles = read("supabase/functions/_shared/engine/roles.ts");
 
 for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
@@ -147,8 +149,27 @@ for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
 }
 assert.match(migration, /settings jsonb not null default '\{\}'/, "matches.settings 컬럼이 추가되어야 한다");
 assert.match(matchStart, /if \(spawnPasua\) roles\.push\(\{ role: "pasua", faction: "neutral" \}\)/, "파스아 슬롯 배정");
-assert.match(matchStart, /includeNeutral/, "중립 등장은 게임 설정 게이트");
 assert.match(matchAction, /pasua: \["pasua_convert"\]/, "파스아 밤 행동 허용");
 assert.match(roles, /id: "pasua"[\s\S]*?faction: "neutral"/, "파스아 엔진 진영은 neutral");
+
+// --- M3-1 중립 확률 등장 (결정 잠금 #2) ---
+// 게이트: 모드 해석은 공유 헬퍼, auto 는 확률 스폰, on/off 는 호스트 오버라이드.
+assert.match(matchStart, /resolveNeutralMode\(match\.settings\)/, "중립 모드는 settings 에서 해석");
+assert.match(
+  matchStart,
+  /neutralMode === "on" \|\|\s*\(neutralMode === "auto" && Math\.random\(\) < NEUTRAL_SPAWN_CHANCE\)/,
+  "auto = 확률 스폰, on = 강제 등장",
+);
+assert.match(matchStart, /playerCount >= PASUA_MIN_PLAYERS/, "적격 인원 게이트 유지");
+assert.match(sharedGame, /NEUTRAL_MODES[\s\S]*?"auto", "on", "off"/, "중립 모드 enum");
+assert.match(sharedGame, /includeNeutral === true\) return "on"/, "레거시 includeNeutral=true → on");
+assert.match(sharedGame, /includeNeutral === false\) return "off"/, "레거시 includeNeutral=false → off");
+assert.match(sharedGame, /return "auto"/, "기본은 auto(존재를 알 수 없음)");
+
+// match-settings: 호스트 전용 로비 설정 변경 — allowlist 머지.
+assert.match(matchSettings, /invalid_neutral_mode/, "neutral 값 검증");
+assert.match(matchSettings, /not_host/, "호스트 전용 가드");
+assert.match(matchSettings, /not_lobby/, "로비 전용 가드");
+assert.match(matchSettings, /\.eq\("status", "lobby"\)/, "갱신 시 로비 상태 레이스 가드");
 
 console.log("Gomdori W6 파스아 checks passed");

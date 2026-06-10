@@ -2,7 +2,14 @@ import { preflight, jsonResponse } from "../_shared/cors.ts";
 import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
-import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
+import {
+  NEUTRAL_SPAWN_CHANCE,
+  type NeutralMode,
+  getMatch,
+  readJsonObject,
+  readRequiredString,
+  resolveNeutralMode,
+} from "../_shared/game.ts";
 import { ANGEL_ROLES, DEMON_KILLER_ROLES, HELPER_ROLES } from "../_shared/engine/roles.ts";
 
 // pending: 악마/조력자 슬롯은 role_assign 단계에서 *플레이어가 변종을 선택*한다(canon §5
@@ -23,18 +30,23 @@ function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
-function generateRoles(playerCount: number, includeNeutral = false): RoleCard[] {
+function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): RoleCard[] {
   // 기본 로스터(canon "기본" 시트) — "시민(무직)" 폐지, 전원이 명명 직업을 받는다.
   // DB faction 은 'angel' | 'demon' | 'neutral' — 가인 등 위장 직업은 role + engine_state.
   // 팀 구성(canon §1·§21):
   //   악마팀 = 악마 풀에서 1(대악마/팬텀/말렌/베스토) + 조력자 풀에서 1(가인/루나/로건/엘런) = 항상 2.
   //   천사팀 = 나머지 슬롯을 천사 풀에서 distinct 랜덤 추첨(대천사 off, 미포함).
-  //   중립팀 = 파스아(1) — includeNeutral 게임 설정 + 8인 이상에서만, 천사 슬롯 1 대체(W6).
+  //   중립팀 = 파스아(1) — 8인 이상에서 천사 슬롯 1 대체(W6). 등장 여부는 확률형(M3-1,
+  //   결정 잠금 #2): auto = NEUTRAL_SPAWN_CHANCE 확률(참여자는 존재를 알 수 없다),
+  //   on = 강제 등장, off = 제외 — 호스트가 로비 게임 설정으로 오버라이드.
   if (playerCount < 5 || playerCount > 12) {
     throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
   }
 
-  const spawnPasua = includeNeutral && playerCount >= PASUA_MIN_PLAYERS;
+  const neutralEligible = playerCount >= PASUA_MIN_PLAYERS;
+  const spawnPasua = neutralEligible &&
+    (neutralMode === "on" ||
+      (neutralMode === "auto" && Math.random() < NEUTRAL_SPAWN_CHANCE));
 
   const roles: RoleCard[] = [];
   // 악마팀: 악마 1 + 조력자 1 — 변종은 role_assign 단계에서 본인이 선택(pending).
@@ -127,9 +139,10 @@ Deno.serve((req: Request) => {
       throw conflict("players_not_ready", "모든 참가자가 준비를 완료해야 합니다.");
     }
 
-    // 1. Assign roles. 중립(파스아) 포함 여부는 로비 게임 설정(matches.settings.includeNeutral).
-    const includeNeutral = match.settings?.includeNeutral === true;
-    const roles = generateRoles(players.length, includeNeutral);
+    // 1. Assign roles. 중립(파스아) 등장 모드는 로비 게임 설정(matches.settings.neutral,
+    //    레거시 includeNeutral 불리언도 resolveNeutralMode 가 흡수).
+    const neutralMode = resolveNeutralMode(match.settings);
+    const roles = generateRoles(players.length, neutralMode);
     const assignments = players.map((p, index) => ({
       user_id: p.user_id,
       role: roles[index].role,

@@ -31,6 +31,28 @@ export type PlayerSummary = {
   faction: string | null;
 };
 
+// --- 중립(파스아) 등장 모드 (M3-1, 결정 잠금 #2) ---
+// 기본은 "auto" = 존재 여부를 알 수 없는 확률 스폰. 호스트는 로비 게임 설정에서
+// "on"(강제 등장) / "off"(제외) 로 오버라이드할 수 있다(대규모 인원 UI).
+export type NeutralMode = "auto" | "on" | "off";
+
+export const NEUTRAL_MODES: readonly NeutralMode[] = ["auto", "on", "off"];
+
+// auto 모드에서 적격 인원일 때 중립이 실제로 등장할 확률.
+// 0.5 = "있는지 없는지 모른다"를 전략적으로 최대화. 수치 튜닝은 후속(결정 잠금 #5).
+export const NEUTRAL_SPAWN_CHANCE = 0.5;
+
+export function resolveNeutralMode(settings: Record<string, unknown>): NeutralMode {
+  const raw = settings.neutral;
+  if (typeof raw === "string" && (NEUTRAL_MODES as readonly string[]).includes(raw)) {
+    return raw as NeutralMode;
+  }
+  // 레거시 호환: 구 includeNeutral 불리언이 명시돼 있으면 의도를 보존한다.
+  if (settings.includeNeutral === true) return "on";
+  if (settings.includeNeutral === false) return "off";
+  return "auto";
+}
+
 export function readJsonObject(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw badRequest("invalid_json", "Expected a JSON object.");
