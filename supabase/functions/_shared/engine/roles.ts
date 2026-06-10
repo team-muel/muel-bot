@@ -166,14 +166,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 말렌(악마-7): 강령술·빙의·혼령 방출. v1 처치(빙의/혼 v2). vault [[말렌]].
+    // 말렌(악마-7): 혼령 방출(처치) + 빙의(그 밤 행동 봉인 + 악마팀 카운트 전환, priority 1).
+    // 말렌의 처치 능력은 canon '혼령 방출'. 혼/시체 누적 다단계는 후속.
     id: "malen",
     name: "말렌",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Possess", target: "Target" }] },
       ],
     },
   },

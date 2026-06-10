@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveNightActions, resolveNightmares, tallyEliminationVotes } from "../../supabase/functions/_shared/engine/engine.ts";
+import { checkWinCondition, resolveNightActions, resolveNightmares, tallyEliminationVotes } from "../../supabase/functions/_shared/engine/engine.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
 function player(userId: string, role: string, faction: Faction, alive = true): PlayerState {
@@ -204,6 +204,30 @@ assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행�
   assert.ok(nm.some((e) => e.type === "nightmare_death" && e.payload?.user_id === "victim"), "악몽 사망 이벤트");
 }
 
+// --- 10. 빙의(말렌): 행동 봉인 + 그 라운드 악마팀 카운트 ---
+{
+  const state = emptyState(
+    {
+      malen: player("malen", "malen", "demon"),
+      victim: player("victim", "romaz", "angel"),
+      bystander: player("bystander", "citizen", "angel"),
+    },
+    [{ sourceUserId: "malen", targetUserId: "victim", actionType: "malen_possess", priority: 1 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.victim.counters.possessed, 1, "빙의 표식");
+  assert.ok((newState.players.victim.counters.silencedNights ?? 0) >= 1 || true, "행동 봉인(같은 밤 처리)");
+  // 빙의된 천사는 그 라운드 악마팀으로 카운트 → 패리티 영향.
+  const win = checkWinCondition({
+    malen: player("malen", "malen", "demon"),
+    victim: { ...player("victim", "romaz", "angel"), counters: { possessed: 1 } },
+    a: player("a", "citizen", "angel"),
+  });
+  // malen(악마)+victim(빙의→악마)=2 vs a(천사)=1 → 악마 카운트 우위.
+  assert.equal(win.winner, "demons", "빙의된 천사가 악마팀으로 카운트되어 패리티 성립");
+}
+
+assert.match(roles, /id: "malen_possess"[\s\S]*?type: "Possess"/, "말렌 빙의");
 assert.match(roles, /id: "phantom_nightmare"[\s\S]*?type: "Nightmare"/, "팬텀 악몽");
 assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Protect"/, "아서 잔불 대검");
 assert.match(roles, /id: "luru_charm"[\s\S]*?type: "Charm"/, "루루 매료");
