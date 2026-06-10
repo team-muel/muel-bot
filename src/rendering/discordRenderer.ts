@@ -1,11 +1,14 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
 import type { MuelRenderablePart, RenderTone, CardSection, CardActionButton, CardSelectMenu } from './types.js';
+import { MUEL_INFO_COLOR } from '../uiColors.js';
 
 function toneColor(tone?: RenderTone): number | null {
   if (tone === 'muel') return 0xa2e61d;
   if (tone === 'warning') return 0xff3b30;
   if (tone === 'success') return 0x34c759;
-  if (tone === 'game') return 0x8e7cff;
+  // 'game' is the neutral info/help violet (e.g. /도감), shared with the
+  // memo-proposal and rolling-paper cards via MUEL_INFO_COLOR.
+  if (tone === 'game') return MUEL_INFO_COLOR;
   return null;
 }
 
