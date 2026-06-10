@@ -289,12 +289,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 아서(천사-14): 여명의 기사(탈락 면역). v1 = 패시브 자기 보호막 1(배정 시 shield 주입). vault [[아서]].
+    // 아서(천사-14): 여명의 기사(배정 시 자기 보호막 1) + 잔불 대검 = 대상에게 하루 무적(v2).
     id: "arthur",
     name: "아서",
     faction: "angel",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+      ],
+    },
   },
   {
     // 세이카(천사-12): 초신성 = 그 밤 대상의 능력 발동을 봉인(v2). priority 1(먼저 처리).
@@ -309,12 +313,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 루루(천사-30): 연주·매료·투표 양도. v1 = 패시브(매료 v2). vault [[루루]].
+    // 루루(천사-30): 영혼을 만지는 음색 = 매료(v2). 대상의 처형 투표를 무력화하고 루루에게 양도.
     id: "luru",
     name: "루루",
     faction: "angel",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "luru_charm", name: "영혼을 만지는 음색", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Charm", target: "Target" }] },
+      ],
+    },
   },
 ];
 
