@@ -22,6 +22,7 @@ import {
   formatYouTubeTarget,
   toKindLabel,
 } from './subscribePresentation.js';
+import { ingestPendingUserMemos } from './userMemoIngest.js';
 
 type JobRow = {
   id: string;
@@ -54,6 +55,9 @@ type JobWorkerStatus = {
 };
 
 const POLL_INTERVAL_MS = 5_000;
+// RI-3 (ADR-004): user_memo 인박스 ingest 는 잡 폴링(5s)보다 느린 주기로 — 비싼 embedding 호출 절약.
+const USER_MEMO_INGEST_INTERVAL_MS = 60_000;
+let lastUserMemoIngestAt = 0;
 const INTERACTION_EPHEMERAL_FLAG = 1 << 6;
 
 const workerStatus: JobWorkerStatus = {
@@ -279,6 +283,13 @@ export const runJobWorkerLoop = async () => {
       console.error('[jobs] worker loop error', error);
     } finally {
       workerStatus.lastLoopFinishedAt = new Date().toISOString();
+    }
+
+    // RI-3: 미처리 user_memo 인박스를 회수 가능한 장기기억으로 승격(주기 게이트). throw 안 함.
+    if (Date.now() - lastUserMemoIngestAt > USER_MEMO_INGEST_INTERVAL_MS) {
+      lastUserMemoIngestAt = Date.now();
+      const n = await ingestPendingUserMemos(supabase);
+      if (n > 0) console.log(`[jobs] user-memo ingest: ${n} promoted to memory_entries`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
