@@ -83,7 +83,7 @@ export const classifyMentionIntent = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage } = await generateObject({
+    const { object, usage, providerMetadata } = await generateObject({
       model: routerModel.model,
       maxRetries: 1,
       schema: RouterSchema,
@@ -101,6 +101,7 @@ export const classifyMentionIntent = async (
       resolvedModel: { provider: routerModel.provider, modelId: routerModel.modelId, task: routerModel.task },
       startedAt,
       usage,
+      providerMetadata,
       chatId: args.chatId,
       metadata: {
         intent: object.intent,

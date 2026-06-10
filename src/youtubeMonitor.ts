@@ -340,7 +340,7 @@ export const editCommunityPost = async (authorName: string, rawContent: string):
   const startedAt = Date.now();
 
   try {
-    const { object, usage } = await generateObject({
+    const { object, usage, providerMetadata } = await generateObject({
       model: resolvedModel.model,
       schema: CommunityPostSchema,
       prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card for Korean Discord users.
@@ -367,6 +367,7 @@ ${rawContent}`,
       resolvedModel: { provider: resolvedModel.provider, modelId: resolvedModel.modelId, task: resolvedModel.task },
       startedAt,
       usage,
+      providerMetadata,
       metadata: { step: 'edit_community_post', authorName },
     });
     return { data: preserveSourceLiterals(rawContent, object), modelId: resolvedModel.modelId };

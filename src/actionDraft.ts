@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { repairJsonText } from './aiRepair.js';
-import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
+import { classifyAiError, logMuelBackgroundAiEvent } from './muelAiEvents.js';
 
 const ActionDraftSchema = z.object({
   action: z.enum(['none', 'hub_activate', 'hub_deactivate']),
@@ -46,7 +46,7 @@ export const classifyActionDraft = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage } = await generateObject({
+    const { object, usage, providerMetadata } = await generateObject({
       model: model.model,
       schema: ActionDraftSchema,
       experimental_repairText: repairJsonText,
@@ -62,6 +62,7 @@ export const classifyActionDraft = async (
       resolvedModel: { provider: model.provider, modelId: model.modelId, task: model.task },
       startedAt,
       usage,
+      providerMetadata,
       chatId: args.chatId ?? null,
       metadata: {
         action: object.action,
@@ -75,15 +76,19 @@ export const classifyActionDraft = async (
 
     return object;
   } catch (error) {
+    // 스키마 매칭 실패(AI_NoObjectGeneratedError)는 분류 실패일 뿐 — fallback 으로 적재해
+    // sentinel 임계 노이즈에서 뺀다(router/summary/extract 와 일관). 진짜 인프라 에러만 error.
+    const c = classifyAiError(error);
     void logMuelBackgroundAiEvent(supabase, {
       source: 'discord',
-      status: 'error',
+      status: c.status,
       taskType: 'action_draft',
       resolvedModel: { provider: model.provider, modelId: model.modelId, task: model.task },
       startedAt,
       chatId: args.chatId ?? null,
-      errorClass: error instanceof Error ? error.name : typeof error,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorClass: c.errorClass,
+      errorMessage: c.errorMessage.slice(0, 240),
+      fallbackReason: c.isSchemaFailure ? 'action_draft_schema_match_failed' : null,
       metadata: {
         discordGuildId: args.discordGuildId ?? null,
         discordChannelId: args.discordChannelId ?? null,

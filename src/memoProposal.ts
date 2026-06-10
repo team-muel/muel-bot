@@ -67,7 +67,7 @@ export const classifyProposeMemo = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage } = await generateObject({
+    const { object, usage, providerMetadata } = await generateObject({
       model: model.model,
       schema: ProposeMemoSchema,
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 256 } } },
@@ -81,6 +81,7 @@ export const classifyProposeMemo = async (
       resolvedModel: { provider: model.provider, modelId: model.modelId, task: model.task },
       startedAt,
       usage,
+      providerMetadata,
       chatId: args.chatId ?? null,
       metadata: {
         should_propose: object.should_propose,
