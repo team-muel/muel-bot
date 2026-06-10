@@ -1,5 +1,5 @@
 import type { Effect, MatchState, PlayerState } from "./types.ts";
-import { CORE_ROLES, isDemonKillerRole } from "./roles.ts";
+import { ANGEL_ROLES, CORE_ROLES, isDemonKillerRole } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
@@ -449,6 +449,25 @@ function applyEffect(
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       target.counters.possessed = 1;
       events.push({ type: "possessed", payload: { user_id: target.userId } });
+      break;
+    case "Disguise":
+      // 변신(베스토): self 토글. 0=하베스토(악마 판정) / 1=솔(조사 시 천사로 회피).
+      target.counters.disguised = (target.counters?.disguised ?? 0) > 0 ? 0 : 1;
+      events.push({ type: "disguise_toggled", payload: { user_id: target.userId, disguised: target.counters.disguised } });
+      break;
+    case "Rebrand":
+      // 메피스토 낙인(대악마): 대상의 직업 삭제 → 임의의 천사 직업으로 비밀 재배정.
+      // currentRole 만 바꾼다(원직업은 originalRole 에 남아 게임 종료 시 함께 공개, canon §9).
+      if (ANGEL_ROLES.length > 0) {
+        const next = ANGEL_ROLES[Math.floor(Math.random() * ANGEL_ROLES.length)];
+        target.currentRole = next;
+        events.push({ type: "rebranded", payload: { user_id: target.userId } });
+      }
+      break;
+    case "Eclipse":
+      // 일식(팬텀): self 표식. phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀을 소멸시킨다.
+      target.counters.eclipse = 1;
+      events.push({ type: "eclipse_cast", payload: { user_id: target.userId } });
       break;
     case "Nightmare":
       // 악몽(팬텀): 지연 탈락 표식 누적. 밤 보호(Protect, 1_NIGHT)는 밤 종료 시 사라지므로

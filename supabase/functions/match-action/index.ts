@@ -7,13 +7,15 @@ import { HELPER_ROLES, isDemonKillerRole } from "../_shared/engine/roles.ts";
 
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
+// 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
+const SELF_ACTIONS = ["phantom_eclipse", "besto_shift"];
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀
-  demon: ["demon_kill"],
-  phantom: ["phantom_nightmare", "phantom_seal"], // 악몽(지연 처치) + 어둠이 내린 도시(봉인, v2)
+  demon: ["demon_kill", "daeakma_brand"], // 처치 + 메피스토 낙인(재배정, v2)
+  phantom: ["phantom_nightmare", "phantom_seal", "phantom_eclipse"], // 악몽 + 봉인 + 일식(self, v2)
   malen: ["malen_release", "malen_possess"], // 혼령 방출(처치) + 빙의(봉인+카운트, v2)
-  besto: ["demon_kill"],
+  besto: ["besto_hidden", "besto_shift"], // 히든 포지션(처치) + 변신(self 조사 회피, v2)
   // 천사 능동
   dordan: ["police_investigate"], // 도르단 = 탐정 조사
   habreterus: ["doctor_heal"],
@@ -105,14 +107,16 @@ Deno.serve((req: Request) => {
       if (!allowedActions.includes(actionType)) {
         throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
       }
+      // 변신(베스토)·일식(팬텀) 등 SELF 행동은 대상 없이 자기에게 발동 — 대상 검증 생략.
+      if (!SELF_ACTIONS.includes(actionType)) {
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
-      // M-1: 악마 처치(처치/악몽/혼령 방출)는 자기 자신 불가.
-      if (["demon_kill", "phantom_nightmare", "malen_release"].includes(actionType) && targetUserId === claims.sub) {
+      // M-1: 악마 처치(처치/악몽/혼령 방출/히든 포지션)는 자기 자신 불가.
+      if (["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden"].includes(actionType) && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
-      // 포교·변환·무력화·박해·투쟁·잔불대검·매료: 자기 자신 불가.
+      // 포교·변환·무력화·박해·투쟁·잔불대검·매료·빙의·낙인: 자기 자신 불가.
       if (
-        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm", "malen_possess"].includes(actionType) &&
+        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm", "malen_possess", "daeakma_brand"].includes(actionType) &&
         targetUserId === claims.sub
       ) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
@@ -148,6 +152,7 @@ Deno.serve((req: Request) => {
       ) {
         throw badRequest("invalid_target", "천사만 타락시킬 수 있습니다.");
       }
+      } // end !SELF_ACTIONS 대상 검증
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
     } else if (match.status === "verdict") {
@@ -166,14 +171,16 @@ Deno.serve((req: Request) => {
     if (actionType === "police_investigate" && targetUserId) {
       const { data: target } = await supabase
         .from("match_players")
-        .select("role")
+        .select("role, engine_state")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
-      
+
       if (target) {
         // 처치자(악마 풀)만 '악마'로 보인다. 조력자(가인 등)·천사·중립은 '천사'(=악마 아님).
-        investigationResult = isDemonKillerRole(target.role) ? "demon" : "angel";
+        // 베스토 변신(솔): counters.disguised>0 이면 처치자라도 '천사'로 회피.
+        const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
+        investigationResult = (isDemonKillerRole(target.role) && !disguised) ? "demon" : "angel";
       }
     }
 
