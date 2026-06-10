@@ -104,5 +104,8 @@ verify_jwt = false
 [functions.match-leave]
 verify_jwt = false
 
+[functions.match-settings]
+verify_jwt = false
+
 [realtime]
 enabled = true
