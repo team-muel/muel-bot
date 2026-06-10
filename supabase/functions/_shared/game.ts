@@ -12,6 +12,9 @@ export type MatchSummary = {
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  // 로비 게임 설정(jsonb). 예: { includeNeutral: true } → 파스아(중립) 등장.
+  // 토글 UI 는 후속(로비 설정 UI). 기본 미설정 = 비활성.
+  settings: Record<string, unknown>;
 };
 
 export type PlayerSummary = {
@@ -58,6 +61,10 @@ export function toMatchSummary(row: Record<string, unknown>): MatchSummary {
     createdAt: String(row.created_at),
     startedAt: typeof row.started_at === "string" ? row.started_at : null,
     endedAt: typeof row.ended_at === "string" ? row.ended_at : null,
+    settings:
+      row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+        ? (row.settings as Record<string, unknown>)
+        : {},
   };
 }
 

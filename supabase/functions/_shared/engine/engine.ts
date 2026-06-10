@@ -1,5 +1,5 @@
 import type { Effect, MatchState, PlayerState } from "./types.ts";
-import { CORE_ROLES } from "./roles.ts";
+import { CORE_ROLES, isDemonKillerRole } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
@@ -27,10 +27,15 @@ export type VerdictTallyResult = {
 };
 
 export type WinConditionResult = {
-  winner: "angels" | "demons" | null;
+  winner: "angels" | "demons" | "neutral" | null;
   aliveAngels: number;
   aliveDemons: number;
 };
+
+// 파스아(중립) 단독 승리 임계 — 누적 전향 N명. (사용자 결정 2026-06-10: 3명.
+// v1 엔 신앙=살해가 없으므로 전향만으로 도달. canon 룰카드 4명은 단일 신규 직업엔
+// 느려서 3으로 하향.)
+export const PASUA_WIN_CONVERTS = 3;
 
 export function getRoleDefinition(roleId: string) {
   return CORE_ROLES.find((role) => role.id === roleId);
@@ -280,6 +285,16 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   let angelCount = 0;
   let demonCount = 0;
 
+  // 파스아 교세 — 누적 전향(생사 무관) 수와 파스아 생존 여부. 전향자는 currentRole
+  // 이 'converted' 로 바뀌고, 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔
+  // 잡히지 않는다(아래 bucket=null).
+  let pasuaAlive = false;
+  let pasuaFlock = 0;
+  for (const player of Object.values(players)) {
+    if (player.currentRole === "pasua" && player.alive) pasuaAlive = true;
+    if (player.currentRole === "converted") pasuaFlock += 1;
+  }
+
   for (const player of Object.values(players)) {
     const faction = player.treatedAsFaction || player.actualFaction;
     const bucket =
@@ -308,8 +323,12 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     }
   }
 
-  let winner: "angels" | "demons" | null = null;
-  if (aliveDemons === 0) {
+  // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
+  // 파스아가 살아있고 누적 전향이 임계 이상이면 중립 승리.
+  let winner: "angels" | "demons" | "neutral" | null = null;
+  if (pasuaAlive && pasuaFlock >= PASUA_WIN_CONVERTS) {
+    winner = "neutral";
+  } else if (aliveDemons === 0) {
     winner = "angels";
   } else if (demonCount >= angelCount) {
     winner = "demons";
@@ -355,7 +374,18 @@ function applyEffect(
       events.push({ type: "suspicion_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
       break;
     case "ChangeFaction":
-      if (target.actualFaction !== "demon" && target.actualFaction !== "neutral") {
+      // 포교(파스아): 천사 + 조력자(가인)만 전향 가능. 악마(currentRole 'demon')·이미
+      // 중립(파스아/전향자)은 불가. 가인은 DB faction 이 'demon' 이지만 currentRole 이
+      // 'gain' 이므로 전향 대상 — actualFaction 이 아니라 currentRole 로 차단한다.
+      // 카운트 보존: actualFaction 을 neutral 로 바꿔 천사/악마 버킷에서 빠지게 하고,
+      // currentRole='converted' 로 교세에 합류. phase-advance 가 engine_state.currentFaction
+      // 으로 영속화한다.
+      if (
+        !isDemonKillerRole(target.currentRole) &&
+        target.currentRole !== "pasua" &&
+        target.currentRole !== "converted" &&
+        target.actualFaction !== "neutral"
+      ) {
         target.actualFaction = "neutral";
         target.currentRole = "converted";
         events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "neutral" } });
