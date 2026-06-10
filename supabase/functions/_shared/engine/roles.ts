@@ -43,15 +43,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
+    // 대악마(악마-1): 만악의 근원·메피스토 낙인. v1 시그니처 = 처치(낙인 재배정 v2). vault [[대악마]].
     id: "demon",
-    name: "Demon",
+    name: "대악마",
     faction: "demon",
     passives: [],
     actions: {
       night: [
         {
           id: "demon_kill",
-          name: "Kill",
+          name: "처치",
           targetType: "SINGLE_ALIVE",
           priority: 4,
           effects: [{ type: "Kill", target: "Target" }],
@@ -136,4 +137,168 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {},
   },
+
+  // === 기본 로스터 (canon "기본" 시트) — v1 시그니처를 기존 프리미티브에 매핑. ===
+  // 고유 다단계 능력은 각 vault 카드 + v2. "시민(무직)" 폐지 — 전원 명명 직업.
+
+  // --- 악마 풀 (1명 뽑힘): 전부 v1 처치. 'demon'(대악마)은 위 정의 재사용. ---
+  {
+    // 팬텀(악마-2): 침묵의 밤·악몽·일식. v1 처치(봉인/지연 v2). vault [[팬텀]].
+    id: "phantom",
+    name: "팬텀",
+    faction: "demon",
+    passives: [],
+    actions: {
+      night: [
+        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+      ],
+    },
+  },
+  {
+    // 말렌(악마-7): 강령술·빙의·혼령 방출. v1 처치(빙의/혼 v2). vault [[말렌]].
+    id: "malen",
+    name: "말렌",
+    faction: "demon",
+    passives: [],
+    actions: {
+      night: [
+        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+      ],
+    },
+  },
+  {
+    // 베스토(악마-14): 변신(솔/하베스토)·히든 포지션. v1 처치(변신/히든 v2). vault [[베스토]].
+    id: "besto",
+    name: "베스토",
+    faction: "demon",
+    passives: [],
+    actions: {
+      night: [
+        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+      ],
+    },
+  },
+
+  // --- 조력자 풀 (1명 뽑힘): 악마 회로 패시브. 가인(위 정의)만 보호막. ---
+  {
+    // 루나(조력자-5): 달의 사제(천사→악마 변환). v1 패시브 조력자(변환 v2). vault [[루나]].
+    id: "luna",
+    name: "루나",
+    faction: "demon",
+    passives: [],
+    actions: {},
+  },
+  {
+    // 로건(조력자-10): 부서진 펜던트(능력 소멸·접선). v1 패시브 조력자(고유 v2). vault [[로건]].
+    id: "logen",
+    name: "로건",
+    faction: "demon",
+    passives: [],
+    actions: {},
+  },
+  {
+    // 엘런(조력자-13): 박해자(투표가치 조작). v1 패시브 조력자(고유 v2). vault [[엘런]].
+    id: "ellen",
+    name: "엘런",
+    faction: "demon",
+    passives: [],
+    actions: {},
+  },
+
+  // --- 천사 풀 (나머지, 랜덤 distinct). 로마즈/라이너는 위 정의 재사용. ---
+  {
+    // 도르단(천사-3): 탐정 조사. v1 = 조사(police_investigate 재사용). vault [[도르단]].
+    id: "dordan",
+    name: "도르단",
+    faction: "angel",
+    passives: [],
+    actions: {
+      night: [
+        { id: "police_investigate", name: "조사", targetType: "SINGLE_ALIVE", priority: 5, effects: [] },
+      ],
+    },
+  },
+  {
+    // 하브레터스(천사-4): 생명의 언약 = 치료. v1 = 치료(doctor_heal 재사용). vault [[하브레터스]].
+    id: "habreterus",
+    name: "하브레터스",
+    faction: "angel",
+    passives: [],
+    actions: {
+      night: [
+        { id: "doctor_heal", name: "치료", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+      ],
+    },
+  },
+  {
+    // 미즐렛(천사-15): 디저트·보호. v1 = 치료(부활/와인 v2). vault [[미즐렛]].
+    id: "mizlet",
+    name: "미즐렛",
+    faction: "angel",
+    passives: [],
+    actions: {
+      night: [
+        { id: "doctor_heal", name: "보호", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+      ],
+    },
+  },
+  {
+    // 헬렌(천사-17): 황금빛 수면·보호. v1 = 보호(부활/수면 복귀 v2). vault [[헬렌]].
+    id: "helen",
+    name: "헬렌",
+    faction: "angel",
+    passives: [],
+    actions: {
+      night: [
+        { id: "doctor_heal", name: "보호", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+      ],
+    },
+  },
+  {
+    // 우노(천사-6): 군인·명예. v1 = 패시브 천사팀 카운트 +1(배정 시 countBonus 주입). vault [[우노]].
+    id: "uno",
+    name: "우노",
+    faction: "angel",
+    passives: [],
+    actions: {},
+  },
+  {
+    // 아서(천사-14): 여명의 기사(탈락 면역). v1 = 패시브 자기 보호막 1(배정 시 shield 주입). vault [[아서]].
+    id: "arthur",
+    name: "아서",
+    faction: "angel",
+    passives: [],
+    actions: {},
+  },
+  {
+    // 세이카(천사-12): 초신성(효과 제거·봉인). v1 = 패시브(봉인 v2). vault [[세이카]].
+    id: "seika",
+    name: "세이카",
+    faction: "angel",
+    passives: [],
+    actions: {},
+  },
+  {
+    // 루루(천사-30): 연주·매료·투표 양도. v1 = 패시브(매료 v2). vault [[루루]].
+    id: "luru",
+    name: "루루",
+    faction: "angel",
+    passives: [],
+    actions: {},
+  },
 ];
+
+// === 기본 로스터 진영 풀 / 판정 세트 (match-start·match-action·engine 공유) ===
+// 악마 처치자(살해 능력 보유). 조사·포교 차단 판정은 이 집합 기준 — 가인 등 조력자는
+// faction='demon' 이지만 처치자가 아니므로 조사 시 '천사'로 보인다(canon §1).
+export const DEMON_KILLER_ROLES = ["demon", "phantom", "malen", "besto"];
+// 조력자 풀(악마팀, 조사 시 천사). 가인만 보호막(배정 시 주입).
+export const HELPER_ROLES = ["gain", "luna", "logen", "ellen"];
+// 천사 풀 — match-start 가 나머지 슬롯을 여기서 distinct 추첨(대천사 미포함, off).
+export const ANGEL_ROLES = [
+  "romaz", "rainer", "dordan", "habreterus", "mizlet", "helen", "uno", "arthur", "seika", "luru",
+];
+
+export function isDemonKillerRole(role?: string | null): boolean {
+  return !!role && DEMON_KILLER_ROLES.includes(role);
+}

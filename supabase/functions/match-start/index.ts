@@ -3,67 +3,71 @@ import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/e
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
+import { ANGEL_ROLES, DEMON_KILLER_ROLES, HELPER_ROLES, isDemonKillerRole } from "../_shared/engine/roles.ts";
 
 type RoleCard = { role: string; faction: "angel" | "demon" | "neutral" };
 
 // W6 중립(파스아) 등장 최소 인원. 중립은 천사 머릿수를 1 줄이므로 큰 게임에서만.
 const PASUA_MIN_PLAYERS = 8;
 
-function pushRole(cards: RoleCard[], count: number, role: string, faction: RoleCard["faction"]) {
-  for (let i = 0; i < count; i++) cards.push({ role, faction });
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 function generateRoles(playerCount: number, includeNeutral = false): RoleCard[] {
-  // W4 v1: 가인/로마즈/라이너는 5인부터 항상 배정(전원이 직업을 받고 시작하는 원안).
-  // DB faction 은 'angel' | 'demon' | 'neutral'(W6 파스아) — 가인 등 위장 직업은
-  // role + engine_state 로 표현.
-  // 팀 구성:
-  //   악마팀 = 악마(1) + 가인(조력자, 1) — 이변이 없으면 항상 2명.
-  //   천사팀 = 로마즈(1) + 라이너(1) + 의사(1, 5인+) + 경찰(1, 6인+) + 나머지 시민
-  //   중립팀 = 파스아(1) — includeNeutral 게임 설정 + 8인 이상에서만, 시민 1 대체(W6 v1).
+  // 기본 로스터(canon "기본" 시트) — "시민(무직)" 폐지, 전원이 명명 직업을 받는다.
+  // DB faction 은 'angel' | 'demon' | 'neutral' — 가인 등 위장 직업은 role + engine_state.
+  // 팀 구성(canon §1·§21):
+  //   악마팀 = 악마 풀에서 1(대악마/팬텀/말렌/베스토) + 조력자 풀에서 1(가인/루나/로건/엘런) = 항상 2.
+  //   천사팀 = 나머지 슬롯을 천사 풀에서 distinct 랜덤 추첨(대천사 off, 미포함).
+  //   중립팀 = 파스아(1) — includeNeutral 게임 설정 + 8인 이상에서만, 천사 슬롯 1 대체(W6).
   if (playerCount < 5 || playerCount > 12) {
     throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
   }
 
-  // 파스아는 게임 설정(includeNeutral)이 켜졌고 인원이 충분할 때만. 로비 토글 UI 는 후속.
   const spawnPasua = includeNeutral && playerCount >= PASUA_MIN_PLAYERS;
 
   const roles: RoleCard[] = [];
-  // 악마팀
-  pushRole(roles, 1, "demon", "demon");
-  pushRole(roles, 1, "gain", "demon");
-  // 천사팀
-  pushRole(roles, 1, "romaz", "angel");
-  pushRole(roles, 1, "rainer", "angel");
-  pushRole(roles, 1, "doctor", "angel");
-  pushRole(roles, playerCount >= 6 ? 1 : 0, "police", "angel");
-  // 중립팀(파스아) — 시민 슬롯 1개를 대체한다.
-  pushRole(roles, spawnPasua ? 1 : 0, "pasua", "neutral");
-  // 나머지 슬롯은 시민으로 채움
-  const remaining = playerCount - roles.length;
-  pushRole(roles, remaining, "citizen", "angel");
-
-  // Shuffle roles
-  for (let i = roles.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [roles[i], roles[j]] = [roles[j], roles[i]];
+  // 악마팀: 악마 1 + 조력자 1 (각 풀에서 랜덤 1)
+  roles.push({ role: shuffle(DEMON_KILLER_ROLES)[0], faction: "demon" });
+  roles.push({ role: shuffle(HELPER_ROLES)[0], faction: "demon" });
+  // 중립(파스아)
+  if (spawnPasua) roles.push({ role: "pasua", faction: "neutral" });
+  // 천사: 남은 슬롯을 천사 풀에서 distinct 추첨. ANGEL_ROLES(10) 은 12인(악마+조력자 제외 10)까지 커버.
+  const angelSlots = playerCount - roles.length;
+  for (const role of shuffle(ANGEL_ROLES).slice(0, angelSlots)) {
+    roles.push({ role, faction: "angel" });
   }
 
-  return roles;
+  return shuffle(roles); // 좌석 순서 무작위화(누가 무엇인지 위치로 새지 않게)
 }
 
 function engineStateForAssignment(role: string, hasGain: boolean): Record<string, unknown> | null {
   const counters: Record<string, number> = {};
 
   if (role === "rainer") {
-    // 라이너 백호: 천사팀 카운트 +1, 생존 무관. canon 은 +3 이나, 5인부터 라이너를 항상
-    // 배정하므로 전멸 시에도 deadCountBonus 가 악마팀 카운트 이상이면 악마가 영영 못 이긴다.
-    // 그래서 v1 은 +1 (악마팀 최소 2 > 1). 표준 인원이 커지면 재상향 검토.
+    // 라이너 백호: 천사팀 카운트 +1, 생존 무관(deadCountBonus). v1 은 +1.
     counters.countBonus = 1;
     counters.deadCountBonus = 1;
   }
 
-  if (hasGain && role === "demon") {
+  if (role === "uno") {
+    // 우노 명예: 생존 시 천사팀 카운트 +1 (canon 은 +10, v1 은 +1).
+    counters.countBonus = 1;
+  }
+
+  if (role === "arthur") {
+    // 아서 여명의 기사: 자기 보호막 1 (밤 살해·처형 1회 무효). canon 탈락 면역의 v1 축약.
+    counters.shield = 1;
+  }
+
+  if (hasGain && isDemonKillerRole(role)) {
+    // 가인(조력자)이 있으면 뽑힌 악마에게 보호막 1.
     counters.shield = 1;
   }
 

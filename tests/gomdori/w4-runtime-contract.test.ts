@@ -17,10 +17,10 @@ for (const value of ["night_suspect", "suspect", "romaz_suspect", "rainer", "rom
 }
 
 assert.match(migration, /mp\.faction = 'demon'/, "demon circle membership should follow faction");
-// W4 v1: 가인/로마즈/라이너는 5인부터 항상 배정.
-assert.match(matchStart, /pushRole\(roles, 1, "gain", "demon"\)/, "gain should be assigned from 5p");
-assert.match(matchStart, /pushRole\(roles, 1, "romaz", "angel"\)/, "romaz should be assigned from 5p");
-assert.match(matchStart, /pushRole\(roles, 1, "rainer", "angel"\)/, "rainer should be assigned from 5p");
+// 기본 로스터: 진영 풀에서 추첨(가인/로마즈/라이너 고정 배정은 폐지됨 — w6-roster 참조).
+assert.match(matchStart, /shuffle\(DEMON_KILLER_ROLES\)/, "demon drawn from demon pool");
+assert.match(matchStart, /shuffle\(HELPER_ROLES\)/, "helper drawn from helper pool");
+assert.match(matchStart, /shuffle\(ANGEL_ROLES\)/, "angels drawn distinct from angel pool");
 assert.match(matchStart, /counters\.shield = 1/, "gain should seed demon shield");
 assert.match(matchAction, /romaz: \["romaz_suspect"\]/, "romaz night action should be accepted");
 assert.match(matchChat, /select\("faction, alive"\)/, "demon chat should check faction, not fixed role list");

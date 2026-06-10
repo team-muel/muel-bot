@@ -1,5 +1,5 @@
 import type { Effect, MatchState, PlayerState } from "./types.ts";
-import { CORE_ROLES } from "./roles.ts";
+import { CORE_ROLES, isDemonKillerRole } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
@@ -381,7 +381,7 @@ function applyEffect(
       // currentRole='converted' 로 교세에 합류. phase-advance 가 engine_state.currentFaction
       // 으로 영속화한다.
       if (
-        target.currentRole !== "demon" &&
+        !isDemonKillerRole(target.currentRole) &&
         target.currentRole !== "pasua" &&
         target.currentRole !== "converted" &&
         target.actualFaction !== "neutral"

@@ -146,7 +146,7 @@ for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
   assert.match(migration, new RegExp(`'${value}'`), `migration should allow ${value}`);
 }
 assert.match(migration, /settings jsonb not null default '\{\}'/, "matches.settings 컬럼이 추가되어야 한다");
-assert.match(matchStart, /pushRole\(roles, spawnPasua \? 1 : 0, "pasua", "neutral"\)/, "파스아 슬롯 배정");
+assert.match(matchStart, /if \(spawnPasua\) roles\.push\(\{ role: "pasua", faction: "neutral" \}\)/, "파스아 슬롯 배정");
 assert.match(matchStart, /includeNeutral/, "중립 등장은 게임 설정 게이트");
 assert.match(matchAction, /pasua: \["pasua_convert"\]/, "파스아 밤 행동 허용");
 assert.match(roles, /id: "pasua"[\s\S]*?faction: "neutral"/, "파스아 엔진 진영은 neutral");
