@@ -401,10 +401,24 @@ function applyEffect(
       }
       break;
     case "Silence":
-      // 봉인: 대상의 그 밤 능력 발동을 막는다(세이카 초신성·팬텀 어둠이 내린 도시).
+      // 봉인: 대상의 그 밤 능력 발동을 막는다(세이카 초신성·팬텀 어둠이 내린 도시·로건 무력화).
       // 봉인 액션이 priority 1 이라 대상 능력보다 먼저 처리됨. 밤 종료 시 자동 해제.
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       events.push({ type: "silenced", payload: { user_id: target.userId } });
+      break;
+    case "Corrupt":
+      // 타락(루나): 천사를 악마팀으로. 천사만 — 악마(처치자)·조력자·중립·이미 타락은 불가.
+      // actualFaction='demon' 으로 악마 카운트에 합류, currentRole='corrupted'(능력 없음).
+      // phase-advance 가 engine_state.currentFaction 으로 영속화한다.
+      if (
+        target.actualFaction === "angel" &&
+        !isDemonKillerRole(target.currentRole) &&
+        target.currentRole !== "corrupted"
+      ) {
+        target.actualFaction = "demon";
+        target.currentRole = "corrupted";
+        events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "demon" } });
+      }
       break;
   }
 }

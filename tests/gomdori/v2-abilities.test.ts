@@ -81,4 +81,39 @@ const matchAction = readFileSync("supabase/functions/match-action/index.ts", "ut
 assert.match(matchAction, /REVIVE_ACTIONS/, "부활은 탈락자 대상 검증");
 assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행동 허용");
 
-console.log("Gomdori v2 abilities (봉인/부활) checks passed");
+// --- 4. 변환(루나 공포 속에 밀어 넣다): 천사 → 악마팀 ---
+{
+  const state = emptyState(
+    {
+      luna: player("luna", "luna", "demon"),
+      angel: player("angel", "citizen", "angel"),
+    },
+    [{ sourceUserId: "luna", targetUserId: "angel", actionType: "luna_corrupt", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.angel.actualFaction, "demon", "천사가 악마팀으로 타락");
+  assert.equal(newState.players.angel.currentRole, "corrupted", "타락자 역할");
+  assert.ok(events.some((e: any) => e.type === "faction_changed" && e.payload?.new_faction === "demon"), "변환 이벤트");
+}
+// 악마는 타락 불가
+{
+  const state = emptyState(
+    {
+      luna: player("luna", "luna", "demon"),
+      demon: player("demon", "demon", "demon"),
+    },
+    [{ sourceUserId: "luna", targetUserId: "demon", actionType: "luna_corrupt", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.demon.currentRole, "demon", "악마는 타락하지 않음");
+}
+
+assert.match(roles, /id: "luna_corrupt"[\s\S]*?type: "Corrupt"/, "루나 변환");
+assert.match(roles, /id: "logen_nullify"[\s\S]*?type: "Silence"/, "로건 무력화(봉인)");
+assert.match(matchAction, /luna: \["luna_corrupt"\]/, "루나 변환 행동 허용");
+const helperMig = readFileSync("supabase/migrations/20260610150000_gomdori_v2_helpers.sql", "utf8");
+for (const v of ["corrupted", "luna_corrupt", "logen_nullify"]) {
+  assert.match(helperMig, new RegExp(`'${v}'`), `migration allows ${v}`);
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환) checks passed");

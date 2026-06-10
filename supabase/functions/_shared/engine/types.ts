@@ -40,7 +40,9 @@ export interface ActionPayload {
 export interface Effect {
   // Silence(봉인): 대상의 그 밤 능력 발동을 막는다. 봉인 액션은 priority 를 가장 낮게(=먼저)
   //   둬서, 대상의 능력보다 앞서 resolveNightActions 에서 처리되도록 한다(세이카/팬텀).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence";
+  // Corrupt(루나 공포 속에 밀어 넣다): 천사를 악마팀으로 타락(currentRole='corrupted',
+  //   actualFaction='demon'). ChangeFaction 이 중립화(파스아)인 것과 대칭.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt";
   target: "self" | "Target" | "All";
   amount?: number;
   tag?: string;
