@@ -57,6 +57,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.voteBias = 0;
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
+      counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
     }
   }
 
@@ -328,7 +329,9 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   }
 
   for (const player of Object.values(players)) {
-    const faction = player.treatedAsFaction || player.actualFaction;
+    // 빙의(말렌): 그 라운드 악마팀으로 카운트.
+    const possessed = (player.counters?.possessed ?? 0) > 0;
+    const faction = possessed ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
       faction === "demon" || faction === "helper"
         ? "demon"
@@ -440,6 +443,12 @@ function applyEffect(
       target.counters.charmed = 1;
       _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
       events.push({ type: "charmed", payload: { user_id: target.userId, by: _source.userId } });
+      break;
+    case "Possess":
+      // 빙의(말렌): 대상 그 밤 행동 봉인 + 그 라운드 악마팀으로 카운트(possessed).
+      target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
+      target.counters.possessed = 1;
+      events.push({ type: "possessed", payload: { user_id: target.userId } });
       break;
     case "Nightmare":
       // 악몽(팬텀): 지연 탈락 표식 누적. 밤 보호(Protect, 1_NIGHT)는 밤 종료 시 사라지므로

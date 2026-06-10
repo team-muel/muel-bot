@@ -12,7 +12,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀
   demon: ["demon_kill"],
   phantom: ["phantom_nightmare", "phantom_seal"], // 악몽(지연 처치) + 어둠이 내린 도시(봉인, v2)
-  malen: ["demon_kill"],
+  malen: ["malen_release", "malen_possess"], // 혼령 방출(처치) + 빙의(봉인+카운트, v2)
   besto: ["demon_kill"],
   // 천사 능동
   dordan: ["police_investigate"], // 도르단 = 탐정 조사
@@ -106,13 +106,13 @@ Deno.serve((req: Request) => {
         throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
       }
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
-      // M-1: 악마 처치(처치/악몽)는 자기 자신 불가.
-      if ((actionType === "demon_kill" || actionType === "phantom_nightmare") && targetUserId === claims.sub) {
+      // M-1: 악마 처치(처치/악몽/혼령 방출)는 자기 자신 불가.
+      if (["demon_kill", "phantom_nightmare", "malen_release"].includes(actionType) && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
       // 포교·변환·무력화·박해·투쟁·잔불대검·매료: 자기 자신 불가.
       if (
-        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm"].includes(actionType) &&
+        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm", "malen_possess"].includes(actionType) &&
         targetUserId === claims.sub
       ) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");

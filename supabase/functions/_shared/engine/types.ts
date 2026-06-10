@@ -47,7 +47,9 @@ export interface Effect {
   //   그 투표 권한을 루루에게 양도(루루 counters.voteWeightBonus +1, 지속).
   // Nightmare(팬텀 악몽): 지연 탈락 — counters.nightmare 누적. 밤 보호로 못 막고, 아침
   //   해소(resolveNightmares)에서 탈락. 재적용 시 영면(나중 단계).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare";
+  // Possess(말렌 빙의): 대상 그 밤 행동 봉인(silencedNights) + 그 라운드 악마팀으로 카운트
+  //   (counters.possessed, 라운드 한정 — checkWinCondition 이 demon 버킷으로 셈).
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess";
   target: "self" | "Target" | "All";
   amount?: number;
   tag?: string;
