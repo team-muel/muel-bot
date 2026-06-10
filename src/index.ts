@@ -35,6 +35,7 @@ import { startProactiveScheduler } from './proactiveSpeaker.js';
 import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { handleMemoProposalButton, isMemoProposalButton } from './memoProposal.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
+import { CODEX_COMMAND_NAME, buildCodexSlashCommand, handleCodexCommand, handleCodexSelect, isCodexSelect } from './gomdoriCodexHandler.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -567,6 +568,7 @@ if (gomdoriClient) {
         body: [
           gomdoriPingCommand.toJSON(),
           gomdoriActivityEntryPointCommand,
+          buildCodexSlashCommand().toJSON(),
         ],
       });
       console.log('[gomdori] replaced global commands');
@@ -578,10 +580,22 @@ if (gomdoriClient) {
 
   if (!config.enableHttpInteractions) {
     gomdoriClient.on(Events.InteractionCreate, async (interaction) => {
+      // 도감 자세히 보기(드롭다운) — chat input 보다 먼저 라우팅.
+      if (interaction.isStringSelectMenu()) {
+        if (isCodexSelect(interaction.customId)) {
+          await handleCodexSelect(interaction);
+        }
+        return;
+      }
+
       if (!interaction.isChatInputCommand()) return;
 
       if (interaction.commandName === 'ping') {
         await interaction.reply({ content: 'pong 🐻', flags: [MessageFlags.Ephemeral] });
+        return;
+      }
+      if (interaction.commandName === CODEX_COMMAND_NAME) {
+        await handleCodexCommand(interaction);
         return;
       }
       // /게임 은 entry point command 라 핸들러를 거치지 않는다.
