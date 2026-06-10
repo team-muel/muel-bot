@@ -215,12 +215,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 엘런(조력자-13): 박해자(투표가치 조작). v1 패시브 조력자(고유 v2). vault [[엘런]].
+    // 엘런(조력자-13): 박해자 = 대상의 받는-투표가치 누진(v2). 표적을 처형대로 민다.
     id: "ellen",
     name: "엘런",
     faction: "demon",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "ellen_persecute", name: "박해", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "Target", amount: 3 }] },
+      ],
+    },
   },
 
   // --- 천사 풀 (나머지, 랜덤 distinct). 로마즈/라이너는 위 정의 재사용. ---
@@ -273,12 +277,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 우노(천사-6): 군인·명예. v1 = 패시브 천사팀 카운트 +1(배정 시 countBonus 주입). vault [[우노]].
+    // 우노(천사-6): 명예(배정 시 자기 countBonus +1) + 투쟁 = 대상 소속 카운트 +1(v2).
     id: "uno",
     name: "우노",
     faction: "angel",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
+      ],
+    },
   },
   {
     // 아서(천사-14): 여명의 기사(탈락 면역). v1 = 패시브 자기 보호막 1(배정 시 shield 주입). vault [[아서]].

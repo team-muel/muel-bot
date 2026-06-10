@@ -108,6 +108,35 @@ assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행�
   assert.equal(newState.players.demon.currentRole, "demon", "악마는 타락하지 않음");
 }
 
+// --- 5. 투쟁(우노): 대상 소속 카운트 +1 ---
+{
+  const state = emptyState(
+    {
+      uno: player("uno", "uno", "angel"),
+      ally: player("ally", "citizen", "angel"),
+    },
+    [{ sourceUserId: "uno", targetUserId: "ally", actionType: "uno_struggle", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.ally.counters.countBonus, 1, "투쟁 대상 카운트 +1");
+  assert.ok(events.some((e: any) => e.type === "count_granted" && e.payload?.user_id === "ally"), "투쟁 이벤트");
+}
+
+// --- 6. 박해(엘런): 대상 받는-투표가치 누진 ---
+{
+  const state = emptyState(
+    {
+      ellen: player("ellen", "ellen", "demon"),
+      target: player("target", "citizen", "angel"),
+    },
+    [{ sourceUserId: "ellen", targetUserId: "target", actionType: "ellen_persecute", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.target.counters.voteBias, 3, "박해 대상 받는-투표가치 +3");
+}
+
+assert.match(roles, /id: "uno_struggle"[\s\S]*?type: "GrantCount"/, "우노 투쟁");
+assert.match(roles, /id: "ellen_persecute"[\s\S]*?type: "ModifyReceivedVote"/, "엘런 박해");
 assert.match(roles, /id: "luna_corrupt"[\s\S]*?type: "Corrupt"/, "루나 변환");
 assert.match(roles, /id: "logen_nullify"[\s\S]*?type: "Silence"/, "로건 무력화(봉인)");
 assert.match(matchAction, /luna: \["luna_corrupt"\]/, "루나 변환 행동 허용");

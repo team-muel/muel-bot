@@ -24,6 +24,8 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 조력자 고유(v2)
   luna: ["luna_corrupt"], // 천사 → 악마팀 변환
   logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
+  ellen: ["ellen_persecute"], // 박해 — 받는-투표가치 누진
+  uno: ["uno_struggle"], // 투쟁 — 대상 소속 카운트 +1
   // 중립
   pasua: ["pasua_convert"],
   // 레거시(현 로스터 미배정이나 정의는 유지)
@@ -106,9 +108,9 @@ Deno.serve((req: Request) => {
       if (actionType === "demon_kill" && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
-      // 포교(파스아)·변환(루나)·무력화(로건): 자기 자신 불가.
+      // 포교·변환·무력화·박해·투쟁: 자기 자신 불가.
       if (
-        (actionType === "pasua_convert" || actionType === "luna_corrupt" || actionType === "logen_nullify") &&
+        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle"].includes(actionType) &&
         targetUserId === claims.sub
       ) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
