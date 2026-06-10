@@ -65,6 +65,9 @@ function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseN
     const engineState = row.engine_state || {};
     const currentRole = typeof engineState.currentRole === "string" ? engineState.currentRole : row.role;
     const treatedAsFaction = typeof engineState.treatedAsFaction === "string" ? engineState.treatedAsFaction : row.faction;
+    // 포교(파스아)로 진영이 바뀌면 DB faction 컬럼이 아니라 engine_state.currentFaction
+    // 에 영속화된다(전향자는 천사→중립). 없으면 DB faction 으로 폴백.
+    const currentFaction = typeof engineState.currentFaction === "string" ? engineState.currentFaction : row.faction;
 
     state.players[row.user_id] = {
       userId: row.user_id,
@@ -73,7 +76,7 @@ function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseN
       baseVoteValue: typeof engineState.baseVoteValue === "number" ? engineState.baseVoteValue : 1,
       bonusVoteValue: typeof engineState.bonusVoteValue === "number" ? engineState.bonusVoteValue : 0,
       suspicionValue: typeof engineState.suspicionValue === "number" ? engineState.suspicionValue : 0,
-      actualFaction: row.faction as PlayerState["actualFaction"],
+      actualFaction: currentFaction as PlayerState["actualFaction"],
       treatedAsFaction: treatedAsFaction as PlayerState["treatedAsFaction"],
       alive: row.alive,
       markedForDeath: false,
@@ -159,7 +162,8 @@ async function finishMatchIfWon(
         visibility: "public",
         payload: {
           winner: win.winner,
-          winning_faction: win.winner === "angels" ? "angel" : "demon",
+          winning_faction:
+            win.winner === "angels" ? "angel" : win.winner === "neutral" ? "neutral" : "demon",
           alive_angels: win.aliveAngels,
           alive_demons: win.aliveDemons,
           players: revealedPlayers(players),
@@ -296,6 +300,9 @@ Deno.serve((req: Request) => {
               tags: playerState.tags,
               counters: playerState.counters,
               currentRole: playerState.currentRole,
+              // 포교로 바뀐 진영을 영속화(전향자 → neutral). 다음 리로드에서
+              // playerStateFromRows 가 이 값을 actualFaction 으로 복원한다.
+              currentFaction: playerState.actualFaction,
             };
 
             const updatePayload: Record<string, unknown> = { engine_state: nextEngineState };

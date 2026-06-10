@@ -4,22 +4,29 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 
-type RoleCard = { role: string; faction: "angel" | "demon" };
+type RoleCard = { role: string; faction: "angel" | "demon" | "neutral" };
+
+// W6 중립(파스아) 등장 최소 인원. 중립은 천사 머릿수를 1 줄이므로 큰 게임에서만.
+const PASUA_MIN_PLAYERS = 8;
 
 function pushRole(cards: RoleCard[], count: number, role: string, faction: RoleCard["faction"]) {
   for (let i = 0; i < count; i++) cards.push({ role, faction });
 }
 
-function generateRoles(playerCount: number): RoleCard[] {
+function generateRoles(playerCount: number, includeNeutral = false): RoleCard[] {
   // W4 v1: 가인/로마즈/라이너는 5인부터 항상 배정(전원이 직업을 받고 시작하는 원안).
-  // DB faction 은 'angel' | 'demon' — 가인 등 위장 직업은 role + engine_state 로 표현.
+  // DB faction 은 'angel' | 'demon' | 'neutral'(W6 파스아) — 가인 등 위장 직업은
+  // role + engine_state 로 표현.
   // 팀 구성:
   //   악마팀 = 악마(1) + 가인(조력자, 1) — 이변이 없으면 항상 2명.
   //   천사팀 = 로마즈(1) + 라이너(1) + 의사(1, 5인+) + 경찰(1, 6인+) + 나머지 시민
-  //   중립팀 = 대규모 인원에서 도입 예정(W6, 미구현).
+  //   중립팀 = 파스아(1) — includeNeutral 게임 설정 + 8인 이상에서만, 시민 1 대체(W6 v1).
   if (playerCount < 5 || playerCount > 12) {
     throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
   }
+
+  // 파스아는 게임 설정(includeNeutral)이 켜졌고 인원이 충분할 때만. 로비 토글 UI 는 후속.
+  const spawnPasua = includeNeutral && playerCount >= PASUA_MIN_PLAYERS;
 
   const roles: RoleCard[] = [];
   // 악마팀
@@ -30,6 +37,8 @@ function generateRoles(playerCount: number): RoleCard[] {
   pushRole(roles, 1, "rainer", "angel");
   pushRole(roles, 1, "doctor", "angel");
   pushRole(roles, playerCount >= 6 ? 1 : 0, "police", "angel");
+  // 중립팀(파스아) — 시민 슬롯 1개를 대체한다.
+  pushRole(roles, spawnPasua ? 1 : 0, "pasua", "neutral");
   // 나머지 슬롯은 시민으로 채움
   const remaining = playerCount - roles.length;
   pushRole(roles, remaining, "citizen", "angel");
@@ -105,8 +114,9 @@ Deno.serve((req: Request) => {
       throw conflict("players_not_ready", "모든 참가자가 준비를 완료해야 합니다.");
     }
 
-    // 1. Assign roles
-    const roles = generateRoles(players.length);
+    // 1. Assign roles. 중립(파스아) 포함 여부는 로비 게임 설정(matches.settings.includeNeutral).
+    const includeNeutral = match.settings?.includeNeutral === true;
+    const roles = generateRoles(players.length, includeNeutral);
     const hasGain = roles.some((role) => role.role === "gain");
     const assignments = players.map((p, index) => ({
       user_id: p.user_id,

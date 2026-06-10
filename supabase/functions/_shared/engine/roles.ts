@@ -105,4 +105,35 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {},
   },
+  // --- W6 v1 중립 (canon §1 중립, 특수 카테고리-4 파스아) ---
+  {
+    // 파스아: 사이비 교주(중립). 시그니처 = 포교(전향). 매 밤 대상 1명을 전향시켜
+    // 자기 진영(converted)으로 흡수. 누적 3명 전향 시 파스아 단독 즉시 승리(checkWinCondition).
+    // canon: 악마·중립 포교 불가 → 효과/검증에서 차단(천사 + 가인만 전향 가능).
+    // v1 단순화: 신앙(대상 탈락)은 v2 보류, 포교만.
+    id: "pasua",
+    name: "파스아",
+    faction: "neutral",
+    passives: [],
+    actions: {
+      night: [
+        {
+          id: "pasua_convert",
+          name: "포교",
+          targetType: "SINGLE_ALIVE",
+          priority: 5,
+          effects: [{ type: "ChangeFaction", target: "Target" }],
+        },
+      ],
+    },
+  },
+  {
+    // 전향된 플레이어: 기존 승리조건 삭제 + 파스아의 승리를 따름. 능력 없음.
+    // currentRole 이 'converted' 로 바뀌며, checkWinCondition 이 이를 파스아 교세로 카운트.
+    id: "converted",
+    name: "전향자",
+    faction: "neutral",
+    passives: [],
+    actions: {},
+  },
 ];
