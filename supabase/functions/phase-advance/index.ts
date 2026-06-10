@@ -337,7 +337,7 @@ Deno.serve((req: Request) => {
             // 봉인(세이카/팬텀)은 가장 먼저(1) — 대상 능력보다 앞서 처리돼 그 밤을 막는다.
             // 부활/치료=3, 처치=4, 조사·색출·포교=5.
             priority:
-              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" ? 1
+              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" ? 1
                 : action.actionType === "demon_kill" ? 4
                 : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" ? 3
                 : 5,

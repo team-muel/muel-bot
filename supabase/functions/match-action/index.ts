@@ -3,7 +3,7 @@ import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/e
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
-import { isDemonKillerRole } from "../_shared/engine/roles.ts";
+import { HELPER_ROLES, isDemonKillerRole } from "../_shared/engine/roles.ts";
 
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
@@ -21,6 +21,9 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   helen: ["helen_revive"], // 황금빛 수면 = 탈락자 부활(v2)
   romaz: ["romaz_suspect"],
   seika: ["seika_supernova"], // 초신성 = 봉인(v2)
+  // 조력자 고유(v2)
+  luna: ["luna_corrupt"], // 천사 → 악마팀 변환
+  logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
   // 중립
   pasua: ["pasua_convert"],
   // 레거시(현 로스터 미배정이나 정의는 유지)
@@ -103,9 +106,12 @@ Deno.serve((req: Request) => {
       if (actionType === "demon_kill" && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
-      // 포교(파스아): 자기 자신 불가.
-      if (actionType === "pasua_convert" && targetUserId === claims.sub) {
-        throw badRequest("invalid_target", "자기 자신을 포교할 수 없습니다.");
+      // 포교(파스아)·변환(루나)·무력화(로건): 자기 자신 불가.
+      if (
+        (actionType === "pasua_convert" || actionType === "luna_corrupt" || actionType === "logen_nullify") &&
+        targetUserId === claims.sub
+      ) {
+        throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
       const { data: targetState } = await supabase
         .from("match_players")
@@ -128,6 +134,15 @@ Deno.serve((req: Request) => {
         (isDemonKillerRole(targetState.role) || targetState.role === "pasua" || targetState.role === "converted")
       ) {
         throw badRequest("invalid_target", "악마와 중립은 포교할 수 없습니다.");
+      }
+      // 변환(루나): 천사만. 악마(처치자)·조력자·중립·이미 타락은 불가.
+      if (
+        actionType === "luna_corrupt" &&
+        (isDemonKillerRole(targetState.role) ||
+          HELPER_ROLES.includes(targetState.role) ||
+          ["pasua", "converted", "corrupted"].includes(targetState.role))
+      ) {
+        throw badRequest("invalid_target", "천사만 타락시킬 수 있습니다.");
       }
     } else if (match.status === "vote") {
       if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");

@@ -137,6 +137,15 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {},
   },
+  {
+    // 타락자(루나 변환): 천사 → 악마팀. 능력 없음. checkWinCondition 이 악마 카운트로 셈
+    // (actualFaction='demon' 영속화). 본래 직업은 게임 종료 시 함께 공개(canon §9).
+    id: "corrupted",
+    name: "타락자",
+    faction: "demon",
+    passives: [],
+    actions: {},
+  },
 
   // === 기본 로스터 (canon "기본" 시트) — v1 시그니처를 기존 프리미티브에 매핑. ===
   // 고유 다단계 능력은 각 vault 카드 + v2. "시민(무직)" 폐지 — 전원 명명 직업.
@@ -182,20 +191,28 @@ export const CORE_ROLES: RoleDefinition[] = [
 
   // --- 조력자 풀 (1명 뽑힘): 악마 회로 패시브. 가인(위 정의)만 보호막. ---
   {
-    // 루나(조력자-5): 달의 사제(천사→악마 변환). v1 패시브 조력자(변환 v2). vault [[루나]].
+    // 루나(조력자-5): 달의 사제 = 공포 속에 밀어 넣다(천사→악마팀 변환, v2). vault [[루나]].
     id: "luna",
     name: "루나",
     faction: "demon",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Corrupt", target: "Target" }] },
+      ],
+    },
   },
   {
-    // 로건(조력자-10): 부서진 펜던트(능력 소멸·접선). v1 패시브 조력자(고유 v2). vault [[로건]].
+    // 로건(조력자-10): 부서진 펜던트 = 네 안에 없는 것(그 밤 대상 능력 무력화=봉인, v2). vault [[로건]].
     id: "logen",
     name: "로건",
     faction: "demon",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
+      ],
+    },
   },
   {
     // 엘런(조력자-13): 박해자(투표가치 조작). v1 패시브 조력자(고유 v2). vault [[엘런]].
