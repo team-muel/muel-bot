@@ -27,7 +27,9 @@ export const CODEX_COMMAND_NAME = "도감";
 const CODEX_DETAIL_SELECT_PREFIX = "codex:detail:";
 const EPHEMERAL = MessageFlags.Ephemeral;
 
-const FACTION_TONE = "game" as const;
+// Codex cards are Muel's own first-party game UI → Muel brand tone (green),
+// matching /메모 and the rest of Muel's info/help surfaces.
+const FACTION_TONE = "muel" as const;
 
 export const buildCodexSlashCommand = () =>
   new SlashCommandBuilder()

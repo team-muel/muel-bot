@@ -13,7 +13,7 @@
  */
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type ButtonInteraction } from 'discord.js';
-import { MUEL_INFO_COLOR } from './uiColors.js';
+import { MUEL_BRAND_COLOR } from './uiColors.js';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -126,7 +126,7 @@ const PROPOSAL_TITLE = '가르쳐둘까?';
 export const buildMemoProposalCard = (proposalContent: string) => {
   const safe = proposalContent.replace(/[\r\n]+/g, ' ').slice(0, 280);
   const embed = new EmbedBuilder()
-    .setColor(MUEL_INFO_COLOR)
+    .setColor(MUEL_BRAND_COLOR)
     .setTitle(PROPOSAL_TITLE)
     .setDescription(`*"${safe}"*`)
     .setFooter({ text: '대화에서 뽑아본 메모 후보야. 박아두면 다음 대화부터 반영.' });

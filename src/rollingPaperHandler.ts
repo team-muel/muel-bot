@@ -11,7 +11,7 @@ import {
   type StringSelectMenuInteraction,
 } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
-import { MUEL_INFO_COLOR } from './uiColors.js';
+import { MUEL_BRAND_COLOR } from './uiColors.js';
 
 // /롤링페이퍼 — 멤버끼리 서로에게 남기는 한 줄(공개 레이어). /메모(나만 보는 Muel 기억)와 별개.
 //
@@ -27,7 +27,7 @@ const OPT_TARGET = '대상';
 const OPT_WRITE = '작성';
 const MAX_LEN = 500;
 const MAX_OPTIONS = 25;
-const COLOR = MUEL_INFO_COLOR;
+const COLOR = MUEL_BRAND_COLOR;
 
 const SEL_DELRECV = 'rp:sel:delrecv';
 const SEL_UNBLOCK = 'rp:sel:unblock';
