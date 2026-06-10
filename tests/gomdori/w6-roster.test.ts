@@ -39,8 +39,8 @@ for (const id of ANGEL_ROLES) {
 assert.ok(def("dordan")!.actions.night?.some((a) => a.id === "police_investigate"), "도르단 조사");
 assert.ok(def("habreterus")!.actions.night?.some((a) => a.id === "doctor_heal"), "하브레터스 치료");
 assert.ok(def("romaz")!.actions.night?.some((a) => a.id === "romaz_suspect"), "로마즈 색출");
-// 패시브 천사(밤 능동 없음). 세이카는 v2 에서 봉인(seika_supernova) 능동화되어 제외.
-for (const id of ["uno", "arthur", "luru", "rainer"]) {
+// 패시브 천사(밤 능동 없음). v2 에서 세이카(봉인)·우노(투쟁) 능동화되어 제외.
+for (const id of ["arthur", "luru", "rainer"]) {
   assert.ok(!def(id)!.actions.night?.length, `${id} 는 패시브(밤 능동 없음)`);
 }
 

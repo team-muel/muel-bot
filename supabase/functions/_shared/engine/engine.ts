@@ -406,6 +406,11 @@ function applyEffect(
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       events.push({ type: "silenced", payload: { user_id: target.userId } });
       break;
+    case "GrantCount":
+      // 투쟁(우노): 대상 소속 카운트 +amount(지속). 생존 시 그 팀 카운트에 반영.
+      target.counters.countBonus = (target.counters.countBonus ?? 0) + (effect.amount ?? 1);
+      events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1 } });
+      break;
     case "Corrupt":
       // 타락(루나): 천사를 악마팀으로. 천사만 — 악마(처치자)·조력자·중립·이미 타락은 불가.
       // actualFaction='demon' 으로 악마 카운트에 합류, currentRole='corrupted'(능력 없음).
