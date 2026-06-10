@@ -70,6 +70,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       continue;
     }
 
+    // 봉인(세이카 초신성·팬텀 어둠이 내린 도시): 그 밤 능력 발동 불가. 봉인 액션이 priority 1
+    // (가장 먼저)이라 대상의 능력보다 앞서 silencedNights 가 세팅된다. 밤 종료 시 0으로 리셋.
+    if ((sourcePlayer.counters?.silencedNights ?? 0) > 0) {
+      events.push({ type: "action_blocked_silenced", userId: sourcePlayer.userId });
+      continue;
+    }
+
     const roleDef = getRoleDefinition(sourcePlayer.currentRole);
     if (!roleDef) continue;
 
@@ -115,6 +122,8 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
 
     player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED);
+    // 봉인은 같은 밤 한정 — 종료 시 해제.
+    if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
   return { newState, events };
@@ -390,6 +399,12 @@ function applyEffect(
         target.currentRole = "converted";
         events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "neutral" } });
       }
+      break;
+    case "Silence":
+      // 봉인: 대상의 그 밤 능력 발동을 막는다(세이카 초신성·팬텀 어둠이 내린 도시).
+      // 봉인 액션이 priority 1 이라 대상 능력보다 먼저 처리됨. 밤 종료 시 자동 해제.
+      target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
+      events.push({ type: "silenced", payload: { user_id: target.userId } });
       break;
   }
 }

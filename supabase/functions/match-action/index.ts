@@ -5,18 +5,22 @@ import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 import { isDemonKillerRole } from "../_shared/engine/roles.ts";
 
+// 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
+const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
+
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
-  // 악마 풀(전부 처치)
+  // 악마 풀
   demon: ["demon_kill"],
-  phantom: ["demon_kill"],
+  phantom: ["demon_kill", "phantom_seal"], // 처치 + 어둠이 내린 도시(봉인, v2)
   malen: ["demon_kill"],
   besto: ["demon_kill"],
   // 천사 능동
   dordan: ["police_investigate"], // 도르단 = 탐정 조사
   habreterus: ["doctor_heal"],
-  mizlet: ["doctor_heal"],
-  helen: ["doctor_heal"],
+  mizlet: ["mizlet_revive"], // 디저트 선물 = 탈락자 부활(v2)
+  helen: ["helen_revive"], // 황금빛 수면 = 탈락자 부활(v2)
   romaz: ["romaz_suspect"],
+  seika: ["seika_supernova"], // 초신성 = 봉인(v2)
   // 중립
   pasua: ["pasua_convert"],
   // 레거시(현 로스터 미배정이나 정의는 유지)
@@ -103,14 +107,18 @@ Deno.serve((req: Request) => {
       if (actionType === "pasua_convert" && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 포교할 수 없습니다.");
       }
-      // H-4: night actions must target a living player.
       const { data: targetState } = await supabase
         .from("match_players")
         .select("alive, role")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
-      if (!targetState || !targetState.alive) {
+      if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
+      if (REVIVE_ACTIONS.includes(actionType)) {
+        // 부활(미즐렛/헬렌): 탈락한 대상에게만.
+        if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
+      } else if (!targetState.alive) {
+        // H-4: 그 외 밤 행동은 생존자만 대상으로.
         throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
       }
       // 포교(파스아): 악마(처치자)·중립 포교 불가(canon §파스아). 가인 등 조력자·천사는 가능.

@@ -143,7 +143,7 @@ export const CORE_ROLES: RoleDefinition[] = [
 
   // --- 악마 풀 (1명 뽑힘): 전부 v1 처치. 'demon'(대악마)은 위 정의 재사용. ---
   {
-    // 팬텀(악마-2): 침묵의 밤·악몽·일식. v1 처치(봉인/지연 v2). vault [[팬텀]].
+    // 팬텀(악마-2): 처치(악몽) + 어둠이 내린 도시 = 그 밤 대상 능력 봉인(v2). 봉인은 priority 1.
     id: "phantom",
     name: "팬텀",
     faction: "demon",
@@ -151,6 +151,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
       ],
     },
   },
@@ -231,26 +232,26 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 미즐렛(천사-15): 디저트·보호. v1 = 치료(부활/와인 v2). vault [[미즐렛]].
+    // 미즐렛(천사-15): 디저트 선물 = 탈락자 부활(v2). 탈락한 대상을 되살린다.
     id: "mizlet",
     name: "미즐렛",
     faction: "angel",
     passives: [],
     actions: {
       night: [
-        { id: "doctor_heal", name: "보호", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        { id: "mizlet_revive", name: "디저트 선물", targetType: "SINGLE_DEAD", priority: 3, effects: [{ type: "Heal", target: "Target" }] },
       ],
     },
   },
   {
-    // 헬렌(천사-17): 황금빛 수면·보호. v1 = 보호(부활/수면 복귀 v2). vault [[헬렌]].
+    // 헬렌(천사-17): 황금빛 수면 = 자유로운 새 부활(v2). 탈락한 대상을 되살린다.
     id: "helen",
     name: "헬렌",
     faction: "angel",
     passives: [],
     actions: {
       night: [
-        { id: "doctor_heal", name: "보호", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        { id: "helen_revive", name: "황금빛 수면", targetType: "SINGLE_DEAD", priority: 3, effects: [{ type: "Heal", target: "Target" }] },
       ],
     },
   },
@@ -271,12 +272,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {},
   },
   {
-    // 세이카(천사-12): 초신성(효과 제거·봉인). v1 = 패시브(봉인 v2). vault [[세이카]].
+    // 세이카(천사-12): 초신성 = 그 밤 대상의 능력 발동을 봉인(v2). priority 1(먼저 처리).
     id: "seika",
     name: "세이카",
     faction: "angel",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
+      ],
+    },
   },
   {
     // 루루(천사-30): 연주·매료·투표 양도. v1 = 패시브(매료 v2). vault [[루루]].
