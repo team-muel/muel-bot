@@ -339,7 +339,7 @@ Deno.serve((req: Request) => {
             priority:
               action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" ? 1
                 : action.actionType === "demon_kill" ? 4
-                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" ? 3
+                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" || action.actionType === "arthur_emberblade" ? 3
                 : 5,
           }));
 

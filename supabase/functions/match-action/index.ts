@@ -21,6 +21,8 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   helen: ["helen_revive"], // 황금빛 수면 = 탈락자 부활(v2)
   romaz: ["romaz_suspect"],
   seika: ["seika_supernova"], // 초신성 = 봉인(v2)
+  arthur: ["arthur_emberblade"], // 잔불 대검 = 대상 하루 무적
+  luru: ["luru_charm"], // 매료 = 처형 투표 양도
   // 조력자 고유(v2)
   luna: ["luna_corrupt"], // 천사 → 악마팀 변환
   logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
@@ -108,9 +110,9 @@ Deno.serve((req: Request) => {
       if (actionType === "demon_kill" && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
-      // 포교·변환·무력화·박해·투쟁: 자기 자신 불가.
+      // 포교·변환·무력화·박해·투쟁·잔불대검·매료: 자기 자신 불가.
       if (
-        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle"].includes(actionType) &&
+        ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm"].includes(actionType) &&
         targetUserId === claims.sub
       ) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");

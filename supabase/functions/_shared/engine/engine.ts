@@ -56,6 +56,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (counters) {
       counters.voteBias = 0;
       counters.suspicionBias = 0;
+      counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
     }
   }
 
@@ -140,6 +141,12 @@ export function tallyEliminationVotes(
     const actor = players[action.actorUserId];
     if (!actor?.alive) continue;
 
+    // 매료(루루): 매료된 자는 자기 처형 투표를 행사할 수 없다(권한이 루루에게 양도됨).
+    if ((actor.counters?.charmed ?? 0) > 0) {
+      skipped += 1;
+      continue;
+    }
+
     if (!action.targetUserId) {
       skipped += 1;
       continue;
@@ -151,7 +158,8 @@ export function tallyEliminationVotes(
       continue;
     }
 
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0));
+    // 루루 매료 양도분(counters.voteWeightBonus)을 행사 가치에 합산.
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -410,6 +418,13 @@ function applyEffect(
       // 투쟁(우노): 대상 소속 카운트 +amount(지속). 생존 시 그 팀 카운트에 반영.
       target.counters.countBonus = (target.counters.countBonus ?? 0) + (effect.amount ?? 1);
       events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1 } });
+      break;
+    case "Charm":
+      // 매료(루루): 대상의 다음 처형 투표 무력화(charmed, 라운드 한정) + 투표 권한을
+      // 루루(source)에게 양도(voteWeightBonus +1, 지속).
+      target.counters.charmed = 1;
+      _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
+      events.push({ type: "charmed", payload: { user_id: target.userId, by: _source.userId } });
       break;
     case "Corrupt":
       // 타락(루나): 천사를 악마팀으로. 천사만 — 악마(처치자)·조력자·중립·이미 타락은 불가.
