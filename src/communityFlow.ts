@@ -186,6 +186,7 @@ export const summarizeCommunityFlowJob = async (
     resolvedModel: { provider: summaryModel.provider, modelId: summaryModel.modelId, task: summaryModel.task },
     startedAt,
     usage: result.usage,
+    providerMetadata: result.providerMetadata,
     metadata: {
       signalId: signal.id,
       guildId: signal.guild_id,

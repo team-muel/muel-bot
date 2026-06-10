@@ -110,8 +110,48 @@ export type ResolvedModelSummary = {
 };
 
 /**
+ * 공통 AI 에러 분류. 스키마 매칭 실패류(AI_NoObjectGeneratedError / "did not match
+ * schema")는 *분류·품질 실패*일 뿐 시스템 에러가 아니므로 status='fallback' 으로 분류해
+ * triage/sentinel 임계 노이즈에서 뺀다. 진짜 인프라·결제 에러(AI_RetryError 등)만 'error'.
+ * router·summary·extract·action_draft 등 generateObject 레인이 공유해 분기 일관성 유지.
+ */
+export const classifyAiError = (
+  err: unknown,
+): { errorClass: string; errorMessage: string; isSchemaFailure: boolean; status: MuelAiEventStatus } => {
+  const errorClass = err instanceof Error ? err.name : typeof err;
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  const isSchemaFailure =
+    errorClass === 'AI_NoObjectGeneratedError' || errorMessage.includes('did not match schema');
+  return { errorClass, errorMessage, isSchemaFailure, status: isSchemaFailure ? 'fallback' : 'error' };
+};
+
+/**
+ * withFallback 미들웨어(modelRegistry)가 게이트웨이 복구 시 result.providerMetadata.muel 에
+ * 심는 마커 판독. 1차(Gemini) 실패를 게이트웨이(MindLogic)가 구해낸 호출을 호출자가 식별.
+ */
+export const readFallbackMeta = (
+  providerMetadata: unknown,
+): { used: boolean; from?: string; to?: string } => {
+  const muel = (
+    providerMetadata as
+      | { muel?: { fallback_used?: boolean; fallback_from?: string; fallback_to?: string } }
+      | null
+      | undefined
+  )?.muel;
+  if (muel?.fallback_used) {
+    return { used: true, from: muel.fallback_from, to: muel.fallback_to };
+  }
+  return { used: false };
+};
+
+/**
  * Returns the inserted row id (or null on failure) so callers that audit via
  * muel_agent_actions can link the rows.
+ *
+ * `providerMetadata`(generateObject/generateText 결과)를 넘기면, 게이트웨이가 1차 실패를
+ * 구해낸 호출(호출자 시점엔 success)을 status='fallback' + 실제 서빙 provider 로 보정한다.
+ * 없으면 게이트웨이 복구가 전부 success/provider=gemini 로 잡혀 폴백 발동·MindLogic 소진이
+ * 텔레메트리에서 안 보인다(= ADR-004 첫 run 제안 #1).
  */
 export const logMuelBackgroundAiEvent = (
   supabase: SupabaseClient,
@@ -126,18 +166,21 @@ export const logMuelBackgroundAiEvent = (
     errorMessage?: string | null;
     chatId?: string | null;
     fallbackReason?: string | null;
+    providerMetadata?: unknown;
     metadata?: Record<string, unknown>;
   },
 ): Promise<string | null> => {
   const tokens = extractUsageTokens(args.usage);
+  const fb = readFallbackMeta(args.providerMetadata);
+  const recovered = fb.used && args.status === 'success';
   return logMuelAiEvent(supabase, {
     source: args.source,
-    status: args.status,
+    status: recovered ? 'fallback' : args.status,
     chatId: args.chatId ?? null,
-    provider: args.resolvedModel.provider,
-    model: args.resolvedModel.modelId,
+    provider: recovered ? (fb.to?.split(':')[0] ?? args.resolvedModel.provider) : args.resolvedModel.provider,
+    model: recovered ? (fb.to ?? args.resolvedModel.modelId) : args.resolvedModel.modelId,
     latencyMs: Date.now() - args.startedAt,
-    fallbackReason: args.fallbackReason ?? null,
+    fallbackReason: recovered ? 'gateway_recovery' : (args.fallbackReason ?? null),
     taskType: args.taskType,
     modelLane: args.resolvedModel.task,
     inputTokens: tokens.inputTokens,
@@ -145,6 +188,8 @@ export const logMuelBackgroundAiEvent = (
     totalTokens: tokens.totalTokens,
     errorClass: args.errorClass ?? null,
     errorMessage: args.errorMessage ?? null,
-    metadata: args.metadata ?? {},
+    metadata: recovered
+      ? { ...(args.metadata ?? {}), fallback_from: fb.from ?? null, fallback_to: fb.to ?? null }
+      : (args.metadata ?? {}),
   });
 };

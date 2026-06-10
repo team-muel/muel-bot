@@ -165,6 +165,7 @@ export async function processMemoryJob(job: any) {
     resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
     startedAt: extractStartedAt,
     usage: extractResult.usage,
+    providerMetadata: extractResult.providerMetadata,
     chatId,
     metadata: { step: 'extract', messageId, candidateCount: extractResult.object.memories?.length ?? 0 },
   });
@@ -249,7 +250,7 @@ Task:
         });
         // merge schema 실패 → action='insert' default 로 진행 (안전한 쪽: 중복 가능성 약간 ↑ 보다 메모 누락이 더 큼).
         if (isSchemaFailure) {
-          mergeResult = { object: { action: 'insert' as const, mergedContent: '', targetId: null }, usage: undefined };
+          mergeResult = { object: { action: 'insert' as const, mergedContent: '', targetId: null }, usage: undefined, providerMetadata: undefined };
         } else {
           throw aiError;
         }
@@ -262,6 +263,7 @@ Task:
         resolvedModel: { provider: extractModel.provider, modelId: extractModel.modelId, task: extractModel.task },
         startedAt: mergeStartedAt,
         usage: mergeResult.usage,
+        providerMetadata: (mergeResult as { providerMetadata?: unknown }).providerMetadata,
         chatId,
         metadata: { step: 'merge', messageId, action: mergeResult.object.action },
       });
