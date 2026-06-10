@@ -296,6 +296,21 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
 // 기본 카운트: 생존자 = 1, 사망자 = 0. counters.countBonus(생존 가산, 예: 수호병 +1)
 // 와 counters.deadCountBonus(사망 무관 지속, 예: 라이너 백호 +3) 가 팀 카운트에 반영된다.
 // 능력이 카운트를 건드리지 않으면(counters 비어있음) 결과는 생존 패리티와 동일 — 회귀 0.
+// 악몽 해소(아침). 악몽 표식(counters.nightmare >= 1)을 가진 생존자를 탈락시킨다.
+// 밤 능력 해소와 분리된 "아침" 단계라 1_NIGHT 보호로 막히지 않는다(canon 악몽). 부활
+// (Heal)로 되살린 뒤에는 표식이 0 이어야 재탈락하지 않으므로, 탈락 처리 시 표식을 소비한다.
+export function resolveNightmares(players: Record<string, PlayerState>): unknown[] {
+  const events: unknown[] = [];
+  for (const player of Object.values(players)) {
+    if (player.alive && (player.counters?.nightmare ?? 0) >= 1) {
+      player.alive = false;
+      player.counters.nightmare = 0;
+      events.push({ type: "nightmare_death", payload: { user_id: player.userId } });
+    }
+  }
+  return events;
+}
+
 export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
   let aliveAngels = 0;
   let aliveDemons = 0;
@@ -425,6 +440,12 @@ function applyEffect(
       target.counters.charmed = 1;
       _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
       events.push({ type: "charmed", payload: { user_id: target.userId, by: _source.userId } });
+      break;
+    case "Nightmare":
+      // 악몽(팬텀): 지연 탈락 표식 누적. 밤 보호(Protect, 1_NIGHT)는 밤 종료 시 사라지므로
+      // 막지 못한다 — 아침 해소(resolveNightmares)에서 탈락. 누적 2 = 영면(후속 단계).
+      target.counters.nightmare = (target.counters.nightmare ?? 0) + 1;
+      events.push({ type: "nightmare_marked", payload: { user_id: target.userId, level: target.counters.nightmare } });
       break;
     case "Corrupt":
       // 타락(루나): 천사를 악마팀으로. 천사만 — 악마(처치자)·조력자·중립·이미 타락은 불가.

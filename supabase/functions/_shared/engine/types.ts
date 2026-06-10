@@ -45,7 +45,9 @@ export interface Effect {
   // GrantCount(우노 투쟁): 대상의 소속 카운트(counters.countBonus)를 amount 만큼 더한다(지속).
   // Charm(루루 매료): 대상의 다음 처형 투표를 무력화(counters.charmed, 라운드 한정)하고,
   //   그 투표 권한을 루루에게 양도(루루 counters.voteWeightBonus +1, 지속).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm";
+  // Nightmare(팬텀 악몽): 지연 탈락 — counters.nightmare 누적. 밤 보호로 못 막고, 아침
+  //   해소(resolveNightmares)에서 탈락. 재적용 시 영면(나중 단계).
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare";
   target: "self" | "Target" | "All";
   amount?: number;
   tag?: string;

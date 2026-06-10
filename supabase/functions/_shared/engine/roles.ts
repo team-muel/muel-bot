@@ -152,14 +152,15 @@ export const CORE_ROLES: RoleDefinition[] = [
 
   // --- 악마 풀 (1명 뽑힘): 전부 v1 처치. 'demon'(대악마)은 위 정의 재사용. ---
   {
-    // 팬텀(악마-2): 처치(악몽) + 어둠이 내린 도시 = 그 밤 대상 능력 봉인(v2). 봉인은 priority 1.
+    // 팬텀(악마-2): 악몽(지연 탈락 — 아침 탈락, 밤 보호 불가) + 어둠이 내린 도시(봉인, priority 1).
+    // 팬텀의 처치 능력은 canon 상 '악몽'. demon_kill 대신 phantom_nightmare 를 처치자 능력으로.
     id: "phantom",
     name: "팬텀",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "demon_kill", name: "처치", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Nightmare", target: "Target" }] },
         { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
       ],
     },

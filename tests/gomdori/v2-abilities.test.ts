@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveNightActions, tallyEliminationVotes } from "../../supabase/functions/_shared/engine/engine.ts";
+import { resolveNightActions, resolveNightmares, tallyEliminationVotes } from "../../supabase/functions/_shared/engine/engine.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
 function player(userId: string, role: string, faction: Faction, alive = true): PlayerState {
@@ -182,6 +182,29 @@ assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행�
   assert.equal(tally.tallies.bob, 2, "매료자 표 0 + 루루 표 2(기본1+양도1)");
 }
 
+// --- 9. 악몽(팬텀): 밤 보호 무시 + 아침(resolveNightmares) 탈락 ---
+{
+  const state = emptyState(
+    {
+      phantom: player("phantom", "phantom", "demon"),
+      doctor: player("doctor", "habreterus", "angel"),
+      victim: player("victim", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "doctor", targetUserId: "victim", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "phantom", targetUserId: "victim", actionType: "phantom_nightmare", priority: 4 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.victim.alive, true, "악몽은 그 밤엔 죽이지 않음(지연)");
+  assert.equal(newState.players.victim.counters.nightmare, 1, "악몽 표식");
+  // 아침 해소 — 밤 보호(이미 해제됨)로 막지 못하고 탈락.
+  const nm = resolveNightmares(newState.players) as Array<{ type: string; payload?: { user_id?: string } }>;
+  assert.equal(newState.players.victim.alive, false, "아침에 악몽으로 탈락(보호 무시)");
+  assert.ok(nm.some((e) => e.type === "nightmare_death" && e.payload?.user_id === "victim"), "악몽 사망 이벤트");
+}
+
+assert.match(roles, /id: "phantom_nightmare"[\s\S]*?type: "Nightmare"/, "팬텀 악몽");
 assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Protect"/, "아서 잔불 대검");
 assert.match(roles, /id: "luru_charm"[\s\S]*?type: "Charm"/, "루루 매료");
 assert.match(roles, /id: "uno_struggle"[\s\S]*?type: "GrantCount"/, "우노 투쟁");
