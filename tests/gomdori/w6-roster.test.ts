@@ -46,12 +46,20 @@ for (const id of ["uno", "arthur", "seika", "luru", "rainer"]) {
 
 // --- 3. match-start 런타임 계약(풀 추첨 + engine_state 주입) ---
 const matchStart = readFileSync("supabase/functions/match-start/index.ts", "utf8");
-assert.match(matchStart, /shuffle\(DEMON_KILLER_ROLES\)\[0\]/, "악마 1 추첨");
-assert.match(matchStart, /shuffle\(HELPER_ROLES\)\[0\]/, "조력자 1 추첨");
+// 악마/조력자는 role_assign 에서 본인이 변종 선택(pendingSelection). 천사는 distinct 랜덤.
+assert.match(matchStart, /pendingSelection: \{ kind: "demon", pool: DEMON_KILLER_ROLES \}/, "악마 슬롯 선택 대기");
+assert.match(matchStart, /pendingSelection: \{ kind: "helper", pool: HELPER_ROLES \}/, "조력자 슬롯 선택 대기");
 assert.match(matchStart, /shuffle\(ANGEL_ROLES\)\.slice\(0, angelSlots\)/, "천사 distinct 추첨");
 assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지 않는다");
 assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 1/, "우노 명예 카운트 주입");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
+
+// 변종 선택 제출 fn + role_assign 마감 폴백 계약
+const selectFn = readFileSync("supabase/functions/match-select-role/index.ts", "utf8");
+assert.match(selectFn, /pendingSelection/, "선택 fn 은 pendingSelection 검증");
+assert.match(selectFn, /pool\.includes\(chosenRole\)/, "고른 직업이 풀에 있는지 검증");
+const phaseAdvance = readFileSync("supabase/functions/phase-advance/index.ts", "utf8");
+assert.match(phaseAdvance, /finalizeRoleSelection/, "role_assign 마감에 선택 폴백·보호막 재계산");
 
 // --- 4. migration 직업명 ---
 const migration = readFileSync("supabase/migrations/20260610130000_gomdori_base_roster.sql", "utf8");

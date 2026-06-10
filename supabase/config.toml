@@ -85,6 +85,9 @@ verify_jwt = false
 [functions.match-start]
 verify_jwt = false
 
+[functions.match-select-role]
+verify_jwt = false
+
 [functions.match-action]
 verify_jwt = false
 
