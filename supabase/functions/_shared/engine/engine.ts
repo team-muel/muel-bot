@@ -91,6 +91,18 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       continue;
     }
 
+    // maxUses 강제 — 1회성 능력(부활 등)의 사용 횟수를 counters.used_<id> 로 영속 기록.
+    // 미강제 시 미즐렛/헬렌 부활이 매 밤 반복돼 게임이 수렴하지 않는 교착 엔진이 된다
+    // (docs/gomdori-gameplay-verification.md P0-B). used_* 는 지속 카운터 — 라운드 리셋 X.
+    if (ability.maxUses != null) {
+      const usedKey = `used_${ability.id}`;
+      if ((sourcePlayer.counters[usedKey] ?? 0) >= ability.maxUses) {
+        events.push({ type: "action_blocked_exhausted", userId: sourcePlayer.userId });
+        continue;
+      }
+      sourcePlayer.counters[usedKey] = (sourcePlayer.counters[usedKey] ?? 0) + 1;
+    }
+
     for (const effect of ability.effects) {
       let target: PlayerState | null = null;
       if (effect.target === "self") target = sourcePlayer;
@@ -312,7 +324,17 @@ export function resolveNightmares(players: Record<string, PlayerState>): unknown
   return events;
 }
 
-export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
+// 팀 카운트 집계 — checkWinCondition / checkTimeoutWinner 공용 단일 출처.
+export type TeamCounts = {
+  aliveAngels: number;
+  aliveDemons: number;
+  angelCount: number;
+  demonCount: number;
+  pasuaAlive: boolean;
+  pasuaFlock: number;
+};
+
+export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   let aliveAngels = 0;
   let aliveDemons = 0;
   let angelCount = 0;
@@ -358,6 +380,13 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     }
   }
 
+  return { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock };
+}
+
+export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
+  const { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock } =
+    countTeams(players);
+
   // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
   // 파스아가 살아있고 누적 전향이 임계 이상이면 중립 승리.
   let winner: "angels" | "demons" | "neutral" | null = null;
@@ -370,6 +399,26 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   }
 
   return { winner, aliveAngels, aliveDemons };
+}
+
+// 최대 일수 도달 시 강제 종착 (M2-5 교착 안전망 — gomdori-rules.gameLength.maxDays).
+// 우세 판정: 팀 카운트 비교. 동률은 악마 — canon §30 "충돌 시 악마 유리"(마을이 기한 내
+// 악마 제거에 실패한 상태). 중립은 임계 미달이면 후보가 아니다(달성 시 이미 즉시 승리).
+export function checkTimeoutWinner(players: Record<string, PlayerState>): {
+  winner: "angels" | "demons";
+  angelCount: number;
+  demonCount: number;
+  aliveAngels: number;
+  aliveDemons: number;
+} {
+  const { aliveAngels, aliveDemons, angelCount, demonCount } = countTeams(players);
+  return {
+    winner: angelCount > demonCount ? "angels" : "demons",
+    angelCount,
+    demonCount,
+    aliveAngels,
+    aliveDemons,
+  };
 }
 
 function applyEffect(

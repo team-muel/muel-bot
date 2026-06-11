@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  checkTimeoutWinner,
   checkWinCondition,
   resolveNightActions,
   tallyEliminationVotes,
@@ -134,4 +135,23 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
   assert.equal(winnerOf(s), "neutral", "전향 3 + 파스아 생존 → 중립 단독 승리(우선)");
 }
 
-console.log("Gomdori 풀게임 e2e 시뮬 (천사/악마/중립 승리 경로) passed");
+// ===== 시나리오 4: 최대 일수 안전망 — 우세 판정 (M2-5, P0-B 교착 방지) =====
+{
+  const s = makeState([
+    player("d", "demon", "demon"),
+    player("h", "gain", "demon"),
+    player("a1", "citizen", "angel"),
+    player("a2", "citizen", "angel"),
+    player("a3", "citizen", "angel"),
+  ]);
+  // 천사 3 vs 악마팀 2 — 시간 초과 시 천사 우세.
+  assert.equal(checkTimeoutWinner(s.players).winner, "angels", "카운트 우세 = 천사");
+  // 동률(2:2)은 악마 — canon §30 충돌 시 악마 유리.
+  s.players.a3.alive = false;
+  assert.equal(checkTimeoutWinner(s.players).winner, "demons", "동률은 악마 유리");
+  // 카운트 보너스(라이너 백호 등)가 우세 판정에 반영된다.
+  s.players.a2.counters.countBonus = 2;
+  assert.equal(checkTimeoutWinner(s.players).winner, "angels", "countBonus 반영");
+}
+
+console.log("Gomdori 풀게임 e2e 시뮬 (천사/악마/중립 승리 경로 + 타임아웃 우세) passed");

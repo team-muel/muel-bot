@@ -25,6 +25,7 @@
  */
 
 import {
+  checkTimeoutWinner,
   checkWinCondition,
   resolveNightActions,
   resolveNightmares,
@@ -39,6 +40,7 @@ import {
   HELPER_ROLES,
   isDemonKillerRole,
 } from "../supabase/functions/_shared/engine/roles.ts";
+import { GOMDORI_RULES } from "../supabase/functions/_shared/gomdori-rules.ts";
 import type { Faction, MatchState, PlayerState } from "../supabase/functions/_shared/engine/types.ts";
 
 // ===== 시드 RNG (mulberry32) — 재현 가능한 판 =====
@@ -206,7 +208,8 @@ function nightPolicy(rng: Rng, s: MatchState, eclipseUsed: { v: boolean }, round
 
 // ===== 한 판 =====
 type GameResult = {
-  winner: "angels" | "demons" | "neutral" | "stalemate";
+  winner: "angels" | "demons" | "neutral";
+  timeout: boolean;
   rounds: number;
   executions: number;
   nightDeaths: number;
@@ -225,9 +228,10 @@ function playGame(rng: Rng, playerCount: number, spawnPasua: boolean, approveP: 
   let skipDay = false; // 일식: 다음 아침/투표 생략
 
   const win = () => checkWinCondition(s.players).winner;
+  const MAX_DAYS = GOMDORI_RULES.gameLength.maxDays;
 
   // 첫째 밤은 무능력(GOMDORI_RULES.firstNight) — 바로 1일차 낮으로.
-  for (let round = 1; round <= 40; round++) {
+  for (let round = 1; round <= MAX_DAYS; round++) {
     rounds = round;
 
     // --- 낮: 처형 투표 → 찬반 → 처형 (일식이면 생략) ---
@@ -304,11 +308,15 @@ function playGame(rng: Rng, playerCount: number, spawnPasua: boolean, approveP: 
     if (win()) break;
   }
 
+  // 승부 미결 = 최대 일수 도달 → 우세 판정 (phase-advance 의 M2-5 안전망 미러).
   const w = win();
+  const timeout = w == null;
+  const winner = (w ?? checkTimeoutWinner(s.players).winner) as GameResult["winner"];
   const corrupts = Object.values(s.players).filter((p) => p.currentRole === "corrupted").length;
   const converts = Object.values(s.players).filter((p) => p.currentRole === "converted").length;
   return {
-    winner: (w ?? "stalemate") as GameResult["winner"],
+    winner,
+    timeout,
     rounds,
     executions,
     nightDeaths,
@@ -338,7 +346,7 @@ const ROUND_MIN = (30 + 60 + 3 + 180 + 60 + 60) / 60;
 console.log(`Gomdori 밸런스 몬테카를로 — N=${N}/구성, seed=${SEED}, 찬성확률=${APPROVE_P} (uninformed baseline)`);
 console.log(`구조 진단 전용 — 실플레이 승률 아님 (추리 정보 0 가정, 악마만 서클 인지)\n`);
 
-const header = ["구성", "천사승", "악마승", "중립승", "교착", "평균일수", "p90일수", "예상실시간", "처형/판", "밤사망/판", "타락/판", "전향/판", "부활/판"];
+const header = ["구성", "천사승", "악마승", "중립승", "캡종결", "평균일수", "p90일수", "예상실시간", "처형/판", "밤사망/판", "타락/판", "전향/판", "부활/판"];
 const rows: string[][] = [];
 
 for (const playerCount of [5, 6, 7, 8, 9, 10, 11, 12]) {
@@ -358,7 +366,7 @@ for (const playerCount of [5, 6, 7, 8, 9, 10, 11, 12]) {
       pct(count("angels")),
       pct(count("demons")),
       pct(count("neutral")),
-      pct(count("stalemate")),
+      pct(results.filter((r) => r.timeout).length),
       avg((r) => r.rounds).toFixed(1),
       String(p90),
       `${Math.round(avg((r) => r.rounds) * ROUND_MIN + 5)}분`,

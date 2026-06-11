@@ -4,6 +4,7 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 import { HELPER_ROLES, isDemonKillerRole } from "../_shared/engine/roles.ts";
+import { getRoleDefinition } from "../_shared/engine/engine.ts";
 
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
@@ -89,7 +90,7 @@ Deno.serve((req: Request) => {
     // 2. Validate action against current phase and role
     const { data: player, error: playerError } = await supabase
       .from("match_players")
-      .select("role, alive")
+      .select("role, alive, engine_state")
       .eq("match_id", matchId)
       .eq("user_id", claims.sub)
       .single();
@@ -106,6 +107,15 @@ Deno.serve((req: Request) => {
       const allowedActions = NIGHT_ACTIONS_BY_ROLE[player.role] ?? [];
       if (!allowedActions.includes(actionType)) {
         throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
+      }
+      // maxUses(1회성 능력) 소진 선제 거부 — 최종 강제는 엔진(resolveNightActions,
+      // counters.used_*). 여기서 막는 건 "제출됐는데 발동 안 함" UX 혼란 방지용.
+      const ability = getRoleDefinition(player.role)?.actions.night?.find((a) => a.id === actionType);
+      if (ability?.maxUses != null) {
+        const counters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters;
+        if ((counters?.[`used_${actionType}`] ?? 0) >= ability.maxUses) {
+          throw conflict("ability_exhausted", "이미 사용한 능력입니다.");
+        }
       }
       // 변신(베스토)·일식(팬텀) 등 SELF 행동은 대상 없이 자기에게 발동 — 대상 검증 생략.
       if (!SELF_ACTIONS.includes(actionType)) {

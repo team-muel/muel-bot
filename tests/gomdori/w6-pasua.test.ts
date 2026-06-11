@@ -5,6 +5,7 @@ import {
   checkWinCondition,
   resolveNightActions,
 } from "../../supabase/functions/_shared/engine/engine.ts";
+import { resolveNeutralMode, rollNeutralSpawn } from "../../supabase/functions/_shared/neutral.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
 function player(userId: string, role: string, faction: Faction): PlayerState {
@@ -147,8 +148,40 @@ for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
 }
 assert.match(migration, /settings jsonb not null default '\{\}'/, "matches.settings 컬럼이 추가되어야 한다");
 assert.match(matchStart, /if \(spawnPasua\) roles\.push\(\{ role: "pasua", faction: "neutral" \}\)/, "파스아 슬롯 배정");
-assert.match(matchStart, /includeNeutral/, "중립 등장은 게임 설정 게이트");
+assert.match(matchStart, /rollNeutralSpawn/, "중립 등장은 rollNeutralSpawn 판정(확률형, 결정 잠금 #2)");
 assert.match(matchAction, /pasua: \["pasua_convert"\]/, "파스아 밤 행동 허용");
 assert.match(roles, /id: "pasua"[\s\S]*?faction: "neutral"/, "파스아 엔진 진영은 neutral");
+
+// --- 중립 등장 정책 (P0-A: match-settings + 확률형 auto) ---
+{
+  // 모드 해석: settings.neutral 우선, 레거시 includeNeutral 호환, 미설정 = auto.
+  assert.equal(resolveNeutralMode({}), "auto", "미설정은 auto");
+  assert.equal(resolveNeutralMode({ neutral: "on" }), "on");
+  assert.equal(resolveNeutralMode({ neutral: "off" }), "off");
+  assert.equal(resolveNeutralMode({ neutral: "banana" }), "auto", "알 수 없는 값은 auto");
+  assert.equal(resolveNeutralMode({ includeNeutral: true }), "on", "레거시 불리언 on 호환");
+  assert.equal(resolveNeutralMode({ includeNeutral: false }), "off", "레거시 불리언 off 호환");
+
+  // 등장 판정: 자격 인원 + 모드/확률.
+  assert.equal(rollNeutralSpawn({ neutral: "on" }, 7), false, "자격 미달(8인 미만)은 on 이어도 미등장");
+  assert.equal(rollNeutralSpawn({ neutral: "on" }, 8), true, "on + 자격 = 항상 등장");
+  assert.equal(rollNeutralSpawn({ neutral: "off" }, 12, () => 0), false, "off = 등장 안 함");
+  assert.equal(
+    rollNeutralSpawn({}, 8, () => 0),
+    true,
+    "auto: random < autoSpawnChance 면 등장",
+  );
+  assert.equal(
+    rollNeutralSpawn({}, 8, () => 0.999),
+    false,
+    "auto: random >= autoSpawnChance 면 미등장",
+  );
+}
+
+// match-settings 함수 계약: 존재 + 호스트/로비 검증 + neutral 일원화.
+const matchSettings = read("supabase/functions/match-settings/index.ts");
+assert.match(matchSettings, /not_host/, "방장만 설정 변경");
+assert.match(matchSettings, /invalid_status/, "로비에서만 설정 변경");
+assert.match(matchSettings, /NEUTRAL_MODES/, "neutral 값 검증은 NEUTRAL_MODES 단일 출처");
 
 console.log("Gomdori W6 파스아 checks passed");
