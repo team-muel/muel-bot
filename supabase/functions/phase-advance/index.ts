@@ -235,6 +235,64 @@ async function finishMatchIfWon(
   return win;
 }
 
+async function performPresenceSweep(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const { data: lobbies, error: lobbiesError } = await supabase
+    .from("matches")
+    .select("id")
+    .eq("status", "lobby");
+
+  if (lobbiesError || !lobbies || lobbies.length === 0) return;
+
+  const threshold = new Date(Date.now() - 120 * 1000).toISOString(); // 2 minutes ago
+
+  for (const lobby of lobbies) {
+    const matchId = lobby.id;
+
+    const { data: expiredPlayers, error: expiredError } = await supabase
+      .from("match_players")
+      .select("user_id")
+      .eq("match_id", matchId)
+      .lt("last_seen_at", threshold);
+
+    if (expiredError || !expiredPlayers || expiredPlayers.length === 0) continue;
+
+    const expiredUserIds = expiredPlayers.map((p) => p.user_id);
+
+    const { error: deleteError } = await supabase
+      .from("match_players")
+      .delete()
+      .eq("match_id", matchId)
+      .in("user_id", expiredUserIds);
+
+    if (deleteError) continue;
+
+    for (const uid of expiredUserIds) {
+      await supabase.from("match_events").insert({
+        match_id: matchId,
+        event_type: "player_left",
+        visibility: "public",
+        payload: { userId: uid, swept: true },
+      });
+    }
+
+    const { count, error: countError } = await supabase
+      .from("match_players")
+      .select("user_id", { count: "exact", head: true })
+      .eq("match_id", matchId);
+
+    if (!countError && count === 0) {
+      await supabase
+        .from("matches")
+        .update({
+          status: "aborted",
+          abort_reason: "empty_table",
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", matchId);
+    }
+  }
+}
+
 // Called by pg_cron or an external scheduler. JWT verification is disabled in
 // supabase/config.toml, so all authority stays in the service-role DB writes.
 Deno.serve((req: Request) => {
@@ -262,6 +320,9 @@ Deno.serve((req: Request) => {
 
     const supabase = getSupabaseAdmin();
     const now = new Date().toISOString();
+
+    // Perform Lobby Presence GC Sweep
+    await performPresenceSweep(supabase).catch((err) => console.error("Presence sweep failed:", err));
 
     const expiredPhases = requireNoError(
       await supabase

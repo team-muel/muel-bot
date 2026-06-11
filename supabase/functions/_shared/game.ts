@@ -15,6 +15,8 @@ export type MatchSummary = {
   // 로비 게임 설정(jsonb). 예: { includeNeutral: true } → 파스아(중립) 등장.
   // 토글 UI 는 후속(로비 설정 UI). 기본 미설정 = 비활성.
   settings: Record<string, unknown>;
+  tableLabel: string;
+  engineState: Record<string, unknown> | null;
 };
 
 export type PlayerSummary = {
@@ -87,6 +89,11 @@ export function toMatchSummary(row: Record<string, unknown>): MatchSummary {
       row.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
         ? (row.settings as Record<string, unknown>)
         : {},
+    tableLabel: typeof row.table_label === "string" ? row.table_label : "",
+    engineState:
+      row.engine_state && typeof row.engine_state === "object" && !Array.isArray(row.engine_state)
+        ? (row.engine_state as Record<string, unknown>)
+        : null,
   };
 }
 
@@ -177,4 +184,44 @@ export async function getGameUser(userId: string): Promise<{
     displayName: String(data.display_name),
     avatarUrl: typeof data.avatar_url === "string" ? data.avatar_url : null,
   };
+}
+
+export async function findMyActiveMatch(
+  userId: string,
+  discordChannelId: string,
+  instanceId: string | null,
+): Promise<MatchSummary | null> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("matches")
+    .select("*, match_players!inner(*)")
+    .eq("match_players.user_id", userId)
+    .not("status", "in", '("ended","aborted")');
+
+  if (instanceId) {
+    query = query.eq("instance_id", instanceId);
+  } else {
+    query = query.eq("context_type", "discord_voice").eq("context_id", discordChannelId);
+  }
+
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toMatchSummary(data as Record<string, unknown>) : null;
+}
+
+export async function getNextTableNumber(
+  contextType: string,
+  contextId: string,
+): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("next_table_number", {
+    p_context_type: contextType,
+    p_context_id: contextId,
+  });
+  if (error) throw error;
+  return Number(data ?? 1);
 }

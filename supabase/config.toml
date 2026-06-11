@@ -107,5 +107,11 @@ verify_jwt = false
 [functions.match-leave]
 verify_jwt = false
 
+[functions.match-list]
+verify_jwt = false
+
+[functions.match-heartbeat]
+verify_jwt = false
+
 [realtime]
 enabled = true

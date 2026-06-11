@@ -3,9 +3,8 @@ import { conflict, withErrorHandling } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import {
-  findOpenMatchByDiscordChannel,
-  findOpenMatchByInstance,
   getGameUser,
+  getNextTableNumber,
   readJsonObject,
   readRequiredString,
   toMatchSummary,
@@ -36,15 +35,10 @@ Deno.serve((req: Request) => {
         ? body.instanceId.trim()
         : null;
 
-    const existing = instanceId
-      ? (await findOpenMatchByInstance(instanceId)) ?? (await findOpenMatchByDiscordChannel(discordChannelId))
-      : await findOpenMatchByDiscordChannel(discordChannelId);
-    if (existing) {
-      return jsonResponse({ match: existing, created: false }, { origin });
-    }
-
     const host = await getGameUser(claims.sub);
     const supabase = getSupabaseAdmin();
+    const tableNumber = await getNextTableNumber("discord_voice", discordChannelId);
+
     const { data: matchRow, error: matchError } = await supabase
       .from("matches")
       .insert({
@@ -54,6 +48,7 @@ Deno.serve((req: Request) => {
         notification_kind: "discord_channel",
         notification_id: discordChannelId,
         instance_id: instanceId,
+        table_label: `${host.displayName}의 방 ${tableNumber}`,
       })
       .select("*")
       .single();

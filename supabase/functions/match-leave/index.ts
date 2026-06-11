@@ -51,6 +51,26 @@ Deno.serve((req: Request) => {
     });
     if (eventError) throw eventError;
 
+    // 빈 테이블 자동 소멸: 로비에서 마지막 플레이어가 나가면 abort
+    const { count, error: countError } = await supabase
+      .from("match_players")
+      .select("user_id", { count: "exact", head: true })
+      .eq("match_id", matchId);
+
+    if (countError) throw countError;
+
+    if (count === 0) {
+      const { error: abortError } = await supabase
+        .from("matches")
+        .update({
+          status: "aborted",
+          abort_reason: "empty_table",
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", matchId);
+      if (abortError) throw abortError;
+    }
+
     return jsonResponse({ success: true }, { origin });
   });
 });

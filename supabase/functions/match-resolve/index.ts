@@ -2,8 +2,7 @@ import { preflight, jsonResponse } from "../_shared/cors.ts";
 import { badRequest, withErrorHandling } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import {
-  findOpenMatchByDiscordChannel,
-  findOpenMatchByInstance,
+  findMyActiveMatch,
   readJsonObject,
 } from "../_shared/game.ts";
 
@@ -23,7 +22,7 @@ Deno.serve((req: Request) => {
       );
     }
 
-    await requireGameAuth(req);
+    const claims = await requireGameAuth(req);
     const body = readJsonObject(await req.json().catch(() => null));
     const instanceId =
       typeof body.instanceId === "string" && body.instanceId.trim() ? body.instanceId.trim() : null;
@@ -36,10 +35,7 @@ Deno.serve((req: Request) => {
       throw badRequest("missing_field", "instanceId 또는 discordChannelId 가 필요합니다.");
     }
 
-    let match = instanceId ? await findOpenMatchByInstance(instanceId) : null;
-    if (!match && discordChannelId) {
-      match = await findOpenMatchByDiscordChannel(discordChannelId);
-    }
+    const match = await findMyActiveMatch(claims.sub, discordChannelId ?? "", instanceId);
 
     return jsonResponse(match, { origin });
   });
