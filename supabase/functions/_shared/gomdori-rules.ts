@@ -46,6 +46,28 @@ export const GOMDORI_RULES = {
     angels: "aliveDemons === 0",
     demons: "aliveDemons >= aliveAngels",
   },
+
+  /**
+   * 인원 범위 — 원본 기준 8~12 (사용자 확정 2026-06-11: "5인 게임은 의도한 결과
+   * 아님, 원본은 8~12"). match-start 검증과 로비 시작 조건의 단일 출처.
+   * 중립(파스아) 등장 자격(PASUA_MIN_PLAYERS=8)과 최소 인원이 일치한다 —
+   * 모든 유효 게임에서 중립이 등장할 *수* 있다(auto 확률은 game.ts
+   * NEUTRAL_SPAWN_CHANCE).
+   */
+  playerCount: {
+    min: 8,
+    max: 12,
+  },
+
+  /**
+   * 게임 길이 안전망 (M2-5 교착 방지).
+   * maxDays 일차의 판결까지 승부가 나지 않으면 다음 밤으로 넘어가지 않고
+   * 우세 판정(팀 카운트 비교, 동률은 악마 — canon §30 충돌 시 악마 유리)으로 종착.
+   * 근거: docs/gomdori-gameplay-verification.md P0-B (부활 루프 교착).
+   */
+  gameLength: {
+    maxDays: 15,
+  },
 } as const;
 
 export type GomdoriRules = typeof GOMDORI_RULES;

@@ -260,25 +260,28 @@ export const CORE_ROLES: RoleDefinition[] = [
   },
   {
     // 미즐렛(천사-15): 디저트 선물 = 탈락자 부활(v2). 탈락한 대상을 되살린다.
+    // maxUses 1 — 부활이 무제한이면 밤 사망과 상쇄돼 게임이 수렴하지 않는다
+    // (verification P0-B 교착 엔진). 엔진 resolveNightActions 가 counters.used_* 로 강제.
     id: "mizlet",
     name: "미즐렛",
     faction: "angel",
     passives: [],
     actions: {
       night: [
-        { id: "mizlet_revive", name: "디저트 선물", targetType: "SINGLE_DEAD", priority: 3, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "mizlet_revive", name: "디저트 선물", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
       ],
     },
   },
   {
     // 헬렌(천사-17): 황금빛 수면 = 자유로운 새 부활(v2). 탈락한 대상을 되살린다.
+    // maxUses 1 — 미즐렛과 동일 근거 (P0-B).
     id: "helen",
     name: "헬렌",
     faction: "angel",
     passives: [],
     actions: {
       night: [
-        { id: "helen_revive", name: "황금빛 수면", targetType: "SINGLE_DEAD", priority: 3, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "helen_revive", name: "황금빛 수면", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
       ],
     },
   },

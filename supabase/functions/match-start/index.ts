@@ -11,6 +11,7 @@ import {
   resolveNeutralMode,
 } from "../_shared/game.ts";
 import { ANGEL_ROLES, DEMON_KILLER_ROLES, HELPER_ROLES } from "../_shared/engine/roles.ts";
+import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 
 // pending: 악마/조력자 슬롯은 role_assign 단계에서 *플레이어가 변종을 선택*한다(canon §5
 // 배정 순서 = 악마 → 조력자 → 천사, 각자 자기 직업 선택). 선택 전까지 placeholder role
@@ -39,8 +40,12 @@ function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): 
   //   중립팀 = 파스아(1) — 8인 이상에서 천사 슬롯 1 대체(W6). 등장 여부는 확률형(M3-1,
   //   결정 잠금 #2): auto = NEUTRAL_SPAWN_CHANCE 확률(참여자는 존재를 알 수 없다),
   //   on = 강제 등장, off = 제외 — 호스트가 로비 게임 설정으로 오버라이드.
-  if (playerCount < 5 || playerCount > 12) {
-    throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
+  // 인원 범위는 원본 기준 8~12 (gomdori-rules.playerCount 단일 출처, 2026-06-11 확정).
+  if (playerCount < GOMDORI_RULES.playerCount.min || playerCount > GOMDORI_RULES.playerCount.max) {
+    throw badRequest(
+      "invalid_player_count",
+      `인원은 ${GOMDORI_RULES.playerCount.min}명에서 ${GOMDORI_RULES.playerCount.max}명 사이여야 합니다.`,
+    );
   }
 
   const neutralEligible = playerCount >= PASUA_MIN_PLAYERS;
@@ -130,8 +135,15 @@ Deno.serve((req: Request) => {
       .eq("match_id", matchId);
     
     if (playersError) throw playersError;
-    if (!players || players.length < 5 || players.length > 12) {
-      throw conflict("invalid_player_count", "인원은 5명 이상 12명 이하여야 합니다.");
+    if (
+      !players ||
+      players.length < GOMDORI_RULES.playerCount.min ||
+      players.length > GOMDORI_RULES.playerCount.max
+    ) {
+      throw conflict(
+        "invalid_player_count",
+        `인원은 ${GOMDORI_RULES.playerCount.min}명 이상 ${GOMDORI_RULES.playerCount.max}명 이하여야 합니다.`,
+      );
     }
 
     const unreadyPlayers = players.filter((p) => !p.ready && !p.is_host);

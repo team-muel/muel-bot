@@ -32,10 +32,15 @@ export type WinConditionResult = {
   aliveDemons: number;
 };
 
-// 파스아(중립) 단독 승리 임계 — 누적 전향 N명. (사용자 결정 2026-06-10: 3명.
-// v1 엔 신앙=살해가 없으므로 전향만으로 도달. canon 룰카드 4명은 단일 신규 직업엔
-// 느려서 3으로 하향.)
-export const PASUA_WIN_CONVERTS = 3;
+// 파스아(중립) 단독 승리 임계 — *생존* 교세가 ceil(인원/3) 이상 (최소 3).
+// 2026-06-11 P0-C 튜닝(후속 ALL 지시): 기존 "누적 전향 고정 3"은 시뮬에서 중립승
+// 35~70%(인원 단조 증가)로 지배적이었다. 후보 4안 비교(sim:balance --rule) 결과
+// scale-alive(인원 비례 임계 + 생존 교세)가 16~34%로 유일하게 비지배 + 단조성
+// 파괴 + "전향자 처형 = 교세 차감" 카운터플레이 성립. 8~9인=3, 10~12인=4.
+// 측정 근거: docs/gomdori-gameplay-verification.md §6.
+export function pasuaWinThreshold(totalPlayers: number): number {
+  return Math.max(3, Math.ceil(totalPlayers / 3));
+}
 
 export function getRoleDefinition(roleId: string) {
   return CORE_ROLES.find((role) => role.id === roleId);
@@ -89,6 +94,18 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       sourcePlayer.tags = sourcePlayer.tags.filter((tag) => tag !== TAG_DELAYED);
       events.push({ type: "action_delayed", userId: sourcePlayer.userId });
       continue;
+    }
+
+    // maxUses 강제 — 1회성 능력(부활 등)의 사용 횟수를 counters.used_<id> 로 영속 기록.
+    // 미강제 시 미즐렛/헬렌 부활이 매 밤 반복돼 게임이 수렴하지 않는 교착 엔진이 된다
+    // (docs/gomdori-gameplay-verification.md P0-B). used_* 는 지속 카운터 — 라운드 리셋 X.
+    if (ability.maxUses != null) {
+      const usedKey = `used_${ability.id}`;
+      if ((sourcePlayer.counters[usedKey] ?? 0) >= ability.maxUses) {
+        events.push({ type: "action_blocked_exhausted", userId: sourcePlayer.userId });
+        continue;
+      }
+      sourcePlayer.counters[usedKey] = (sourcePlayer.counters[usedKey] ?? 0) + 1;
     }
 
     for (const effect of ability.effects) {
@@ -312,20 +329,30 @@ export function resolveNightmares(players: Record<string, PlayerState>): unknown
   return events;
 }
 
-export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
+// 팀 카운트 집계 — checkWinCondition / checkTimeoutWinner 공용 단일 출처.
+export type TeamCounts = {
+  aliveAngels: number;
+  aliveDemons: number;
+  angelCount: number;
+  demonCount: number;
+  pasuaAlive: boolean;
+  pasuaFlock: number;
+};
+
+export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   let aliveAngels = 0;
   let aliveDemons = 0;
   let angelCount = 0;
   let demonCount = 0;
 
-  // 파스아 교세 — 누적 전향(생사 무관) 수와 파스아 생존 여부. 전향자는 currentRole
-  // 이 'converted' 로 바뀌고, 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔
-  // 잡히지 않는다(아래 bucket=null).
+  // 파스아 교세 — *생존* 전향자 수와 파스아 생존 여부 (P0-C 튜닝: 전향자가 처형/
+  // 살해되면 교세에서 빠진다 — 카운터플레이). 전향자는 currentRole 이 'converted',
+  // 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔 잡히지 않는다(bucket=null).
   let pasuaAlive = false;
   let pasuaFlock = 0;
   for (const player of Object.values(players)) {
     if (player.currentRole === "pasua" && player.alive) pasuaAlive = true;
-    if (player.currentRole === "converted") pasuaFlock += 1;
+    if (player.currentRole === "converted" && player.alive) pasuaFlock += 1;
   }
 
   for (const player of Object.values(players)) {
@@ -358,10 +385,18 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     }
   }
 
+  return { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock };
+}
+
+export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
+  const { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock } =
+    countTeams(players);
+
   // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
-  // 파스아가 살아있고 누적 전향이 임계 이상이면 중립 승리.
+  // 파스아 생존 + *생존* 교세가 인원 비례 임계(pasuaWinThreshold) 이상이면 중립 승리.
+  const totalPlayers = Object.keys(players).length;
   let winner: "angels" | "demons" | "neutral" | null = null;
-  if (pasuaAlive && pasuaFlock >= PASUA_WIN_CONVERTS) {
+  if (pasuaAlive && pasuaFlock >= pasuaWinThreshold(totalPlayers)) {
     winner = "neutral";
   } else if (aliveDemons === 0) {
     winner = "angels";
@@ -370,6 +405,26 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   }
 
   return { winner, aliveAngels, aliveDemons };
+}
+
+// 최대 일수 도달 시 강제 종착 (M2-5 교착 안전망 — gomdori-rules.gameLength.maxDays).
+// 우세 판정: 팀 카운트 비교. 동률은 악마 — canon §30 "충돌 시 악마 유리"(마을이 기한 내
+// 악마 제거에 실패한 상태). 중립은 임계 미달이면 후보가 아니다(달성 시 이미 즉시 승리).
+export function checkTimeoutWinner(players: Record<string, PlayerState>): {
+  winner: "angels" | "demons";
+  angelCount: number;
+  demonCount: number;
+  aliveAngels: number;
+  aliveDemons: number;
+} {
+  const { aliveAngels, aliveDemons, angelCount, demonCount } = countTeams(players);
+  return {
+    winner: angelCount > demonCount ? "angels" : "demons",
+    angelCount,
+    demonCount,
+    aliveAngels,
+    aliveDemons,
+  };
 }
 
 function applyEffect(

@@ -304,6 +304,43 @@ for (const v of ["corrupted", "luna_corrupt", "logen_nullify"]) {
   assert.match(helperMig, new RegExp(`'${v}'`), `migration allows ${v}`);
 }
 
+// --- maxUses 강제: 부활은 1회성 — 재사용은 엔진이 차단 (P0-B 교착 엔진 방지) ---
+{
+  const players = {
+    mizlet: player("mizlet", "mizlet", "angel"),
+    fallen: player("fallen", "citizen", "angel", false),
+  };
+  const first = resolveNightActions(
+    emptyState(players, [
+      { sourceUserId: "mizlet", targetUserId: "fallen", actionType: "mizlet_revive", priority: 3 },
+    ]),
+  );
+  assert.equal(first.newState.players.fallen.alive, true, "첫 부활은 성공");
+  assert.equal(
+    first.newState.players.mizlet.counters.used_mizlet_revive,
+    1,
+    "사용 횟수가 counters.used_* 로 영속 기록",
+  );
+
+  // 대상이 다시 탈락한 다음 밤 — 두 번째 부활은 소진 차단.
+  first.newState.players.fallen.alive = false;
+  const second = resolveNightActions(
+    emptyState(first.newState.players, [
+      { sourceUserId: "mizlet", targetUserId: "fallen", actionType: "mizlet_revive", priority: 3 },
+    ]),
+  );
+  assert.equal(second.newState.players.fallen.alive, false, "두 번째 부활은 maxUses 로 차단");
+  assert.ok(
+    second.events.some((e: any) => e.type === "action_blocked_exhausted"),
+    "소진 차단 이벤트 발생",
+  );
+}
+
+// maxUses 매니페스트/검증 계약 — 부활 두 종은 1회성, match-action 은 선제 거부.
+assert.match(roles, /id: "mizlet_revive"[\s\S]*?maxUses: 1/, "미즐렛 부활 maxUses 1");
+assert.match(roles, /id: "helen_revive"[\s\S]*?maxUses: 1/, "헬렌 부활 maxUses 1");
+assert.match(matchAction, /ability_exhausted/, "match-action 소진 선제 거부");
+
 // --- M4-1 변환 이력 reveal (canon §9): 종료 시 이전→최종 직업/진영 공개 ---
 assert.match(
   phaseAdvanceSrc,

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  PASUA_WIN_CONVERTS,
   checkWinCondition,
+  pasuaWinThreshold,
   resolveNightActions,
 } from "../../supabase/functions/_shared/engine/engine.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
@@ -97,9 +97,14 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
   assert.equal(newState.players.demon.actualFaction, "demon", "악마 진영은 유지된다");
 }
 
-// --- 2. 승리 판정: 누적 전향 임계 도달 + 파스아 생존 → 중립 즉시 승리 ---
+// --- 2. 승리 판정: *생존* 교세가 인원 비례 임계 이상 + 파스아 생존 → 중립 즉시 승리 ---
+// P0-C 튜닝 (2026-06-11, 후속 ALL): 임계 = max(3, ceil(인원/3)), 교세 = 생존 전향자만.
+// 근거: docs/gomdori-gameplay-verification.md §6 (후보 4안 시뮬 비교 — scale-alive 채택).
 {
-  assert.equal(PASUA_WIN_CONVERTS, 3, "v1 파스아 승리 임계는 3 (사용자 결정 2026-06-10)");
+  assert.equal(pasuaWinThreshold(8), 3, "8인 임계 3");
+  assert.equal(pasuaWinThreshold(9), 3, "9인 임계 3");
+  assert.equal(pasuaWinThreshold(10), 4, "10인 임계 4");
+  assert.equal(pasuaWinThreshold(12), 4, "12인 임계 4");
 
   const base = {
     pasua: player("pasua", "pasua", "neutral"),
@@ -110,8 +115,9 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
     angel: player("angel", "citizen", "angel"),
   };
 
+  // 6인 픽스처 → 임계 max(3, ceil(6/3)=2) = 3.
   const win = checkWinCondition(base);
-  assert.equal(win.winner, "neutral", "전향 3명 + 파스아 생존 → 중립 승리");
+  assert.equal(win.winner, "neutral", "생존 전향 3명 + 파스아 생존 → 중립 승리");
 
   // 파스아가 죽으면(교주 사망) 교세가 임계여도 즉시 승리 없음.
   const pasuaDead = { ...base, pasua: { ...base.pasua, alive: false } };
@@ -121,6 +127,10 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
   const twoFlock = { ...base };
   delete (twoFlock as Record<string, unknown>).c3;
   assert.notEqual(checkWinCondition(twoFlock).winner, "neutral", "전향 2명이면 중립 승리 아님");
+
+  // 전향자가 처형/살해되면 교세에서 빠진다 — 카운터플레이 (생존 교세 규칙).
+  const oneDead = { ...base, c3: { ...base.c3, alive: false } };
+  assert.notEqual(checkWinCondition(oneDead).winner, "neutral", "전향자 사망 = 교세 차감 → 임계 미달");
 }
 
 // 전향자/파스아는 천사·악마 카운트에서 빠진다(중립 버킷 제외) — 악마 패리티 영향.

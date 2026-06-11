@@ -3,6 +3,7 @@ import { withErrorHandling } from "../_shared/errors.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import {
   TAG_SUSPECTED,
+  checkTimeoutWinner,
   checkWinCondition,
   resolveNightActions,
   resolveNightmares,
@@ -14,6 +15,7 @@ import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
 import { DEMON_KILLER_ROLES } from "../_shared/engine/roles.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 import {
+  PHASE_NIGHT_SUSPECT,
   firstNightTransition,
   nextNightSuspectTransition,
   nightAfterSuspicionTransition,
@@ -715,6 +717,52 @@ Deno.serve((req: Request) => {
 
       if (!nextPhaseType) {
         results.push({ matchId, skipped: true, reason: `Unsupported phase ${phase.phase_type}` });
+        continue;
+      }
+
+      // M2-5 교착 안전망 — 최대 일수(gameLength.maxDays)에 도달했으면 다음 밤으로
+      // 넘어가지 않고 우세 판정(checkTimeoutWinner: 카운트 비교, 동률=악마)으로 종착.
+      // 다음 밤 진입의 단일 관문(부결/처형 후/일식 전부 night_suspect 경유)이라 여기 한 곳.
+      // 근거: docs/gomdori-gameplay-verification.md P0-B (부활 루프 무한게임).
+      if (
+        nextPhaseType === PHASE_NIGHT_SUSPECT &&
+        phase.phase_number >= GOMDORI_RULES.gameLength.maxDays
+      ) {
+        const finalPlayers = await loadPlayers(supabase, matchId);
+        const finalState = playerStateFromRows(matchId, "ended", phase.phase_number, finalPlayers);
+        const timeout = checkTimeoutWinner(finalState.players);
+        const timeoutEndedAt = new Date().toISOString();
+
+        requireNoError(
+          await supabase
+            .from("matches")
+            .update({ winner: timeout.winner, status: "ended", ended_at: timeoutEndedAt })
+            .eq("id", matchId),
+        );
+
+        requireNoError(
+          await supabase
+            .from("match_events")
+            .insert({
+              match_id: matchId,
+              phase_id: phase.id,
+              event_type: "game_ended",
+              visibility: "public",
+              payload: {
+                winner: timeout.winner,
+                winning_faction: timeout.winner === "angels" ? "angel" : "demon",
+                alive_angels: timeout.aliveAngels,
+                alive_demons: timeout.aliveDemons,
+                timeout: true,
+                max_days: GOMDORI_RULES.gameLength.maxDays,
+                angel_count: timeout.angelCount,
+                demon_count: timeout.demonCount,
+                players: revealedPlayers(finalPlayers),
+              },
+            }),
+        );
+
+        results.push({ matchId, advancedTo: "ended", winner: timeout.winner, timeout: true });
         continue;
       }
 

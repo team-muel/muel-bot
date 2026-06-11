@@ -101,10 +101,10 @@ verify_jwt = false
 [functions.match-kick]
 verify_jwt = false
 
-[functions.match-leave]
+[functions.match-settings]
 verify_jwt = false
 
-[functions.match-settings]
+[functions.match-leave]
 verify_jwt = false
 
 [realtime]
