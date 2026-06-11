@@ -218,7 +218,37 @@ type GameResult = {
   revives: number;
 };
 
-function playGame(rng: Rng, playerCount: number, spawnPasua: boolean, approveP: number): GameResult {
+/**
+ * 파스아 승리 규칙 후보 (P0-C 비교 측정 — --rule 로 선택).
+ * - fixed3: 구 규칙 — 누적 전향 3 (생사 무관).
+ * - scale: 임계 인원 비례 max(3, ceil(N/3)) — 8~9인 3, 10~12인 4.
+ * - alive3: 생존 교세만 카운트(임계 3) — 전향자 처형이 카운터플레이가 된다.
+ * - scale-alive: 둘 다 — **2026-06-11 채택, 엔진 현행**(engine.pasuaWinThreshold +
+ *   생존 교세). 비교 측정 결과는 docs/gomdori-gameplay-verification.md §6.
+ * 래퍼는 자체 규칙을 먼저 판정하고, 엔진의 neutral 판정은 무시(null 매핑)하므로
+ * 엔진 현행보다 느슨한/엄격한 규칙 모두 측정 가능.
+ */
+type PasuaRule = "fixed3" | "scale" | "alive3" | "scale-alive";
+
+function pasuaThreshold(rule: PasuaRule, totalPlayers: number): number {
+  return rule === "scale" || rule === "scale-alive" ? Math.max(3, Math.ceil(totalPlayers / 3)) : 3;
+}
+
+function pasuaFlock(rule: PasuaRule, players: Record<string, PlayerState>): number {
+  const converted = Object.values(players).filter((p) => p.currentRole === "converted");
+  return (rule === "alive3" || rule === "scale-alive"
+    ? converted.filter((p) => p.alive)
+    : converted
+  ).length;
+}
+
+function playGame(
+  rng: Rng,
+  playerCount: number,
+  spawnPasua: boolean,
+  approveP: number,
+  pasuaRule: PasuaRule,
+): GameResult {
   const s = makeState(buildRoster(rng, playerCount, spawnPasua));
   const eclipseUsed = { v: false };
   let executions = 0;
@@ -227,7 +257,16 @@ function playGame(rng: Rng, playerCount: number, spawnPasua: boolean, approveP: 
   let rounds = 0;
   let skipDay = false; // 일식: 다음 아침/투표 생략
 
-  const win = () => checkWinCondition(s.players).winner;
+  const win = (): GameResult["winner"] | null => {
+    const w = checkWinCondition(s.players);
+    const pasuaAlive = Object.values(s.players).some((p) => p.currentRole === "pasua" && p.alive);
+    if (pasuaAlive && pasuaFlock(pasuaRule, s.players) >= pasuaThreshold(pasuaRule, playerCount)) {
+      return "neutral";
+    }
+    // 엔진(현행 fixed3)은 neutral 이라 판단해도 후보 규칙 미달이면 계속 진행.
+    if (w.winner === "neutral") return null;
+    return w.winner;
+  };
   const MAX_DAYS = GOMDORI_RULES.gameLength.maxDays;
 
   // 첫째 밤은 무능력(GOMDORI_RULES.firstNight) — 바로 1일차 낮으로.
@@ -336,24 +375,37 @@ function arg(name: string, fallback: number): number {
   return fallback;
 }
 
+function argStr(name: string, fallback: string): string {
+  const i = process.argv.indexOf(`--${name}`);
+  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
+  return fallback;
+}
+
 const N = arg("n", 2000);
 const SEED = arg("seed", 42);
 const APPROVE_P = arg("approve", 0.5);
+const PASUA_RULE = argStr("rule", "scale-alive") as PasuaRule; // 기본 = 엔진 현행
 
 // 실시간 페이싱(룰 매니페스트 durations): 1라운드 = 의심30+밤60+해소3+낮180+투표60+찬반60 ≈ 6.6분.
 const ROUND_MIN = (30 + 60 + 3 + 180 + 60 + 60) / 60;
 
-console.log(`Gomdori 밸런스 몬테카를로 — N=${N}/구성, seed=${SEED}, 찬성확률=${APPROVE_P} (uninformed baseline)`);
+console.log(
+  `Gomdori 밸런스 몬테카를로 — N=${N}/구성, seed=${SEED}, 찬성확률=${APPROVE_P}, 파스아규칙=${PASUA_RULE} (uninformed baseline)`,
+);
 console.log(`구조 진단 전용 — 실플레이 승률 아님 (추리 정보 0 가정, 악마만 서클 인지)\n`);
 
 const header = ["구성", "천사승", "악마승", "중립승", "캡종결", "평균일수", "p90일수", "예상실시간", "처형/판", "밤사망/판", "타락/판", "전향/판", "부활/판"];
 const rows: string[][] = [];
 
-for (const playerCount of [5, 6, 7, 8, 9, 10, 11, 12]) {
-  for (const pasua of playerCount >= 8 ? [false, true] : [false]) {
+// 인원 범위는 원본 기준 8~12 (gomdori-rules.playerCount, 사용자 확정 2026-06-11).
+const COUNTS: number[] = [];
+for (let c = GOMDORI_RULES.playerCount.min; c <= GOMDORI_RULES.playerCount.max; c++) COUNTS.push(c);
+
+for (const playerCount of COUNTS) {
+  for (const pasua of [false, true]) {
     const rng = mulberry32(SEED * 1000 + playerCount * 10 + (pasua ? 1 : 0));
     const results: GameResult[] = [];
-    for (let i = 0; i < N; i++) results.push(playGame(rng, playerCount, pasua, APPROVE_P));
+    for (let i = 0; i < N; i++) results.push(playGame(rng, playerCount, pasua, APPROVE_P, PASUA_RULE));
 
     const count = (w: GameResult["winner"]) => results.filter((r) => r.winner === w).length;
     const pct = (n: number) => `${((100 * n) / N).toFixed(1)}%`;

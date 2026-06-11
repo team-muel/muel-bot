@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  PASUA_WIN_CONVERTS,
   checkWinCondition,
+  pasuaWinThreshold,
   resolveNightActions,
 } from "../../supabase/functions/_shared/engine/engine.ts";
-import { resolveNeutralMode, rollNeutralSpawn } from "../../supabase/functions/_shared/neutral.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
 function player(userId: string, role: string, faction: Faction): PlayerState {
@@ -98,9 +97,14 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
   assert.equal(newState.players.demon.actualFaction, "demon", "악마 진영은 유지된다");
 }
 
-// --- 2. 승리 판정: 누적 전향 임계 도달 + 파스아 생존 → 중립 즉시 승리 ---
+// --- 2. 승리 판정: *생존* 교세가 인원 비례 임계 이상 + 파스아 생존 → 중립 즉시 승리 ---
+// P0-C 튜닝 (2026-06-11, 후속 ALL): 임계 = max(3, ceil(인원/3)), 교세 = 생존 전향자만.
+// 근거: docs/gomdori-gameplay-verification.md §6 (후보 4안 시뮬 비교 — scale-alive 채택).
 {
-  assert.equal(PASUA_WIN_CONVERTS, 3, "v1 파스아 승리 임계는 3 (사용자 결정 2026-06-10)");
+  assert.equal(pasuaWinThreshold(8), 3, "8인 임계 3");
+  assert.equal(pasuaWinThreshold(9), 3, "9인 임계 3");
+  assert.equal(pasuaWinThreshold(10), 4, "10인 임계 4");
+  assert.equal(pasuaWinThreshold(12), 4, "12인 임계 4");
 
   const base = {
     pasua: player("pasua", "pasua", "neutral"),
@@ -111,8 +115,9 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
     angel: player("angel", "citizen", "angel"),
   };
 
+  // 6인 픽스처 → 임계 max(3, ceil(6/3)=2) = 3.
   const win = checkWinCondition(base);
-  assert.equal(win.winner, "neutral", "전향 3명 + 파스아 생존 → 중립 승리");
+  assert.equal(win.winner, "neutral", "생존 전향 3명 + 파스아 생존 → 중립 승리");
 
   // 파스아가 죽으면(교주 사망) 교세가 임계여도 즉시 승리 없음.
   const pasuaDead = { ...base, pasua: { ...base.pasua, alive: false } };
@@ -122,6 +127,10 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
   const twoFlock = { ...base };
   delete (twoFlock as Record<string, unknown>).c3;
   assert.notEqual(checkWinCondition(twoFlock).winner, "neutral", "전향 2명이면 중립 승리 아님");
+
+  // 전향자가 처형/살해되면 교세에서 빠진다 — 카운터플레이 (생존 교세 규칙).
+  const oneDead = { ...base, c3: { ...base.c3, alive: false } };
+  assert.notEqual(checkWinCondition(oneDead).winner, "neutral", "전향자 사망 = 교세 차감 → 임계 미달");
 }
 
 // 전향자/파스아는 천사·악마 카운트에서 빠진다(중립 버킷 제외) — 악마 패리티 영향.
@@ -141,6 +150,8 @@ const read = (p: string) => readFileSync(p, "utf8");
 const migration = read("supabase/migrations/20260610120000_gomdori_w6_pasua_neutral.sql");
 const matchStart = read("supabase/functions/match-start/index.ts");
 const matchAction = read("supabase/functions/match-action/index.ts");
+const matchSettings = read("supabase/functions/match-settings/index.ts");
+const sharedGame = read("supabase/functions/_shared/game.ts");
 const roles = read("supabase/functions/_shared/engine/roles.ts");
 
 for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
@@ -148,40 +159,27 @@ for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
 }
 assert.match(migration, /settings jsonb not null default '\{\}'/, "matches.settings 컬럼이 추가되어야 한다");
 assert.match(matchStart, /if \(spawnPasua\) roles\.push\(\{ role: "pasua", faction: "neutral" \}\)/, "파스아 슬롯 배정");
-assert.match(matchStart, /rollNeutralSpawn/, "중립 등장은 rollNeutralSpawn 판정(확률형, 결정 잠금 #2)");
 assert.match(matchAction, /pasua: \["pasua_convert"\]/, "파스아 밤 행동 허용");
 assert.match(roles, /id: "pasua"[\s\S]*?faction: "neutral"/, "파스아 엔진 진영은 neutral");
 
-// --- 중립 등장 정책 (P0-A: match-settings + 확률형 auto) ---
-{
-  // 모드 해석: settings.neutral 우선, 레거시 includeNeutral 호환, 미설정 = auto.
-  assert.equal(resolveNeutralMode({}), "auto", "미설정은 auto");
-  assert.equal(resolveNeutralMode({ neutral: "on" }), "on");
-  assert.equal(resolveNeutralMode({ neutral: "off" }), "off");
-  assert.equal(resolveNeutralMode({ neutral: "banana" }), "auto", "알 수 없는 값은 auto");
-  assert.equal(resolveNeutralMode({ includeNeutral: true }), "on", "레거시 불리언 on 호환");
-  assert.equal(resolveNeutralMode({ includeNeutral: false }), "off", "레거시 불리언 off 호환");
+// --- M3-1 중립 확률 등장 (결정 잠금 #2) ---
+// 게이트: 모드 해석은 공유 헬퍼, auto 는 확률 스폰, on/off 는 호스트 오버라이드.
+assert.match(matchStart, /resolveNeutralMode\(match\.settings\)/, "중립 모드는 settings 에서 해석");
+assert.match(
+  matchStart,
+  /neutralMode === "on" \|\|\s*\(neutralMode === "auto" && Math\.random\(\) < NEUTRAL_SPAWN_CHANCE\)/,
+  "auto = 확률 스폰, on = 강제 등장",
+);
+assert.match(matchStart, /playerCount >= PASUA_MIN_PLAYERS/, "적격 인원 게이트 유지");
+assert.match(sharedGame, /NEUTRAL_MODES[\s\S]*?"auto", "on", "off"/, "중립 모드 enum");
+assert.match(sharedGame, /includeNeutral === true\) return "on"/, "레거시 includeNeutral=true → on");
+assert.match(sharedGame, /includeNeutral === false\) return "off"/, "레거시 includeNeutral=false → off");
+assert.match(sharedGame, /return "auto"/, "기본은 auto(존재를 알 수 없음)");
 
-  // 등장 판정: 자격 인원 + 모드/확률.
-  assert.equal(rollNeutralSpawn({ neutral: "on" }, 7), false, "자격 미달(8인 미만)은 on 이어도 미등장");
-  assert.equal(rollNeutralSpawn({ neutral: "on" }, 8), true, "on + 자격 = 항상 등장");
-  assert.equal(rollNeutralSpawn({ neutral: "off" }, 12, () => 0), false, "off = 등장 안 함");
-  assert.equal(
-    rollNeutralSpawn({}, 8, () => 0),
-    true,
-    "auto: random < autoSpawnChance 면 등장",
-  );
-  assert.equal(
-    rollNeutralSpawn({}, 8, () => 0.999),
-    false,
-    "auto: random >= autoSpawnChance 면 미등장",
-  );
-}
-
-// match-settings 함수 계약: 존재 + 호스트/로비 검증 + neutral 일원화.
-const matchSettings = read("supabase/functions/match-settings/index.ts");
-assert.match(matchSettings, /not_host/, "방장만 설정 변경");
-assert.match(matchSettings, /invalid_status/, "로비에서만 설정 변경");
-assert.match(matchSettings, /NEUTRAL_MODES/, "neutral 값 검증은 NEUTRAL_MODES 단일 출처");
+// match-settings: 호스트 전용 로비 설정 변경 — allowlist 머지.
+assert.match(matchSettings, /invalid_neutral_mode/, "neutral 값 검증");
+assert.match(matchSettings, /not_host/, "호스트 전용 가드");
+assert.match(matchSettings, /not_lobby/, "로비 전용 가드");
+assert.match(matchSettings, /\.eq\("status", "lobby"\)/, "갱신 시 로비 상태 레이스 가드");
 
 console.log("Gomdori W6 파스아 checks passed");

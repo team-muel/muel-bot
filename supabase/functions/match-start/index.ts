@@ -2,15 +2,25 @@ import { preflight, jsonResponse } from "../_shared/cors.ts";
 import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
-import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
+import {
+  NEUTRAL_SPAWN_CHANCE,
+  type NeutralMode,
+  getMatch,
+  readJsonObject,
+  readRequiredString,
+  resolveNeutralMode,
+} from "../_shared/game.ts";
 import { ANGEL_ROLES, DEMON_KILLER_ROLES, HELPER_ROLES } from "../_shared/engine/roles.ts";
-import { rollNeutralSpawn } from "../_shared/neutral.ts";
+import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 
 // pending: 악마/조력자 슬롯은 role_assign 단계에서 *플레이어가 변종을 선택*한다(canon §5
 // 배정 순서 = 악마 → 조력자 → 천사, 각자 자기 직업 선택). 선택 전까지 placeholder role
 // (악마='demon', 조력자='gain') + engine_state.pendingSelection 으로 표시. match-select-role
 // 가 확정하고, 미선택은 phase-advance(role_assign 만료)가 풀에서 랜덤 폴백한다.
 type RoleCard = { role: string; faction: "angel" | "demon" | "neutral"; pending?: "demon" | "helper" };
+
+// W6 중립(파스아) 등장 최소 인원. 중립은 천사 머릿수를 1 줄이므로 큰 게임에서만.
+const PASUA_MIN_PLAYERS = 8;
 
 function shuffle<T>(arr: T[]): T[] {
   const out = [...arr];
@@ -21,17 +31,27 @@ function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
-function generateRoles(playerCount: number, spawnPasua: boolean): RoleCard[] {
+function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): RoleCard[] {
   // 기본 로스터(canon "기본" 시트) — "시민(무직)" 폐지, 전원이 명명 직업을 받는다.
   // DB faction 은 'angel' | 'demon' | 'neutral' — 가인 등 위장 직업은 role + engine_state.
   // 팀 구성(canon §1·§21):
   //   악마팀 = 악마 풀에서 1(대악마/팬텀/말렌/베스토) + 조력자 풀에서 1(가인/루나/로건/엘런) = 항상 2.
   //   천사팀 = 나머지 슬롯을 천사 풀에서 distinct 랜덤 추첨(대천사 off, 미포함).
-  //   중립팀 = 파스아(1) — 등장 판정은 rollNeutralSpawn(자격 인원 + 모드/확률, 잠금 #2)이
-  //   단일 출처. 여기서는 판정 결과만 받는다.
-  if (playerCount < 5 || playerCount > 12) {
-    throw badRequest("invalid_player_count", "인원은 5명에서 12명 사이여야 합니다.");
+  //   중립팀 = 파스아(1) — 8인 이상에서 천사 슬롯 1 대체(W6). 등장 여부는 확률형(M3-1,
+  //   결정 잠금 #2): auto = NEUTRAL_SPAWN_CHANCE 확률(참여자는 존재를 알 수 없다),
+  //   on = 강제 등장, off = 제외 — 호스트가 로비 게임 설정으로 오버라이드.
+  // 인원 범위는 원본 기준 8~12 (gomdori-rules.playerCount 단일 출처, 2026-06-11 확정).
+  if (playerCount < GOMDORI_RULES.playerCount.min || playerCount > GOMDORI_RULES.playerCount.max) {
+    throw badRequest(
+      "invalid_player_count",
+      `인원은 ${GOMDORI_RULES.playerCount.min}명에서 ${GOMDORI_RULES.playerCount.max}명 사이여야 합니다.`,
+    );
   }
+
+  const neutralEligible = playerCount >= PASUA_MIN_PLAYERS;
+  const spawnPasua = neutralEligible &&
+    (neutralMode === "on" ||
+      (neutralMode === "auto" && Math.random() < NEUTRAL_SPAWN_CHANCE));
 
   const roles: RoleCard[] = [];
   // 악마팀: 악마 1 + 조력자 1 — 변종은 role_assign 단계에서 본인이 선택(pending).
@@ -115,8 +135,15 @@ Deno.serve((req: Request) => {
       .eq("match_id", matchId);
     
     if (playersError) throw playersError;
-    if (!players || players.length < 5 || players.length > 12) {
-      throw conflict("invalid_player_count", "인원은 5명 이상 12명 이하여야 합니다.");
+    if (
+      !players ||
+      players.length < GOMDORI_RULES.playerCount.min ||
+      players.length > GOMDORI_RULES.playerCount.max
+    ) {
+      throw conflict(
+        "invalid_player_count",
+        `인원은 ${GOMDORI_RULES.playerCount.min}명 이상 ${GOMDORI_RULES.playerCount.max}명 이하여야 합니다.`,
+      );
     }
 
     const unreadyPlayers = players.filter((p) => !p.ready && !p.is_host);
@@ -124,10 +151,10 @@ Deno.serve((req: Request) => {
       throw conflict("players_not_ready", "모든 참가자가 준비를 완료해야 합니다.");
     }
 
-    // 1. Assign roles. 중립(파스아) 등장은 로비 설정(settings.neutral: auto/on/off)을
-    //    rollNeutralSpawn 이 판정 — auto 는 확률 등장(참여자는 존재를 알 수 없다, 잠금 #2).
-    const spawnPasua = rollNeutralSpawn(match.settings ?? {}, players.length);
-    const roles = generateRoles(players.length, spawnPasua);
+    // 1. Assign roles. 중립(파스아) 등장 모드는 로비 게임 설정(matches.settings.neutral,
+    //    레거시 includeNeutral 불리언도 resolveNeutralMode 가 흡수).
+    const neutralMode = resolveNeutralMode(match.settings);
+    const roles = generateRoles(players.length, neutralMode);
     const assignments = players.map((p, index) => ({
       user_id: p.user_id,
       role: roles[index].role,

@@ -1,17 +1,17 @@
 import { preflight, jsonResponse } from "../_shared/cors.ts";
-import { conflict, badRequest, withErrorHandling, forbidden } from "../_shared/errors.ts";
+import { badRequest, conflict, forbidden, withErrorHandling } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
-import { readJsonObject, readRequiredString, getMatch, toMatchSummary } from "../_shared/game.ts";
-import { NEUTRAL_MODES, type NeutralMode } from "../_shared/neutral.ts";
+import {
+  NEUTRAL_MODES,
+  getMatch,
+  readJsonObject,
+  readRequiredString,
+  toMatchSummary,
+} from "../_shared/game.ts";
 
-/**
- * match-settings — 로비 게임 설정 변경 (M3-1 백엔드 짝).
- *
- * muel-tree 로비의 중립 토글(updateMatchSettings)이 호출한다. 호스트만, 로비
- * 상태에서만. 현재 지원 설정: neutral("auto"|"on"|"off") — 해석은 match-start 의
- * rollNeutralSpawn(_shared/neutral.ts) 단일 출처. 반영 전파는 matches realtime.
- */
+// 방장이 로비에서 게임 설정을 바꾼다 (M3-1). 허용 키만 골라 settings jsonb 에 머지 —
+// 임의 키 주입 금지. 현재 허용: neutral("auto"|"on"|"off", 중립 등장 모드, 결정 잠금 #2).
 Deno.serve((req: Request) => {
   return withErrorHandling(req, async () => {
     const origin = req.headers.get("Origin");
@@ -28,35 +28,51 @@ Deno.serve((req: Request) => {
     const claims = await requireGameAuth(req);
     const body = readJsonObject(await req.json().catch(() => null));
     const matchId = readRequiredString(body, "matchId");
-    const neutral = readRequiredString(body, "neutral");
 
-    if (!(NEUTRAL_MODES as readonly string[]).includes(neutral)) {
-      throw badRequest("invalid_neutral", "neutral 은 auto/on/off 중 하나여야 합니다.");
+    // 허용 키 allowlist — 하나 이상 있어야 한다.
+    const patch: Record<string, unknown> = {};
+    if ("neutral" in body) {
+      const neutral = readRequiredString(body, "neutral");
+      if (!(NEUTRAL_MODES as readonly string[]).includes(neutral)) {
+        throw badRequest("invalid_neutral_mode", "neutral 은 auto|on|off 중 하나여야 합니다.");
+      }
+      patch.neutral = neutral;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw badRequest("no_settings", "변경할 설정이 없습니다.");
     }
 
     const match = await getMatch(matchId);
     if (match.status !== "lobby") {
-      throw conflict("invalid_status", "게임 설정은 로비에서만 바꿀 수 있습니다.");
+      throw conflict("not_lobby", "로비에서만 설정을 바꿀 수 있습니다.");
     }
     if (match.hostUserId !== claims.sub) {
-      throw forbidden("not_host", "방장만 게임 설정을 바꿀 수 있습니다.");
+      throw forbidden("not_host", "방장만 설정을 바꿀 수 있습니다.");
     }
 
     const supabase = getSupabaseAdmin();
-    // 레거시 includeNeutral 잔재는 제거하고 neutral 로 일원화한다.
-    const { includeNeutral: _legacy, ...restSettings } = match.settings;
-    const nextSettings = { ...restSettings, neutral: neutral as NeutralMode };
-
-    const { data, error } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from("matches")
-      .update({ settings: nextSettings })
+      .update({ settings: { ...match.settings, ...patch } })
       .eq("id", matchId)
-      .select()
-      .single();
-    if (error) throw error;
+      .eq("status", "lobby") // 레이스 가드: 그 사이 시작됐으면 0행 갱신
+      .select("*")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (!updated) {
+      throw conflict("not_lobby", "로비에서만 설정을 바꿀 수 있습니다.");
+    }
+
+    const { error: eventError } = await supabase.from("match_events").insert({
+      match_id: matchId,
+      event_type: "settings_updated",
+      visibility: "public",
+      payload: { byUserId: claims.sub, patch },
+    });
+    if (eventError) throw eventError;
 
     return jsonResponse(
-      { success: true, match: toMatchSummary(data as Record<string, unknown>) },
+      { success: true, match: toMatchSummary(updated as Record<string, unknown>) },
       { origin },
     );
   });

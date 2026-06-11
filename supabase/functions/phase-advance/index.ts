@@ -107,14 +107,25 @@ function actionRowsToInputs(actions: DbAction[]) {
   }));
 }
 
+// 종료 reveal (M4-1, canon §9): 직업 변화(이전→최종)를 모두 공개한다.
+// role/faction = 시작 확정 정체(DB, 변종 선택 반영), final_* = engine_state 의
+// currentRole/currentFaction(전향·타락·낙인 재배정 등 게임 내 변환 반영).
 function revealedPlayers(players: DbPlayer[]) {
-  return players.map((player) => ({
-    user_id: player.user_id,
-    display_name: player.display_name,
-    role: player.role,
-    faction: player.faction,
-    alive: player.alive,
-  }));
+  return players.map((player) => {
+    const es = (player.engine_state ?? {}) as Record<string, unknown>;
+    const finalRole = typeof es.currentRole === "string" ? es.currentRole : player.role;
+    const finalFaction = typeof es.currentFaction === "string" ? es.currentFaction : player.faction;
+    return {
+      user_id: player.user_id,
+      display_name: player.display_name,
+      role: player.role,
+      faction: player.faction,
+      final_role: finalRole,
+      final_faction: finalFaction,
+      changed: finalRole !== player.role || finalFaction !== player.faction,
+      alive: player.alive,
+    };
+  });
 }
 
 // 변종 선택 마감(role_assign → 첫째 밤 직전). 미선택(악마/조력자) 슬롯은 풀에서 랜덤
