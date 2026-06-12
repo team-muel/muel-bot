@@ -177,9 +177,11 @@ Deno.serve((req: Request) => {
       if (failed?.error) throw failed.error;
     });
 
-    // 2. Create phase. role_assign 은 이제 변종 선택 단계 — 충분한 시간(30s).
-    //    미선택은 phase-advance 가 풀에서 랜덤 폴백한다.
-    const expectedEndedAt = new Date(Date.now() + 30000).toISOString();
+    // 2. Create phase. role_assign = 변종 선택 단계 — duration 은 rules manifest
+    //    단일 출처(하드코딩 30000 제거, 2026-06-12). 미선택은 phase-advance 가 랜덤 폴백.
+    const expectedEndedAt = new Date(
+      Date.now() + GOMDORI_RULES.phases.roleAssign.durationSec * 1000,
+    ).toISOString();
     const { data: phase, error: phaseError } = await supabase
       .from("match_phases")
       .insert({

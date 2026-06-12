@@ -15,7 +15,9 @@ export const GOMDORI_RULES = {
    * `match_phases.expected_ended_at` 기준으로 만료 감지.
    */
   phases: {
-    roleAssign: { durationSec: 8 },
+    // 30초 (2026-06-12, 8→30): 악마/조력자 변종 선택(4지선다)이 이 창 안에서
+    // 일어난다 — 8초는 읽기도 전에 랜덤 폴백돼 선택 기능이 사실상 죽어 있었다.
+    roleAssign: { durationSec: 30 },
     nightSuspect: { durationSec: 30 },
     night: { durationSec: 60 },
     nightResolve: { durationSec: 3 },
