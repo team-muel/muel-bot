@@ -358,4 +358,37 @@ assert.match(
   "변환 여부 플래그",
 );
 
+// --- 밤 이벤트 무결성 (2026-06-12) ---
+// 1) 부활 영속화: 엔진이 dead→alive 로 되살리면 match_players.alive 도 복원돼야
+//    한다. 이 분기가 없으면 부활 직업(미즐렛/헬렌)이 라이브에서 무효.
+assert.match(
+  phaseAdvanceSrc,
+  /else if \(!dbPlayer\.alive && playerState\.alive\)/,
+  "phase-advance 부활 영속화 분기",
+);
+assert.match(
+  phaseAdvanceSrc,
+  /updatePayload\.alive = true/,
+  "부활 시 alive=true 복원",
+);
+// 2) 이벤트 가시성: 엔진 이벤트를 전부 public 으로 쌓으면 포교·변신·낙인 같은
+//    비밀 정보가 클라이언트에 노출된다. public 허용목록 + private recipient.
+assert.match(
+  phaseAdvanceSrc,
+  /PUBLIC_ENGINE_EVENTS = new Set\(\["player_died", "player_revived"\]\)/,
+  "엔진 이벤트 public 허용목록",
+);
+assert.match(
+  phaseAdvanceSrc,
+  /recipient_user_id: isPublic \? null : affectedUserId/,
+  "비공개 이벤트는 당사자 recipient 로",
+);
+// 3) 아침 공표 집계: 다중 사망·부활을 한 이벤트로 (클라이언트 단건 find 누락 방지).
+assert.match(phaseAdvanceSrc, /event_type: "morning_report"/, "morning_report 발행");
+assert.match(
+  phaseAdvanceSrc,
+  /deaths: morningDeaths, revivals: morningRevivals/,
+  "morning_report 에 사망·부활 명단",
+);
+
 console.log("Gomdori v2 abilities (봉인/부활/변환) checks passed");
