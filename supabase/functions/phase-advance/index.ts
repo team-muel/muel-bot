@@ -440,6 +440,14 @@ Deno.serve((req: Request) => {
               updatePayload.eliminated_at = endedAt;
               updatePayload.eliminated_phase_number = phase.phase_number;
               updatePayload.eliminated_cause = "night_kill";
+            } else if (!dbPlayer.alive && playerState.alive) {
+              // 부활(미즐렛/헬렌 Heal dead→alive) 영속화. 이 분기가 없으면 엔진은
+              // 되살렸는데 match_players.alive 가 false 로 남아 부활이 무효였다
+              // (2026-06-12 발견 — 부활 직업 2종이 라이브에서 작동하지 않던 원인).
+              updatePayload.alive = true;
+              updatePayload.eliminated_at = null;
+              updatePayload.eliminated_phase_number = null;
+              updatePayload.eliminated_cause = null;
             }
 
             requireNoError(
@@ -458,7 +466,16 @@ Deno.serve((req: Request) => {
               .eq("id", matchId),
           );
 
-          for (const event of events as Array<{ type: string; payload?: unknown; userId?: string }>) {
+          // 엔진 이벤트 가시성 분류 (2026-06-12): 마을 전체가 알아야 하는 결과만
+          // public. 나머지(봉인·매료·빙의·전향·변신·낙인·차단 피드백 등)는 비밀
+          // 정보라 영향받은 당사자에게만 private(recipient RLS)로 전달 — 전부
+          // public 으로 쌓으면 포교/변신/낙인이 클라이언트에서 그대로 읽혔다.
+          const PUBLIC_ENGINE_EVENTS = new Set(["player_died", "player_revived"]);
+          const engineEvents = events as Array<{ type: string; payload?: { user_id?: string }; userId?: string }>;
+          for (const event of engineEvents) {
+            const isPublic = PUBLIC_ENGINE_EVENTS.has(event.type);
+            const affectedUserId = event.payload?.user_id ?? event.userId ?? null;
+            if (!isPublic && !affectedUserId) continue; // 수신자 특정 불가 — 저장 생략
             requireNoError(
               await supabase
                 .from("match_events")
@@ -466,11 +483,34 @@ Deno.serve((req: Request) => {
                   match_id: matchId,
                   phase_id: phase.id,
                   event_type: event.type,
-                  visibility: "public",
+                  visibility: isPublic ? "public" : "private",
+                  recipient_user_id: isPublic ? null : affectedUserId,
                   payload: event.payload || { user_id: event.userId },
                 }),
             );
           }
+
+          // 아침 공표 집계(공개) — 클라이언트가 사망 1건 find 가 아니라 그 밤의
+          // 사망·부활 명단을 한 이벤트로 읽는다 (다중 사망 누락 방지).
+          const morningDeaths = engineEvents
+            .filter((e) => e.type === "player_died")
+            .map((e) => e.payload?.user_id)
+            .filter((id): id is string => typeof id === "string");
+          const morningRevivals = engineEvents
+            .filter((e) => e.type === "player_revived")
+            .map((e) => e.payload?.user_id)
+            .filter((id): id is string => typeof id === "string");
+          requireNoError(
+            await supabase
+              .from("match_events")
+              .insert({
+                match_id: matchId,
+                phase_id: phase.id,
+                event_type: "morning_report",
+                visibility: "public",
+                payload: { deaths: morningDeaths, revivals: morningRevivals, night_number: phase.phase_number },
+              }),
+          );
 
           nextPhaseType = "night_resolve";
           nextDurationSec = GOMDORI_RULES.phases.nightResolve.durationSec;
