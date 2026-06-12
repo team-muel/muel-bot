@@ -6,6 +6,15 @@ import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts
 import { HELPER_ROLES, isDemonKillerRole } from "../_shared/engine/roles.ts";
 import { getRoleDefinition } from "../_shared/engine/engine.ts";
 
+// 유효 직업 (2026-06-12): 게임 내 변환(낙인 재배정·타락·전향)은 DB role 컬럼이
+// 아니라 engine_state.currentRole 에 영속화된다. 행동 검증을 DB role 로 하면
+// 재배정된 새 직업의 능력은 거부되고 옛 능력이 통과한다 — 모든 role 판정은
+// 이 함수를 거친다 (엔진 playerStateFromRows 와 동일 규칙).
+function effectiveRole(row: { role: string; engine_state?: Record<string, unknown> | null }): string {
+  const cur = (row.engine_state as { currentRole?: unknown } | null)?.currentRole;
+  return typeof cur === "string" ? cur : row.role;
+}
+
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
 // 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
@@ -104,13 +113,14 @@ Deno.serve((req: Request) => {
       if (currentPhase.phase_number === 1) {
         throw conflict("first_night", "첫 번째 밤에는 능력을 사용할 수 없습니다.");
       }
-      const allowedActions = NIGHT_ACTIONS_BY_ROLE[player.role] ?? [];
+      const actorRole = effectiveRole(player);
+      const allowedActions = NIGHT_ACTIONS_BY_ROLE[actorRole] ?? [];
       if (!allowedActions.includes(actionType)) {
         throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
       }
       // maxUses(1회성 능력) 소진 선제 거부 — 최종 강제는 엔진(resolveNightActions,
       // counters.used_*). 여기서 막는 건 "제출됐는데 발동 안 함" UX 혼란 방지용.
-      const ability = getRoleDefinition(player.role)?.actions.night?.find((a) => a.id === actionType);
+      const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);
       if (ability?.maxUses != null) {
         const counters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters;
         if ((counters?.[`used_${actionType}`] ?? 0) >= ability.maxUses) {
@@ -133,11 +143,12 @@ Deno.serve((req: Request) => {
       }
       const { data: targetState } = await supabase
         .from("match_players")
-        .select("alive, role")
+        .select("alive, role, engine_state")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
       if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
+      const targetRole = effectiveRole(targetState);
       if (REVIVE_ACTIONS.includes(actionType)) {
         // 부활(미즐렛/헬렌): 탈락한 대상에게만.
         if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
@@ -149,16 +160,16 @@ Deno.serve((req: Request) => {
       // 처치자 집합으로 판정 — 가인/루나 등 조력자는 faction='demon' 이나 처치자가 아니라 허용.
       if (
         actionType === "pasua_convert" &&
-        (isDemonKillerRole(targetState.role) || targetState.role === "pasua" || targetState.role === "converted")
+        (isDemonKillerRole(targetRole) || targetRole === "pasua" || targetRole === "converted")
       ) {
         throw badRequest("invalid_target", "악마와 중립은 포교할 수 없습니다.");
       }
       // 변환(루나): 천사만. 악마(처치자)·조력자·중립·이미 타락은 불가.
       if (
         actionType === "luna_corrupt" &&
-        (isDemonKillerRole(targetState.role) ||
-          HELPER_ROLES.includes(targetState.role) ||
-          ["pasua", "converted", "corrupted"].includes(targetState.role))
+        (isDemonKillerRole(targetRole) ||
+          HELPER_ROLES.includes(targetRole) ||
+          ["pasua", "converted", "corrupted"].includes(targetRole))
       ) {
         throw badRequest("invalid_target", "천사만 타락시킬 수 있습니다.");
       }
@@ -189,8 +200,9 @@ Deno.serve((req: Request) => {
       if (target) {
         // 처치자(악마 풀)만 '악마'로 보인다. 조력자(가인 등)·천사·중립은 '천사'(=악마 아님).
         // 베스토 변신(솔): counters.disguised>0 이면 처치자라도 '천사'로 회피.
+        // 직업은 유효 직업(변환 반영) 기준 — 낙인 재배정으로 악마가 된/아니게 된 경우 포함.
         const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
-        investigationResult = (isDemonKillerRole(target.role) && !disguised) ? "demon" : "angel";
+        investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
       }
     }
 
