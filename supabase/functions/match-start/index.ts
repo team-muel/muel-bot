@@ -213,8 +213,6 @@ Deno.serve((req: Request) => {
       payload: { phase_number: 1, expected_ended_at: expectedEndedAt },
     });
 
-    const demonCircle = assignments.filter((a) => a.faction === "demon");
-
     for (const assignment of assignments) {
       events.push({
         match_id: matchId,
@@ -225,10 +223,11 @@ Deno.serve((req: Request) => {
         payload: {
           role: assignment.role,
           faction: assignment.faction,
-          // demons and helpers get to know their allies
-          allies: assignment.faction === "demon"
-            ? demonCircle.filter(d => d.user_id !== assignment.user_id).map(d => ({ user_id: d.user_id, role: d.role }))
-            : [],
+          // 접선 정본(2026-06-12): 배정 시점엔 아무도 서로를 모른다. 회로(채팅/통지)는
+          // 변종 선택 확정 후 finalizeRoleSelection 이 조력자 패시브(가인·로건)와
+          // 팬텀 오버라이드에 따라 연다 — 여기서의 조기 동료 공개는 canon 위반이었고,
+          // 변종 확정 전 placeholder 직업을 노출하는 문제도 있었다.
+          allies: [],
           // 악마/조력자 슬롯이면 변종 선택 풀을 실어 보낸다(프론트 role_assign 선택 UI).
           pendingSelection:
             (assignment.engine_state as { pendingSelection?: unknown } | null)?.pendingSelection ?? null,

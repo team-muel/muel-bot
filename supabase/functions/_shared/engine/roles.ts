@@ -349,3 +349,15 @@ export const ANGEL_ROLES = [
 export function isDemonKillerRole(role?: string | null): boolean {
   return !!role && DEMON_KILLER_ROLES.includes(role);
 }
+
+// === 접선(시작 회로) 정본 (2026-06-12, 원본 시트 — 조력자 패시브가 결정) ===
+// 기본값: 악마와 조력자는 서로 모른 채 시작한다 (채팅·동료 공개 없음).
+//   가인 "진실을 가리는 암흑" — 악마와 접선·대화, 두 번째 밤 종료 시 패시브 삭제(채팅 만료)
+//   로건 "부서진 펜던트"     — 시작 시 악마 접선 (영구)
+//   루나·엘런               — 접선 없음
+// 악마측 오버라이드: 팬텀 "침묵의 밤" — 접선(대화) 불가, 대신 서로 정체·직업 통지만.
+export const HELPER_CONTACT: Record<string, { expiresAfterNight?: number }> = {
+  gain: { expiresAfterNight: 2 },
+  logen: {},
+};
+export const CONTACT_BLOCKED_DEMONS = ["phantom"];

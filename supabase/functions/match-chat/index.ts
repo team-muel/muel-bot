@@ -44,19 +44,23 @@ Deno.serve((req: Request) => {
       throw conflict("no_active_phase", "현재 활성화된 페이즈가 없습니다.");
     }
 
-    // 2. Validate role
+    // 2. Validate circle membership
     const { data: player, error: playerError } = await supabase
       .from("match_players")
-      .select("faction, alive")
+      .select("faction, alive, engine_state")
       .eq("match_id", matchId)
       .eq("user_id", claims.sub)
       .single();
 
     if (playerError || !player) throw forbidden("not_participant", "게임 참가자가 아닙니다.");
     if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 채팅할 수 없습니다.");
-    
-    if (player.faction !== "demon") {
-      throw forbidden("invalid_role", "악마 진영만 야간 채팅을 사용할 수 있습니다.");
+
+    // 접선 정본(2026-06-12): 채팅은 진영이 아니라 회로(circleChat)가 연다 —
+    // 가인(밤2까지)·로건(영구)만. 팬텀 페어·루나·엘런·타락자는 회로 없음.
+    const inCircle =
+      ((player.engine_state as { circleChat?: unknown } | null)?.circleChat) === true;
+    if (!inCircle) {
+      throw forbidden("invalid_role", "접선된 회로가 없습니다.");
     }
 
     // 3. Insert chat message
