@@ -126,6 +126,18 @@ const requestJson = async <T>(
   return (json as T);
 };
 
+/**
+ * AI-Q returns job status in lowercase ('success', 'running', …) while this
+ * client's domain type and every caller compare against uppercase
+ * ('SUCCESS', …). Normalize at the boundary so a successful job is never
+ * mistaken for a still-running one (which previously made polling spin until
+ * timeout even though the report was ready).
+ */
+const normalizeStatusResponse = (res: AiqJobStatusResponse): AiqJobStatusResponse => ({
+  ...res,
+  status: String(res.status ?? '').toUpperCase() as AiqJobStatus,
+});
+
 const toCamel = <T>(rawIn: Record<string, unknown> | null | undefined): T => {
   // Lightweight snake_case → camelCase for the few fields we care about.
   if (!rawIn) return rawIn as unknown as T;
@@ -174,12 +186,12 @@ export const submitJob = async (input: AiqSubmitInput): Promise<AiqJobStatusResp
     body,
     SUBMIT_REQUEST_TIMEOUT_MS,
   );
-  return toCamel<AiqJobStatusResponse>(raw);
+  return normalizeStatusResponse(toCamel<AiqJobStatusResponse>(raw));
 };
 
 export const getJobStatus = async (jobId: string): Promise<AiqJobStatusResponse> => {
   const raw = await requestJson<Record<string, unknown>>('GET', `/v1/jobs/async/job/${encodeURIComponent(jobId)}`);
-  return toCamel<AiqJobStatusResponse>(raw);
+  return normalizeStatusResponse(toCamel<AiqJobStatusResponse>(raw));
 };
 
 export const getJobReport = async (jobId: string): Promise<AiqJobReport> => {
@@ -203,7 +215,7 @@ export const cancelJob = async (jobId: string): Promise<AiqJobStatusResponse> =>
     'POST',
     `/v1/jobs/async/job/${encodeURIComponent(jobId)}/cancel`,
   );
-  return toCamel<AiqJobStatusResponse>(raw);
+  return normalizeStatusResponse(toCamel<AiqJobStatusResponse>(raw));
 };
 
 export const isTerminalStatus = (status: AiqJobStatus): boolean =>

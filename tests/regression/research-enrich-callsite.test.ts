@@ -88,6 +88,27 @@ assert(
     !/pollUntilTerminal/.test(researchDeliver),
 );
 
+// Guard 5 (2026-06-12 incident): AI-Q returns lowercase job statuses
+// ('success', …) while callers compare uppercase ('SUCCESS'). aiqClient must
+// normalize at the boundary in every status-returning function, otherwise a
+// finished job is read as "still running" and polling spins until timeout —
+// the user never receives the report even though AI-Q produced it.
+const aiqClient = readFileSync(join(SRC, 'aiqClient.ts'), 'utf8');
+assert(
+  'aiqClient defines normalizeStatusResponse with toUpperCase',
+  /normalizeStatusResponse/.test(aiqClient) && /toUpperCase\(\)/.test(aiqClient),
+);
+const statusReturnSites = aiqClient.match(/normalizeStatusResponse\(toCamel<AiqJobStatusResponse>/g) ?? [];
+assert(
+  'aiqClient normalizes status in submitJob, getJobStatus, cancelJob (3 call sites)',
+  statusReturnSites.length === 3,
+  `found ${statusReturnSites.length} normalized call sites`,
+);
+assert(
+  'aiqClient never returns a status response without normalization',
+  !/return toCamel<AiqJobStatusResponse>/.test(aiqClient),
+);
+
 const youtubeMonitor = readFileSync(join(SRC, 'youtubeMonitor.ts'), 'utf8');
 assert(
   'youtubeMonitor attaches research:enrich:youtube_post button on community posts',
