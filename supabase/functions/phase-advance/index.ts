@@ -12,7 +12,7 @@ import {
   tallyVerdictVotes,
 } from "../_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
-import { DEMON_KILLER_ROLES } from "../_shared/engine/roles.ts";
+import { CONTACT_BLOCKED_DEMONS, DEMON_KILLER_ROLES, HELPER_CONTACT, HELPER_ROLES } from "../_shared/engine/roles.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 import {
   PHASE_NIGHT_SUSPECT,
@@ -129,8 +129,9 @@ function revealedPlayers(players: DbPlayer[]) {
 }
 
 // 변종 선택 마감(role_assign → 첫째 밤 직전). 미선택(악마/조력자) 슬롯은 풀에서 랜덤
-// 폴백하고, 변종 확정 후 가인이 있으면 악마에게 보호막 1을 재계산해 심는다.
-async function finalizeRoleSelection(supabase: ReturnType<typeof getSupabaseAdmin>, matchId: string) {
+// 폴백하고, 변종 확정 후 가인이 있으면 악마에게 보호막 1을 재계산해 심고, 접선
+// 정본에 따라 회로(채팅/통지)를 연다.
+async function finalizeRoleSelection(supabase: ReturnType<typeof getSupabaseAdmin>, matchId: string, phaseId: string) {
   const rows = requireNoError(
     await supabase
       .from("match_players")
@@ -166,11 +167,62 @@ async function finalizeRoleSelection(supabase: ReturnType<typeof getSupabaseAdmi
           : {};
       if (!((counters.shield ?? 0) > 0)) {
         counters.shield = 1;
+        const nextEs = { ...es, counters };
         requireNoError(
-          await supabase.from("match_players").update({ engine_state: { ...es, counters } }).eq("match_id", matchId).eq("user_id", demon.user_id),
+          await supabase.from("match_players").update({ engine_state: nextEs }).eq("match_id", matchId).eq("user_id", demon.user_id),
         );
+        demon.engine_state = nextEs;
       }
     }
+  }
+
+  // 3. 접선 해소 (정본 2026-06-12 — 조력자 패시브가 결정, 기본은 서로 모름):
+  //    가인 = 악마와 접선·대화(밤2 종료 시 채팅 만료) / 로건 = 시작 시 접선(영구)
+  //    루나·엘런 = 접선 없음. 팬텀(악마)이면 접선 불가 — 상호 정체 통지만.
+  //    circleChat = 채팅 회로(만료 가능), circleKnown = 정체 인지(영구, 뷰 노출).
+  const demonRow = rows.find((p) => DEMON_KILLER_ROLES.includes(p.role));
+  const helperRow = rows.find((p) => HELPER_ROLES.includes(p.role));
+  if (demonRow && helperRow) {
+    const contact = HELPER_CONTACT[helperRow.role];
+    const blocked = CONTACT_BLOCKED_DEMONS.includes(demonRow.role);
+    const link = async (
+      self: typeof demonRow,
+      peer: typeof demonRow,
+      mode: "chat" | "notify",
+    ) => {
+      const es = (self.engine_state ?? {}) as Record<string, unknown>;
+      const nextEs: Record<string, unknown> = { ...es, circleKnown: true };
+      if (mode === "chat") {
+        nextEs.circleChat = true;
+        if (contact?.expiresAfterNight != null) nextEs.circleChatExpiresNight = contact.expiresAfterNight;
+      }
+      requireNoError(
+        await supabase.from("match_players").update({ engine_state: nextEs }).eq("match_id", matchId).eq("user_id", self.user_id),
+      );
+      self.engine_state = nextEs;
+      requireNoError(
+        await supabase.from("match_events").insert({
+          match_id: matchId,
+          phase_id: phaseId,
+          event_type: mode === "chat" ? "circle_contact" : "circle_notify",
+          visibility: "private",
+          recipient_user_id: self.user_id,
+          payload: {
+            user_id: peer.user_id,
+            role: peer.role,
+            expires_after_night: mode === "chat" ? contact?.expiresAfterNight ?? null : null,
+          },
+        }),
+      );
+    };
+    if (contact && !blocked) {
+      await link(demonRow, helperRow, "chat");
+      await link(helperRow, demonRow, "chat");
+    } else if (blocked) {
+      await link(demonRow, helperRow, "notify");
+      await link(helperRow, demonRow, "notify");
+    }
+    // 그 외(루나·엘런 + 비팬텀): 아무 일도 없음 — 서로 모른 채 시작.
   }
 }
 
@@ -364,8 +416,8 @@ Deno.serve((req: Request) => {
       let nextPhaseNumber = phase.phase_number;
 
       if (phase.phase_type === "role_assign") {
-        // 변종 선택 마감: 미선택 폴백 + 가인→악마 보호막 재계산. 그 뒤 첫째 밤으로.
-        await finalizeRoleSelection(supabase, matchId);
+        // 변종 선택 마감: 미선택 폴백 + 가인→악마 보호막 재계산 + 접선 회로. 그 뒤 첫째 밤으로.
+        await finalizeRoleSelection(supabase, matchId, phase.id);
         const transition = firstNightTransition();
         nextPhaseType = transition.phaseType;
         nextDurationSec = transition.durationSec;
@@ -511,6 +563,36 @@ Deno.serve((req: Request) => {
                 payload: { deaths: morningDeaths, revivals: morningRevivals, night_number: phase.phase_number },
               }),
           );
+
+          // 접선 만료 (정본: 가인 "두 번째 밤 종료 시 패시브 삭제") — 만료 밤에
+          // 도달하면 채팅 회로를 닫는다. 정체 인지(circleKnown)는 영구 유지.
+          // 밤 해소가 engine_state 를 막 갱신했으므로 신선한 행을 다시 읽어 합친다.
+          if (phase.phase_number >= 2) {
+            const freshPlayers = await loadPlayers(supabase, matchId);
+            for (const p of freshPlayers) {
+              const es = (p.engine_state ?? {}) as Record<string, unknown>;
+              const expires = typeof es.circleChatExpiresNight === "number" ? es.circleChatExpiresNight : null;
+              if (es.circleChat === true && expires != null && phase.phase_number >= expires) {
+                requireNoError(
+                  await supabase
+                    .from("match_players")
+                    .update({ engine_state: { ...es, circleChat: false } })
+                    .eq("match_id", matchId)
+                    .eq("user_id", p.user_id),
+                );
+                requireNoError(
+                  await supabase.from("match_events").insert({
+                    match_id: matchId,
+                    phase_id: phase.id,
+                    event_type: "circle_expired",
+                    visibility: "private",
+                    recipient_user_id: p.user_id,
+                    payload: { night_number: phase.phase_number },
+                  }),
+                );
+              }
+            }
+          }
 
           nextPhaseType = "night_resolve";
           nextDurationSec = GOMDORI_RULES.phases.nightResolve.durationSec;

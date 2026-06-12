@@ -422,4 +422,22 @@ assert.match(
   "match_players_visible 은 유효 직업을 노출",
 );
 
+// --- 접선 회로 (2026-06-12 정본): 기본은 서로 모름, 조력자 패시브가 회로 결정 ---
+const rolesSrc = readFileSync("supabase/functions/_shared/engine/roles.ts", "utf8");
+assert.match(rolesSrc, /HELPER_CONTACT[\s\S]*?gain: \{ expiresAfterNight: 2 \}/, "가인 접선 — 밤2 만료");
+assert.match(rolesSrc, /HELPER_CONTACT[\s\S]*?logen: \{\}/, "로건 접선 — 영구");
+assert.match(rolesSrc, /CONTACT_BLOCKED_DEMONS = \["phantom"\]/, "팬텀 — 접선 불가(통지만)");
+assert.doesNotMatch(rolesSrc, /HELPER_CONTACT[\s\S]{0,200}luna:/, "루나 — 접선 없음");
+const matchStart = readFileSync("supabase/functions/match-start/index.ts", "utf8");
+assert.match(matchStart, /allies: \[\]/, "배정 시점 동료 공개 금지 (회로는 변종 확정 후)");
+assert.doesNotMatch(matchStart, /demonCircle\.filter/, "match-start 조기 회로 노출 제거");
+assert.match(phaseAdvanceSrc, /event_type: mode === "chat" \? "circle_contact" : "circle_notify"/, "접선/통지 이벤트 발행");
+assert.match(phaseAdvanceSrc, /circleChatExpiresNight/, "가인 채팅 만료 카운터");
+assert.match(phaseAdvanceSrc, /event_type: "circle_expired"/, "만료 통지");
+assert.match(matchAction.length ? readFileSync("supabase/functions/match-chat/index.ts", "utf8") : "", /circleChat[\s\S]*?접선된 회로가 없습니다/, "채팅 전송은 회로 플래그 기준");
+const circleMigration = readFileSync("supabase/migrations/20260612130000_gomdori_contact_circle.sql", "utf8");
+assert.match(circleMigration, /circleChat'\)::boolean/, "is_demon_circle_member 플래그화");
+assert.match(circleMigration, /is_demon_circle_known/, "정체 인지(영구) 함수");
+assert.match(circleMigration, /as circle_chat/, "뷰 본인 전용 circle_chat 컬럼");
+
 console.log("Gomdori v2 abilities (봉인/부활/변환) checks passed");
