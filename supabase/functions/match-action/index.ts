@@ -18,11 +18,11 @@ function effectiveRole(row: { role: string; engine_state?: Record<string, unknow
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
 // 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
-const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute"];
+const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute", "uno_valor", "daeakma_dominion"];
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀
-  demon: ["demon_kill", "daeakma_brand"], // 처치 + 메피스토 낙인(재배정, v2)
+  demon: ["demon_kill", "daeakma_brand", "daeakma_dominion"], // 처치 + 낙인 + 압도적 존재감(전원 봉인 1회, v2)
   phantom: ["phantom_nightmare", "phantom_seal", "phantom_eclipse"], // 악몽 + 봉인 + 일식(self, v2)
   malen: ["malen_release", "malen_possess"], // 혼령 방출(처치) + 빙의(봉인+카운트, v2)
   besto: ["besto_hidden", "besto_shift"], // 히든 포지션(처치) + 변신(self 조사 회피, v2)
@@ -40,7 +40,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   luna: ["luna_moonlight", "luna_corrupt"], // 적막(충전+달빛) + 공포(게이트된 변환)
   logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
   ellen: ["ellen_persecute"], // 박해 — 받는-투표가치 누진
-  uno: ["uno_struggle"], // 투쟁 — 대상 소속 카운트 +1
+  uno: ["uno_struggle", "uno_valor"], // 투쟁 + 용맹함(1회 자기 정화+명예, v2)
   // 중립
   pasua: ["pasua_convert", "pasua_faith"], // 포교(전향) + 신앙(처치, 악마 면역, v2)
   // 레거시(현 로스터 미배정이나 정의는 유지)
