@@ -228,7 +228,14 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Corrupt", target: "Target" }] },
+        // 고요한 적막: 달의 힘 충전(+1) + 투표·의심한 대상에 달빛(substrate VoteTarget/SuspectTarget).
+        { id: "luna_moonlight", name: "고요한 적막", targetType: "NONE", priority: 5, effects: [
+          { type: "GrantCount", target: "self", tag: "moonGauge", amount: 1 },
+          { type: "AddTag", target: "VoteTarget", tag: "moonlit" },
+          { type: "AddTag", target: "SuspectTarget", tag: "moonlit" },
+        ] },
+        // 공포 속에 밀어 넣다: 달의 힘 2 이상일 때만 발동(소비) — 천사→악마팀 타락.
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
       ],
     },
   },

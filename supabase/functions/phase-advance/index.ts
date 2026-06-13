@@ -23,6 +23,9 @@ import {
 
 type EngineState = Record<string, unknown> & {
   modifiers?: Record<string, number>;
+  // substrate: 직전 처형 투표·의심 투표의 voter→target 맵(레이스 없이 match 레벨 1회 기록).
+  voteTargets?: Record<string, string>;
+  suspectTargets?: Record<string, string>;
   verdict?: {
     candidateUserId: string | null;
     tallies: Record<string, number>;
@@ -53,7 +56,14 @@ function requireNoError<T>(result: { data: T; error: unknown }): T {
   return result.data;
 }
 
-function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseNumber: number, rows: DbPlayer[], modifiers = {}) {
+function playerStateFromRows(
+  matchId: string,
+  phase: MatchState["phase"],
+  phaseNumber: number,
+  rows: DbPlayer[],
+  modifiers = {},
+  marks: { voteTargets?: Record<string, string>; suspectTargets?: Record<string, string> } = {},
+) {
   const state: MatchState = {
     matchId,
     dayCount: phaseNumber,
@@ -90,6 +100,8 @@ function playerStateFromRows(matchId: string, phase: MatchState["phase"], phaseN
         engineState.counters && typeof engineState.counters === "object" && !Array.isArray(engineState.counters)
           ? engineState.counters as Record<string, number>
           : {},
+      lastVoteTarget: marks.voteTargets?.[row.user_id] ?? null,
+      lastSuspectTarget: marks.suspectTargets?.[row.user_id] ?? null,
     };
 
     if (row.alive && row.faction === "angel") state.angelCount += 1;
@@ -456,6 +468,8 @@ Deno.serve((req: Request) => {
             phase.phase_number,
             players,
             engineState.modifiers || {},
+            // substrate: 직전 투표/의심 대상 복원 — Effect.target VoteTarget/SuspectTarget 이 참조.
+            { voteTargets: engineState.voteTargets, suspectTargets: engineState.suspectTargets },
           );
           state.actionStack = actionRowsToInputs(actions).map((action) => ({
             sourceUserId: action.actorUserId,
@@ -628,6 +642,16 @@ Deno.serve((req: Request) => {
           }
         }
 
+        // substrate: 이번 의심 투표의 voter→target 을 기록(다가오는 밤 SuspectTarget 참조용).
+        const suspectTargets: Record<string, string> = {};
+        for (const a of actions) {
+          if (a.target_user_id) suspectTargets[a.actor_user_id] = a.target_user_id;
+        }
+        engineState = { ...engineState, suspectTargets };
+        requireNoError(
+          await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId),
+        );
+
         requireNoError(
           await supabase
             .from("match_events")
@@ -736,10 +760,16 @@ Deno.serve((req: Request) => {
           phaseId: phase.id,
         };
 
+        // substrate: 이번 처형 투표의 voter→target 을 기록(다음 밤 VoteTarget 참조용).
+        const voteTargets: Record<string, string> = {};
+        for (const a of actions) {
+          if (a.target_user_id) voteTargets[a.actor_user_id] = a.target_user_id;
+        }
+
         const { verdict: _previousVerdict, ...engineStateWithoutVerdict } = engineState;
         engineState = tally.candidateUserId
-          ? { ...engineStateWithoutVerdict, verdict: voteSummary }
-          : engineStateWithoutVerdict;
+          ? { ...engineStateWithoutVerdict, verdict: voteSummary, voteTargets }
+          : { ...engineStateWithoutVerdict, voteTargets };
 
         requireNoError(
           await supabase
