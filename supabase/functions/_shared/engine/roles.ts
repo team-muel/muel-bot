@@ -297,15 +297,16 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 헬렌(천사-17): 황금빛 수면 = 자유로운 새 부활(v2). 탈락한 대상을 되살린다.
-    // maxUses 1 — 미즐렛과 동일 근거 (P0-B).
+    // 헬렌(천사-17): 황금빛 수면 — 생존자에게 걸면 수면(보호+행동봉인+부정효과 무효, Sleep),
+    // 탈락자에게 걸면 부활(자유로운 새, Heal·1회). v2: Sleep 이펙트 추가.
     id: "helen",
     name: "헬렌",
     faction: "angel",
     passives: [],
     actions: {
       night: [
-        { id: "helen_revive", name: "황금빛 수면", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "helen_revive", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Sleep", target: "Target" }] },
       ],
     },
   },

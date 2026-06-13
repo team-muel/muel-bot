@@ -460,6 +460,16 @@ function applyEffect(
         events.push({ type: "player_revived", payload: { user_id: target.userId } });
       }
       break;
+    case "Sleep":
+      // 황금빛 수면(헬렌): 대상을 수면 — 죽음 보호(밤 살해 무효) + 그 밤 행동 봉인 +
+      // 받은 부정효과 무효(Cleanse 복합). 깨어나면 평소대로. 보호는 1밤(TAG_PROTECTED).
+      target.tags.push(TAG_PROTECTED);
+      target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
+      for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "nightmare"]) {
+        if (target.counters[key]) target.counters[key] = 0;
+      }
+      events.push({ type: "slept", payload: { user_id: target.userId } });
+      break;
     case "Protect":
       target.tags.push(TAG_PROTECTED);
       break;
