@@ -198,6 +198,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         events.push({ type: "corpse_formed", payload: { user_id: malen.userId } });
       }
     }
+    // 침착한 탐정(도르단 단서): 탈락 발생마다 단서 +1. 단서 3개부터 조사가 정확한 직업까지
+    // 밝힌다(match-action investigate). 사건의 전말(페이즈 조작)은 후속.
+    const dordan = Object.values(newState.players).find((p) => p.currentRole === "dordan" && p.alive);
+    if (dordan) {
+      dordan.counters.clue = (dordan.counters.clue ?? 0) + deathsThisRound;
+      events.push({ type: "clue_gathered", payload: { user_id: dordan.userId, clue: dordan.counters.clue } });
+    }
   }
 
   return { newState, events };
@@ -608,6 +615,7 @@ function applyEffect(
       // 루루(source)에게 양도(voteWeightBonus +1, 지속).
       target.counters.charmed = 1;
       _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
+      _source.counters.charmCount = (_source.counters.charmCount ?? 0) + 1; // 소나타(루루) 게이지.
       events.push({ type: "charmed", payload: { user_id: target.userId, by: _source.userId } });
       break;
     case "Nullify":

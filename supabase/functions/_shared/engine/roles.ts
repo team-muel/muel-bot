@@ -379,6 +379,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "luru_charm", name: "영혼을 만지는 음색", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Charm", target: "Target" }] },
+        // 소나타(v2): 매료 3명 누적(charmCount) 시 연주 — 전원 부정효과 제거(Cleanse All) +
+        // 루루 자신 하루 무적(Protect). 발동 시 게이지 소비. 악보 교체(투표 재설계)는 후속.
+        { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, effects: [{ type: "Cleanse", target: "All" }, { type: "Protect", target: "self", duration: "1_NIGHT" }] },
       ],
     },
   },

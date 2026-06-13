@@ -18,7 +18,7 @@ function effectiveRole(row: { role: string; engine_state?: Record<string, unknow
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
 // 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
-const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute", "uno_valor", "daeakma_dominion"];
+const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute", "uno_valor", "daeakma_dominion", "luru_sonata"];
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀
@@ -35,7 +35,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   rainer: ["rainer_summon"], // 백호 소환(self, 1회) — 천사팀 카운트 획득(v2)
   seika: ["seika_supernova"], // 초신성 = 봉인(v2)
   arthur: ["arthur_emberblade", "arthur_judge"], // 잔불 대검(무적) + 단죄(폭열→소멸, v2)
-  luru: ["luru_charm"], // 매료 = 처형 투표 양도
+  luru: ["luru_charm", "luru_sonata"], // 매료 + 소나타(매료 3 누적 시 전원 정화+자기 무적, v2)
   // 조력자 고유(v2)
   luna: ["luna_moonlight", "luna_corrupt"], // 적막(충전+달빛) + 공포(게이트된 변환)
   logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
@@ -211,7 +211,13 @@ Deno.serve((req: Request) => {
         // 베스토 변신(솔): counters.disguised>0 이면 처치자라도 '천사'로 회피.
         // 직업은 유효 직업(변환 반영) 기준 — 낙인 재배정으로 악마가 된/아니게 된 경우 포함.
         const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
-        investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+        // 침착한 탐정(도르단): 단서 3개부터 정밀 조사 — 악마/천사 판정 대신 정확한 직업을 통지.
+        const clue = (player.engine_state as { counters?: { clue?: number } } | null)?.counters?.clue ?? 0;
+        if (clue >= 3 && !disguised) {
+          investigationResult = effectiveRole(target);
+        } else {
+          investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+        }
       }
     }
 
