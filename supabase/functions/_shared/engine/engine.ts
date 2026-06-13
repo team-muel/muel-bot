@@ -502,11 +502,14 @@ function applyEffect(
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       events.push({ type: "silenced", payload: { user_id: target.userId } });
       break;
-    case "GrantCount":
-      // 투쟁(우노): 대상 소속 카운트 +amount(지속). 생존 시 그 팀 카운트에 반영.
-      target.counters.countBonus = (target.counters.countBonus ?? 0) + (effect.amount ?? 1);
-      events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1 } });
+    case "GrantCount": {
+      // 소속 카운트 +amount(지속). 기본은 countBonus(생존 가산, 우노 투쟁). effect.tag 로
+      // 카운터를 지정하면 그쪽에 가산 — 라이너 백호는 deadCountBonus(생존 무관 지속).
+      const countKey = effect.tag ?? "countBonus";
+      target.counters[countKey] = (target.counters[countKey] ?? 0) + (effect.amount ?? 1);
+      events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1, counter: countKey } });
       break;
+    }
     case "Charm":
       // 매료(루루): 대상의 다음 처형 투표 무력화(charmed, 라운드 한정) + 투표 권한을
       // 루루(source)에게 양도(voteWeightBonus +1, 지속).

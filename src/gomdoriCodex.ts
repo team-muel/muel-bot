@@ -61,8 +61,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "백호", text: "백호 소환 시 천사팀 카운트 +3(생존 무관, 지속). 소환 이후 악마는 모든 천사 제거 외 승리 경로 없음." },
     ],
-    v1: "구현됨(축약). 배정 시 countBonus +1 / deadCountBonus +1 주입(canon +3 → 무한게임 방지로 v1 +1).",
-    v2: "백호를 '소환' 액션으로(초기 미보유 → 1회 소환 후 +3 지속). 거친 포효 등 후속.",
+    v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +1 / deadCountBonus +1 획득(초기 미보유, canon +3 은 튜닝 후속). 배정 자동 주입 폐지.",
+    v2: "소환 자석 +3(canon) 튜닝 + 거친 포효 등 후속.",
     vault: "Universes/BoW/Characters/라이너.md",
   },
   {
