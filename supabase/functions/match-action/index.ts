@@ -29,12 +29,12 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 천사 능동
   dordan: ["police_investigate"], // 도르단 = 탐정 조사
   habreterus: ["doctor_heal"],
-  mizlet: ["mizlet_revive"], // 디저트 선물 = 탈락자 부활(v2)
+  mizlet: ["mizlet_revive", "mizlet_dessert"], // 부활 + 디저트 버프(생존자 보호, v2)
   helen: ["helen_revive", "helen_sleep"], // 황금빛 수면 — 탈락자 부활 + 생존자 수면(v2)
   romaz: ["romaz_suspect"],
   rainer: ["rainer_summon"], // 백호 소환(self, 1회) — 천사팀 카운트 획득(v2)
   seika: ["seika_supernova"], // 초신성 = 봉인(v2)
-  arthur: ["arthur_emberblade"], // 잔불 대검 = 대상 하루 무적
+  arthur: ["arthur_emberblade", "arthur_judge"], // 잔불 대검(무적) + 단죄(폭열→소멸, v2)
   luru: ["luru_charm"], // 매료 = 처형 투표 양도
   // 조력자 고유(v2)
   luna: ["luna_moonlight", "luna_corrupt"], // 적막(충전+달빛) + 공포(게이트된 변환)
@@ -140,7 +140,7 @@ Deno.serve((req: Request) => {
       if (!SELF_ACTIONS.includes(actionType)) {
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
       // M-1: 악마 처치(처치/악몽/혼령 방출/히든 포지션)는 자기 자신 불가.
-      if (["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden", "pasua_faith"].includes(actionType) && targetUserId === claims.sub) {
+      if (["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden", "pasua_faith", "arthur_judge"].includes(actionType) && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
       // 포교·변환·무력화·박해·투쟁·잔불대검·매료·빙의·낙인: 자기 자신 불가.

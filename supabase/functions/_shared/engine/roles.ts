@@ -306,7 +306,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "mizlet_revive", name: "디저트 선물", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "mizlet_revive", name: "디저트 선물(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        // 디저트 선물(v2, 생존자 버프): 쿠키/푸딩 — 그 밤 보호 + 디저트 태그. 다수복귀 패시브는 후속.
+        { id: "mizlet_dessert", name: "디저트 선물", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }, { type: "AddTag", target: "Target", tag: "dessert" }] },
       ],
     },
   },
@@ -348,6 +350,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        // 단죄(v2): 첫 적용은 폭열(branded), 폭열된 대상에 재적용하면 소멸(부활 불가). 결백/타락
+        // 판정 다단계는 후속. 처치(4)와 같은 우선도로 그 밤 처리.
+        { id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, effects: [{ type: "Annihilate", target: "Target" }] },
       ],
     },
   },

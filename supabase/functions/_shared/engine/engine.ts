@@ -185,6 +185,21 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
+  // 악담(말렌 SoulCounter): 이 밤 탈락자 1명당 살아있는 말렌이 '혼' +1. 혼 2개 → 시체 1구
+  // (악마팀 카운트 보조 deadCountBonus +1). 혼령 방출 다단계는 후속. role-keyed 단일 패스.
+  const deathsThisRound = events.filter((e) => (e as { type?: string }).type === "player_died").length;
+  if (deathsThisRound > 0) {
+    const malen = Object.values(newState.players).find((p) => p.currentRole === "malen" && p.alive);
+    if (malen) {
+      malen.counters.soul = (malen.counters.soul ?? 0) + deathsThisRound;
+      while ((malen.counters.soul ?? 0) >= 2) {
+        malen.counters.soul -= 2;
+        malen.counters.deadCountBonus = (malen.counters.deadCountBonus ?? 0) + 1;
+        events.push({ type: "corpse_formed", payload: { user_id: malen.userId } });
+      }
+    }
+  }
+
   return { newState, events };
 }
 
@@ -485,9 +500,22 @@ function applyEffect(
       target.markedForDeath = true;
       break;
     case "Heal":
-      if (!target.alive) {
+      // 소멸(아서 단죄)된 대상은 부활 불가(counters.annihilated).
+      if (!target.alive && !(target.counters?.annihilated)) {
         target.alive = true;
         events.push({ type: "player_revived", payload: { user_id: target.userId } });
+      }
+      break;
+    case "Annihilate":
+      // 단죄(아서 잔불 대검): 첫 적용은 폭열(branded 표식), 폭열된 대상에 재적용하면 소멸
+      // — 탈락 + 부활 불가(annihilated). 결백/타락 판정 다단계는 후속.
+      if ((target.counters?.branded ?? 0) > 0) {
+        target.markedForDeath = true;
+        target.counters.annihilated = 1;
+        events.push({ type: "annihilated", payload: { user_id: target.userId } });
+      } else {
+        target.counters.branded = 1;
+        events.push({ type: "branded", payload: { user_id: target.userId } });
       }
       break;
     case "Sleep":
