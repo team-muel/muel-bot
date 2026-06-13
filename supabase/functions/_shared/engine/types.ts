@@ -17,6 +17,12 @@ export interface PlayerState {
   markedForAnnihilation: boolean; // 소멸
   tags: string[];
   counters: Record<string, number>;
+  // 투표/의심 대상 기억(substrate) — 직전 처형 투표·의심 투표에서 이 플레이어가 지목한
+  // 대상. phase-advance 가 집계 시 matches.engine_state 에 맵으로 기록하고
+  // playerStateFromRows 가 복원한다. Effect.target "VoteTarget"/"SuspectTarget" 이 참조
+  // (루나 달빛·엘런 박해·도르단 범인 등 "내가 투표/의심한 대상" 능력의 단일 토대).
+  lastVoteTarget?: string | null;
+  lastSuspectTarget?: string | null;
 }
 
 export interface MatchState {
@@ -54,7 +60,8 @@ export interface Effect {
   // Eclipse(팬텀 일식): self.counters.eclipse=1 — phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀 소멸.
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
   type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep";
-  target: "self" | "Target" | "All";
+  // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
+  target: "self" | "Target" | "All" | "VoteTarget" | "SuspectTarget";
   amount?: number;
   tag?: string;
   duration?: "1_NIGHT" | "1_DAY" | "PERMANENT";
@@ -77,6 +84,9 @@ export interface ActiveAbility {
   priority: number;
   effects: Effect[];
   maxUses?: number;
+  // 발동 전 카운터 게이트(루나 달 게이지·우노 1회성 등 재사용). min 미만이면 발동 차단,
+  // consume 면 발동 후 0 으로 소비.
+  requiresCounter?: { key: string; min: number; consume?: boolean };
 }
 
 export interface RoleDefinition {

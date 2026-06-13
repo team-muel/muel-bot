@@ -18,7 +18,7 @@ function effectiveRole(row: { role: string; engine_state?: Record<string, unknow
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
 // 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
-const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon"];
+const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight"];
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀
@@ -37,7 +37,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   arthur: ["arthur_emberblade"], // 잔불 대검 = 대상 하루 무적
   luru: ["luru_charm"], // 매료 = 처형 투표 양도
   // 조력자 고유(v2)
-  luna: ["luna_corrupt"], // 천사 → 악마팀 변환
+  luna: ["luna_moonlight", "luna_corrupt"], // 적막(충전+달빛) + 공포(게이트된 변환)
   logen: ["logen_nullify"], // 그 밤 대상 능력 무력화(봉인)
   ellen: ["ellen_persecute"], // 박해 — 받는-투표가치 누진
   uno: ["uno_struggle"], // 투쟁 — 대상 소속 카운트 +1

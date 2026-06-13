@@ -237,8 +237,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "고요한 적막", text: "달빛 대상 1명당 달의 힘 +10%(악마 +30%). 100% 시 해가 저문다(토론 생략·증가 투표가치 마이너스 판정) / 달이 차오른다 선택." },
       { kind: "능력2", name: "공포 속에 밀어 넣다", text: "대상에게 '달빛 저주'. 달의 힘 가득 차면 대상은 직업 잃고 악마팀. 1회 제한." },
     ],
-    v1: "구현됨. luna_corrupt — 공포 속에 밀어 넣다(천사→악마팀 타락, Corrupt).",
-    v2: "달의 힘 게이지(투표·의심 대상 충전) + 공포 속에 밀어 넣다(천사→악마팀 변환). ChangeFaction 재사용 가능(angel→demon). 새 상태: 달 게이지.",
+    v1: "구현됨. luna_moonlight(고요한 적막 — 달 게이지 +1 + 투표/의심 대상에 달빛, substrate VoteTarget/SuspectTarget) + luna_corrupt(공포 — 달의 힘 2+ 시 발동·소비, requiresCounter 게이트). 새 토대: 투표/의심 대상 substrate + requiresCounter 프리미티브.",
+    v2: "달빛 1명당 +10%/악마 +30% 비례 충전 튜닝 + 해가 저문다/달이 차오른다 분기 후속. canon 충전원(투표·의심)은 substrate 로 정합.",
     vault: "Universes/BoW/Characters/루나.md",
   },
   {

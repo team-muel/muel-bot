@@ -112,10 +112,23 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       sourcePlayer.counters[usedKey] = (sourcePlayer.counters[usedKey] ?? 0) + 1;
     }
 
+    // 카운터 게이트(루나 달 게이지): 충전이 임계 미만이면 발동 차단. consume 면 발동 후 소비.
+    if (ability.requiresCounter) {
+      const { key, min, consume } = ability.requiresCounter;
+      if ((sourcePlayer.counters[key] ?? 0) < min) {
+        events.push({ type: "action_blocked_no_charge", userId: sourcePlayer.userId, key });
+        continue;
+      }
+      if (consume) sourcePlayer.counters[key] = 0;
+    }
+
     for (const effect of ability.effects) {
       let target: PlayerState | null = null;
       if (effect.target === "self") target = sourcePlayer;
       if (effect.target === "Target" && targetPlayer) target = targetPlayer;
+      // substrate: "내가 투표/의심한 대상"으로 해소(루나 달빛·엘런 박해 등 단일 토대).
+      if (effect.target === "VoteTarget" && sourcePlayer.lastVoteTarget) target = newState.players[sourcePlayer.lastVoteTarget] ?? null;
+      if (effect.target === "SuspectTarget" && sourcePlayer.lastSuspectTarget) target = newState.players[sourcePlayer.lastSuspectTarget] ?? null;
 
       if (!target) continue;
       if (!target.alive && ability.targetType !== "SINGLE_DEAD") continue;
