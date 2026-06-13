@@ -58,6 +58,9 @@ export const CORE_ROLES: RoleDefinition[] = [
           effects: [{ type: "Kill", target: "Target" }],
         },
         { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Rebrand", target: "Target" }] },
+        // 압도적 존재감(v2, 1회): 공포로 전원의 그 밤 능력을 봉인(Silence All). 사탄의 마(전역
+        // 악마판정)는 후속. priority 1 — 대상들 능력보다 먼저 봉인.
+        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "All" }] },
       ],
     },
   },
@@ -247,7 +250,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
+        // 네 안에 없는 것(v2): 대상의 *다음* 능력 효과를 소멸(Nullify, 지속·발동 시 소비).
+        // 봉인(그 밤만)과 달리 대상이 능력을 쓸 때까지 기다렸다 무효화한다.
+        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Nullify", target: "Target" }] },
       ],
     },
   },
@@ -328,6 +333,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
+        // 용맹함(v2, 1회): 군인의 사명 — 자기 부정효과 제거(Cleanse) + 명예 강화(천사팀 카운트 +1).
+        // canon 전원 효과·소속 공개·명예 실추는 후속.
+        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "self", amount: 1 }] },
       ],
     },
   },

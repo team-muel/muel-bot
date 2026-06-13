@@ -88,6 +88,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       continue;
     }
 
+    // 무효(로건 네 안에 없는 것): 표식이 있으면 *가장 가까운* 능력 발동을 소멸시키고 소비.
+    // 봉인과 달리 지속(리셋 X) — 대상이 다음에 능력을 쓰는 밤까지 기다렸다 무효화한다.
+    if ((sourcePlayer.counters?.nullifyNext ?? 0) > 0) {
+      sourcePlayer.counters.nullifyNext -= 1;
+      events.push({ type: "action_nullified", userId: sourcePlayer.userId });
+      continue;
+    }
+
     const roleDef = getRoleDefinition(sourcePlayer.currentRole);
     if (!roleDef) continue;
 
@@ -123,6 +131,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
 
     for (const effect of ability.effects) {
+      // All: 전원 대상(대악마 압도적 존재감·우노 용맹함). 생존자 전체에 적용(source 포함 여부는
+      // 효과 의미에 맡김 — 봉인/투표가치 등은 전원 의도). 단일 타깃 해소와 분리.
+      if (effect.target === "All") {
+        for (const other of Object.values(newState.players)) {
+          if (other.alive) applyEffect(newState, sourcePlayer, other, effect, events);
+        }
+        continue;
+      }
+
       let target: PlayerState | null = null;
       if (effect.target === "self") target = sourcePlayer;
       if (effect.target === "Target" && targetPlayer) target = targetPlayer;
@@ -565,6 +582,12 @@ function applyEffect(
       _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
       events.push({ type: "charmed", payload: { user_id: target.userId, by: _source.userId } });
       break;
+    case "Nullify":
+      // 무효(로건): 대상의 *다음* 능력 발동을 소멸시키는 표식(지속, 발동 시 소비). 봉인과 달리
+      // 라운드 리셋되지 않아 대상이 능력을 쓸 때까지 기다린다(resolveNightActions 무효 체크).
+      target.counters.nullifyNext = (target.counters.nullifyNext ?? 0) + 1;
+      events.push({ type: "nullify_marked", payload: { user_id: target.userId } });
+      break;
     case "Possess":
       // 빙의(말렌): 대상 그 밤 행동 봉인 + 그 라운드 악마팀으로 카운트(possessed).
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
@@ -595,6 +618,12 @@ function applyEffect(
       // 막지 못한다 — 아침 해소(resolveNightmares)에서 탈락. 누적 2 = 영면(후속 단계).
       target.counters.nightmare = (target.counters.nightmare ?? 0) + 1;
       events.push({ type: "nightmare_marked", payload: { user_id: target.userId, level: target.counters.nightmare } });
+      // 영면(v2): 악몽 2회 누적이면 그 밤 즉시 처리(밤 보호 무시는 아침 악몽 해소와 동일하게
+      // markedForDeath 로 — 보호/수면이 막을 수 있으나 누적 악몽의 무게를 반영).
+      if (target.counters.nightmare >= 2) {
+        target.markedForDeath = true;
+        events.push({ type: "deep_sleep", payload: { user_id: target.userId } });
+      }
       break;
     case "Corrupt":
       // 타락(루나): 천사를 악마팀으로. 천사만 — 악마(처치자)·조력자·중립·이미 타락은 불가.
