@@ -465,7 +465,7 @@ Deno.serve((req: Request) => {
             // 부활/치료=3, 처치=4, 조사·색출·포교·낙인·일식=5.
             priority:
               action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" || action.actionType === "besto_shift" ? 1
-                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "besto_hidden" ? 4
+                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "besto_hidden" || action.actionType === "pasua_faith" ? 4
                 : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "helen_revive" || action.actionType === "arthur_emberblade" ? 3
                 : 5,
           }));

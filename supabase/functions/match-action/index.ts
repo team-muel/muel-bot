@@ -41,7 +41,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   ellen: ["ellen_persecute"], // 박해 — 받는-투표가치 누진
   uno: ["uno_struggle"], // 투쟁 — 대상 소속 카운트 +1
   // 중립
-  pasua: ["pasua_convert"],
+  pasua: ["pasua_convert", "pasua_faith"], // 포교(전향) + 신앙(처치, 악마 면역, v2)
   // 레거시(현 로스터 미배정이나 정의는 유지)
   doctor: ["doctor_heal"],
   police: ["police_investigate"],
@@ -127,11 +127,19 @@ Deno.serve((req: Request) => {
           throw conflict("ability_exhausted", "이미 사용한 능력입니다.");
         }
       }
+      // 연속 포교 제한(파스아): 직전 밤에 포교했으면 이번 밤 포교 불가(신앙은 가능).
+      // convertCooldown 은 엔진이 포교 발동 밤에 1 로 세팅하고 매 밤 1 감소시킨다.
+      if (actionType === "pasua_convert") {
+        const counters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters;
+        if ((counters?.convertCooldown ?? 0) > 0) {
+          throw conflict("convert_cooldown", "연속으로 포교할 수 없습니다. 다음 밤에 다시 시도하세요.");
+        }
+      }
       // 변신(베스토)·일식(팬텀) 등 SELF 행동은 대상 없이 자기에게 발동 — 대상 검증 생략.
       if (!SELF_ACTIONS.includes(actionType)) {
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
       // M-1: 악마 처치(처치/악몽/혼령 방출/히든 포지션)는 자기 자신 불가.
-      if (["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden"].includes(actionType) && targetUserId === claims.sub) {
+      if (["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden", "pasua_faith"].includes(actionType) && targetUserId === claims.sub) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
       // 포교·변환·무력화·박해·투쟁·잔불대검·매료·빙의·낙인: 자기 자신 불가.
