@@ -18,7 +18,7 @@ function effectiveRole(row: { role: string; engine_state?: Record<string, unknow
 // 부활 계열(SINGLE_DEAD) — 일반 밤 행동과 달리 *탈락자* 를 대상으로 한다.
 const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
 // 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동. targetUserId 없어도 OK.
-const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight"];
+const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute"];
 
 const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   // 악마 풀

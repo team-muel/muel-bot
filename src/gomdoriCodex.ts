@@ -259,8 +259,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "패시브", name: "박해자 / 해체된 퍼즐", text: "홀수날 투표 대상은 투표가 진행될 때마다 투표가치 +1. 자아 망가진 동안 투표·의심·능력 가치 상실. 자아 되찾으면 박해자 효과 변경(얻은 투표가치만큼 그날 아침 자신을 투표한 것으로)." },
       { kind: "능력", name: "비치지 않는 자아", text: "(시트 후속 다단계 — v2 정리 대상)." },
     ],
-    v1: "구현됨. ellen_persecute — 박해(받는-투표가치 +3, 라운드 한정).",
-    v2: "박해자(홀수날 투표 대상 누진 +1 투표가치) + 해체된 퍼즐 상태 전환. 새 이펙트: ProgressiveReceivedVote.",
+    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3). 표적을 처형대로 민다 — 자기 투표를 따라감.",
+    v2: "홀수날 한정 + 투표마다 누진(ProgressiveReceivedVote) + 해체된 퍼즐 상태 전환 후속.",
     vault: "Universes/BoW/Characters/엘런.md",
   },
 
