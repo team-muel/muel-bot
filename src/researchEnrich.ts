@@ -8,6 +8,7 @@ import { buildResearchTopicFromItem, getYouTubeItemByOrigin } from './youtubeIte
 import { flushPendingResearchDms } from './researchDeliver.js';
 import { getGeminiTextModel, getGoogleSearchTool } from './modelRegistry.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
+import { renderDiscordMessage } from './rendering/discordRenderer.js';
 
 /**
  * "이 소식 더 알아보기" → two-step, grounding-first flow.
@@ -213,13 +214,31 @@ export const handleResearchEnrichButton = async (
   }
 
   const components = deepAvailable && researchJobRowId ? [buildDeepButtonRow(researchJobRowId)] : [];
-  const content = brief
-    ? `${brief}\n\n${deepAvailable ? '— 더 깊은 다출처 조사가 필요하면 아래 버튼을 눌러줘. 검색 쿼터나 백엔드 상태에 따라 오래 걸리거나 실패할 수 있고, 결과나 실패 안내는 DM/알림으로 보낼게.' : ''}`.trim()
-    : (deepAvailable
-        ? '지금 빠른 요약을 만들지 못했어. 더 깊게 조사해볼까?'
-        : '지금 빠른 요약을 만들지 못했어. 잠시 뒤 다시 시도해줘.');
 
-  await interaction.editReply({ content: content.slice(0, 1900), components }).catch(() => {});
+  if (brief) {
+    // 빠른 요약도 딥 리서치 결과(rich embed)와 같은 톤의 카드로 — 평문 대신 info-card.
+    // 딥 버튼은 카드 아래 components 로 유지. brief 는 embed description(≤3900) 에 들어간다.
+    const footerNote = deepAvailable
+      ? 'Muel 리서치 · 더 깊게 조사하려면 아래 버튼'
+      : 'Muel 리서치';
+    const rendered = renderDiscordMessage([
+      {
+        type: 'info-card',
+        tone: 'muel',
+        title: '리서치 요약',
+        body: brief,
+        footer: footerNote,
+      },
+    ]);
+    await interaction
+      .editReply({ embeds: rendered.embeds, components, allowedMentions: { parse: [] } })
+      .catch(() => {});
+  } else {
+    const content = deepAvailable
+      ? '지금 빠른 요약을 만들지 못했어. 더 깊게 조사해볼까?'
+      : '지금 빠른 요약을 만들지 못했어. 잠시 뒤 다시 시도해줘.';
+    await interaction.editReply({ content, components }).catch(() => {});
+  }
 };
 
 // ---- deep: opt-in AI-Q submission for a previously-briefed topic ----

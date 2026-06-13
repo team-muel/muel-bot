@@ -1,4 +1,5 @@
 import type { Client } from 'discord.js';
+import { AttachmentBuilder } from 'discord.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { MuelRenderablePart, CardSection } from './rendering/types.js';
 import {
@@ -69,6 +70,11 @@ const reportToSections = (report: string): { intro: string; sections: CardSectio
   return { intro, sections };
 };
 
+/**
+ * 커버 카드 = 요약 + 목차만. Discord embed 는 한 메시지 합산 6000자 캡이 있어 긴 보고서를
+ * embed 에 다 담으면 잘린다(예전 sections.slice(0,8) + 1024 truncate). 전문은 .md 첨부로
+ * 잘림 없이 전달하고, embed 는 스캔용 표지로만 쓴다.
+ */
 const buildDmRenderable = (args: {
   topic: string;
   report: string;
@@ -76,27 +82,40 @@ const buildDmRenderable = (args: {
   originMessageJumpUrl?: string | null;
 }): MuelRenderablePart[] => {
   const { intro, sections } = reportToSections(args.report);
-  const richSections = sections.slice(0, 8).map((s) => ({
-    header: s.header,
-    content: s.content,
-  }));
-  // 사용자는 Muel이 조사한 것으로 인지하므로 외부 시스템(AI-Q) 명칭은 footer에서 제외.
+  const toc = sections.map((s, i) => `${i + 1}. ${s.header}`).join('\n');
+  const bodyLines: string[] = [];
+  if (intro) bodyLines.push(intro.length > 1500 ? `${intro.slice(0, 1499).trimEnd()}…` : intro);
+  if (toc) bodyLines.push(`**목차**\n${toc}`);
+
   const footerParts = ['Muel 리서치'];
   if (typeof args.sourceCited === 'number') footerParts.push(`인용 ${args.sourceCited}개`);
+  footerParts.push('전문은 첨부파일(.md)');
+
   return [
     {
       type: 'rich-card',
       tone: 'muel',
       title: '리서치 결과',
       subtitle: args.topic.length > 100 ? `${args.topic.slice(0, 99)}…` : args.topic,
-      body: intro || undefined,
-      sections: richSections,
+      body: bodyLines.join('\n\n') || undefined,
       footer: footerParts.join(' · '),
       linkButton: args.originMessageJumpUrl
         ? { label: '원본으로 돌아가기', url: args.originMessageJumpUrl }
         : undefined,
     },
   ];
+};
+
+/**
+ * 전문 보고서를 마크다운 파일로 첨부 — embed 길이 한계 우회. 잘림 없이 전체 전달.
+ */
+const buildReportAttachment = (topic: string, report: string): AttachmentBuilder => {
+  const safe = (topic || 'research')
+    .replace(/[\\/:*?"<>|\n\r]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60) || 'research';
+  return new AttachmentBuilder(Buffer.from(report, 'utf8'), { name: `리서치_${safe}.md` });
 };
 
 const followUpEphemeral = async (
@@ -307,13 +326,15 @@ export const processResearchUserDmPollJob = async (
       // optional — skip on failure
     }
 
+    const fullReport = report.report ?? '';
     const renderable = buildDmRenderable({
       topic: payload.topic,
-      report: report.report ?? '',
+      report: fullReport,
       sourceCited,
       originMessageJumpUrl: payload.originMessageJumpUrl,
     });
     const message = renderDiscordMessage(renderable);
+    if (fullReport.trim()) message.files = [buildReportAttachment(payload.topic, fullReport)];
 
     // Deliver via DM.
     let deliveryChannel: 'dm' | 'pending_dm' = 'pending_dm';
@@ -450,8 +471,10 @@ export const flushPendingResearchDms = async (
         sourceCited: row.source_cited_count ?? undefined,
         originMessageJumpUrl: row.metadata?.originMessageJumpUrl ?? null,
       });
+      const message = renderDiscordMessage(renderable);
+      if (reportText.trim()) message.files = [buildReportAttachment(row.topic, reportText)];
       try {
-        const sent = await dm.send(renderDiscordMessage(renderable));
+        const sent = await dm.send(message);
         await supabase
           .from('muel_research_jobs')
           .update({
