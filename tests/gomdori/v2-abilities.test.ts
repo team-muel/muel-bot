@@ -118,6 +118,29 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
   assert.ok(events.some((e: any) => e.type === "action_blocked_exhausted"), "소진 차단 이벤트");
 }
 
+// --- 1e. 초신성 Cleanse + 영구봉인(세이카): 효과 제거 + 재적용 시 영구 ---
+{
+  // 부정효과(받는-투표 +5)가 걸린 대상에게 초신성 → Cleanse 로 제거 + 봉인 표식.
+  const target = { ...player("t", "citizen", "angel"), counters: { voteBias: 5, nightmare: 1 } };
+  const state = emptyState(
+    { seika: player("seika", "seika", "angel"), t: target },
+    [{ sourceUserId: "seika", targetUserId: "t", actionType: "seika_supernova", priority: 1 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.t.counters.voteBias ?? 0, 0, "Cleanse — 받는-투표 부정효과 제거");
+  assert.equal(newState.players.t.counters.nightmare ?? 0, 0, "Cleanse — 악몽 표식 제거");
+  assert.equal(newState.players.t.counters.seikaMark, 1, "첫 초신성 — 봉인 표식 누적");
+  assert.ok(events.some((e: any) => e.type === "cleansed"), "Cleanse 이벤트");
+  // 재적용: 표식 보유 대상 → 영구 봉인.
+  const repeat = emptyState(
+    { seika: player("seika", "seika", "angel"), t: { ...newState.players.t, counters: { ...newState.players.t.counters, silencedNights: 0 } } },
+    [{ sourceUserId: "seika", targetUserId: "t", actionType: "seika_supernova", priority: 1 }],
+  );
+  const { newState: after, events: ev2 } = resolveNightActions(repeat);
+  assert.equal(after.players.t.counters.silencedPermanent, 1, "재적용 — 영구 봉인");
+  assert.ok(ev2.some((e: any) => e.type === "silenced_permanent"), "영구 봉인 이벤트");
+}
+
 // --- 2. 부활(미즐렛 디저트): 탈락자를 되살린다 ---
 {
   const state = emptyState(
@@ -134,7 +157,7 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
 
 // --- 3. 런타임 계약 ---
 const roles = readFileSync("supabase/functions/_shared/engine/roles.ts", "utf8");
-assert.match(roles, /id: "seika_supernova"[\s\S]*?type: "Silence"/, "세이카 봉인");
+assert.match(roles, /id: "seika_supernova"[\s\S]*?type: "Cleanse"[\s\S]*?type: "Silence", target: "Target", tag: "seikaMark"/, "세이카 초신성 = Cleanse + 봉인(마크)");
 assert.match(roles, /id: "phantom_seal"[\s\S]*?type: "Silence"/, "팬텀 봉인");
 assert.match(roles, /id: "mizlet_revive"[\s\S]*?SINGLE_DEAD[\s\S]*?type: "Heal"/, "미즐렛 부활(탈락자 대상)");
 assert.match(roles, /id: "helen_revive"[\s\S]*?SINGLE_DEAD/, "헬렌 부활");

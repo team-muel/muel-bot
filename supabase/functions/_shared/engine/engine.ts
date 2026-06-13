@@ -82,7 +82,8 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
 
     // 봉인(세이카 초신성·팬텀 어둠이 내린 도시): 그 밤 능력 발동 불가. 봉인 액션이 priority 1
     // (가장 먼저)이라 대상의 능력보다 앞서 silencedNights 가 세팅된다. 밤 종료 시 0으로 리셋.
-    if ((sourcePlayer.counters?.silencedNights ?? 0) > 0) {
+    // silencedPermanent(세이카 재적용): 매 밤 지속 — 리셋되지 않아 영구 봉인.
+    if ((sourcePlayer.counters?.silencedNights ?? 0) > 0 || (sourcePlayer.counters?.silencedPermanent ?? 0) > 0) {
       events.push({ type: "action_blocked_silenced", userId: sourcePlayer.userId });
       continue;
     }
@@ -499,9 +500,33 @@ function applyEffect(
     case "Silence":
       // 봉인: 대상의 그 밤 능력 발동을 막는다(세이카 초신성·팬텀 어둠이 내린 도시·로건 무력화).
       // 봉인 액션이 priority 1 이라 대상 능력보다 먼저 처리됨. 밤 종료 시 자동 해제.
-      target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
-      events.push({ type: "silenced", payload: { user_id: target.userId } });
+      // effect.tag(마크 키): 같은 대상 재적용 시 영구 봉인(세이카 초신성 재폭발). 마크는
+      // Cleanse 대상이 아니라(지속) 누적 — 첫 적용은 표식+1밤 봉인, 재적용은 영구.
+      if (effect.tag) {
+        if ((target.counters[effect.tag] ?? 0) > 0) {
+          target.counters.silencedPermanent = 1;
+          events.push({ type: "silenced_permanent", payload: { user_id: target.userId } });
+        } else {
+          target.counters[effect.tag] = 1;
+          target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
+          events.push({ type: "silenced", payload: { user_id: target.userId } });
+        }
+      } else {
+        target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
+        events.push({ type: "silenced", payload: { user_id: target.userId } });
+      }
       break;
+    case "Cleanse": {
+      // 부정효과 제거(세이카 초신성·우노 사명·미즐렛 와인): 대상에게 걸린 라운드성/지연
+      // 부정 효과를 모두 씻어낸다. 지속 자석(countBonus/deadCountBonus/shield/voteWeightBonus)
+      // 과 세이카 마크는 건드리지 않는다 — '받은 부여 효과'만 대상.
+      for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent"]) {
+        if (target.counters[key]) target.counters[key] = 0;
+      }
+      target.tags = target.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
+      events.push({ type: "cleansed", payload: { user_id: target.userId } });
+      break;
+    }
     case "GrantCount": {
       // 소속 카운트 +amount(지속). 기본은 countBonus(생존 가산, 우노 투쟁). effect.tag 로
       // 카운터를 지정하면 그쪽에 가산 — 라이너 백호는 deadCountBonus(생존 무관 지속).

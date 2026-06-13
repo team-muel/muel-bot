@@ -341,7 +341,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
+        // 초신성(v2): 대상의 받은 부여 효과 제거(Cleanse) + 그 밤 능력 봉인(Silence). 같은
+        // 대상 재적용 시 영구 봉인(tag=seikaMark 표식 누적). Cleanse→Silence 순(먼저 씻고 봉인).
+        { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Cleanse", target: "Target" }, { type: "Silence", target: "Target", tag: "seikaMark" }] },
       ],
     },
   },
