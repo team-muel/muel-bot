@@ -57,6 +57,10 @@ export interface Effect {
   amount?: number;
   tag?: string;
   duration?: "1_NIGHT" | "1_DAY" | "PERMANENT";
+  // Kill 면역 진영(파스아 신앙: 악마는 탈락하지 않는다). 대상 지정은 허용하되 해소
+  // 시점에 actualFaction 이 목록에 들면 markedForDeath 를 세우지 않는다(클린 — 처치
+  // 프리미티브 재사용, 직업 하드코딩 금지).
+  immuneFactions?: Faction[];
 }
 
 export interface PassiveAbility {

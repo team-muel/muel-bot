@@ -36,6 +36,50 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
   assert.equal(newState.players.demon.counters.silencedNights ?? 0, 0, "봉인은 같은 밤 한정 — 종료 시 해제");
 }
 
+// --- 1b. 신앙(파스아): 대상 탈락, 단 악마는 면역 ---
+{
+  const state = emptyState(
+    {
+      pasua: player("pasua", "pasua", "neutral"),
+      angel: player("angel", "citizen", "angel"),
+    },
+    [{ sourceUserId: "pasua", targetUserId: "angel", actionType: "pasua_faith", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.angel.alive, false, "신앙 — 천사 대상 탈락");
+  assert.equal(newState.players.pasua.counters.convertCooldown ?? 0, 0, "신앙은 포교 쿨다운과 무관");
+}
+{
+  const state = emptyState(
+    {
+      pasua: player("pasua", "pasua", "neutral"),
+      demon: player("demon", "demon", "demon"),
+    },
+    [{ sourceUserId: "pasua", targetUserId: "demon", actionType: "pasua_faith", priority: 4 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.demon.alive, true, "신앙 — 악마는 면역(탈락 안 함)");
+  assert.ok(events.some((e: any) => e.type === "attack_prevented"), "면역 통지 이벤트");
+}
+
+// --- 1c. 연속 포교 제한(파스아): 포교한 밤 convertCooldown=1, 다음 밤 감소 ---
+{
+  const state = emptyState(
+    {
+      pasua: player("pasua", "pasua", "neutral"),
+      angel: player("angel", "citizen", "angel"),
+    },
+    [{ sourceUserId: "pasua", targetUserId: "angel", actionType: "pasua_convert", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.pasua.counters.convertCooldown, 1, "포교 발동 밤 — 쿨다운 1 세팅(다음 밤 거부)");
+  assert.equal(newState.players.angel.currentRole, "converted", "포교 — 천사 전향");
+  // 다음 밤(포교 미발동): 쿨다운 1 → 0 으로 카운트다운.
+  const next = emptyState({ pasua: { ...newState.players.pasua } }, []);
+  const { newState: after } = resolveNightActions(next);
+  assert.equal(after.players.pasua.counters.convertCooldown ?? 0, 0, "다음 밤 — 쿨다운 해제(한 밤 건너 재포교 가능)");
+}
+
 // 봉인이 priority 로 먼저 처리되지 않으면(역순) 막지 못함을 대비해 — 엔진은 actionStack 을
 // priority 오름차순 정렬하므로 입력 순서와 무관해야 한다.
 {
@@ -440,4 +484,12 @@ assert.match(circleMigration, /circleChat'\)::boolean/, "is_demon_circle_member 
 assert.match(circleMigration, /is_demon_circle_known/, "정체 인지(영구) 함수");
 assert.match(circleMigration, /as circle_chat/, "뷰 본인 전용 circle_chat 컬럼");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환) checks passed");
+// --- 신앙 배선(파스아 v2): 능력 정의·허용·priority·마이그레이션 ---
+assert.match(rolesSrc, /id: "pasua_faith"[\s\S]*?immuneFactions: \["demon"\]/, "신앙 — Kill + 악마 면역");
+assert.match(matchAction, /pasua: \["pasua_convert", "pasua_faith"\]/, "match-action 신앙 허용");
+assert.match(matchAction, /convert_cooldown/, "연속 포교 거부 가드");
+assert.match(phaseAdvanceSrc, /"pasua_faith" \? 4/, "신앙 priority 4(처치)");
+const pasuaFaithMigration = readFileSync("supabase/migrations/20260614100000_gomdori_pasua_faith.sql", "utf8");
+assert.match(pasuaFaithMigration, /'pasua_faith'/, "마이그레이션 action_type 에 신앙 추가");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙) checks passed");

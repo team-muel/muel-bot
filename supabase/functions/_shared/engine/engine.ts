@@ -63,6 +63,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
       counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
+      // 연속 포교 제한(파스아): 포교한 밤에 1 로 세팅 → 다음 밤 submission 을 match-action
+      // 이 거부. 매 밤 1 씩 감소시켜 한 밤 건너 다시 가능하게 한다(리셋 아닌 카운트다운).
+      if (counters.convertCooldown) counters.convertCooldown = Math.max(0, counters.convertCooldown - 1);
     }
   }
 
@@ -117,6 +120,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       if (!target.alive && ability.targetType !== "SINGLE_DEAD") continue;
 
       applyEffect(newState, sourcePlayer, target, effect, events);
+    }
+
+    // 포교가 실제로 발동한 밤에만 쿨다운 1 — 봉인/지목/사망으로 막혔으면 위에서 continue 돼
+    // 여기 못 옴(연속 포교 불가, canon §파스아).
+    if (action.actionType === "pasua_convert") {
+      sourcePlayer.counters.convertCooldown = 1;
     }
   }
 
@@ -436,6 +445,12 @@ function applyEffect(
 ) {
   switch (effect.type) {
     case "Kill":
+      // 면역 진영(파스아 신앙: 악마 면역). 대상 지정은 허용하되 탈락만 무효 — 방어가
+      // 아니라 결과 무효라 attack_prevented 로 통지하고 markedForDeath 를 세우지 않는다.
+      if (effect.immuneFactions?.includes(target.actualFaction)) {
+        events.push({ type: "attack_prevented", payload: { user_id: target.userId } });
+        break;
+      }
       target.markedForDeath = true;
       break;
     case "Heal":

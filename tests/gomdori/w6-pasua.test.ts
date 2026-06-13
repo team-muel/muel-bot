@@ -159,7 +159,7 @@ for (const value of ["pasua", "converted", "neutral", "pasua_convert"]) {
 }
 assert.match(migration, /settings jsonb not null default '\{\}'/, "matches.settings 컬럼이 추가되어야 한다");
 assert.match(matchStart, /if \(spawnPasua\) roles\.push\(\{ role: "pasua", faction: "neutral" \}\)/, "파스아 슬롯 배정");
-assert.match(matchAction, /pasua: \["pasua_convert"\]/, "파스아 밤 행동 허용");
+assert.match(matchAction, /pasua: \["pasua_convert", "pasua_faith"\]/, "파스아 밤 행동 허용(포교+신앙)");
 assert.match(roles, /id: "pasua"[\s\S]*?faction: "neutral"/, "파스아 엔진 진영은 neutral");
 
 // --- M3-1 중립 확률 등장 (결정 잠금 #2) ---
