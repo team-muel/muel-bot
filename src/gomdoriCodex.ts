@@ -109,8 +109,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "황금빛 수면", text: "대상 수면(부정효과 무효+행동 불가). 깨어나면 지정대상·투표가치 +1. 연속 같은 대상 불가." },
       { kind: "능력2", name: "자유로운 새", text: "다음 아침 탈락자들이 생존 행동 가능. 처형/탈락자에게 수면 부여. 지속 '추억을 간직하는 법'(수면으로 깨면 복귀)." },
     ],
-    v1: "구현됨. helen_revive — 황금빛 수면(탈락자 부활, SINGLE_DEAD Heal·priority 3).",
-    v2: "수면(부정효과 무효+행동봉인 복합 태그) + 부활(수면으로 깨어난 탈락자 복귀). 새 이펙트: Sleep/Revive.",
+    v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(생존자 황금빛 수면 — Sleep: 죽음보호+행동봉인+부정효과 무효). 새 이펙트 Sleep 도입.",
+    v2: "수면으로 깨어난 탈락자 복귀 연계 + 추억을 간직하는 법 후속.",
     vault: "Universes/BoW/Characters/헬렌.md",
   },
   {

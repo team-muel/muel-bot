@@ -155,12 +155,30 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
   assert.ok(events.some((e: any) => e.type === "player_revived" && e.payload?.user_id === "dead"), "부활 이벤트");
 }
 
+// --- 2b. 황금빛 수면(헬렌): 생존자 보호 + 지연 부정효과(악몽) 무효 ---
+{
+  // 악몽(지속 카운터)이 걸린 아군을 수면 → 죽음 보호 + 악몽 표식 무효.
+  const ally = { ...player("ally", "citizen", "angel"), counters: { nightmare: 1 } };
+  const state = emptyState(
+    { helen: player("helen", "helen", "angel"), ally, demon: player("demon", "demon", "demon") },
+    [
+      { sourceUserId: "helen", targetUserId: "ally", actionType: "helen_sleep", priority: 3 },
+      { sourceUserId: "demon", targetUserId: "ally", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.ally.alive, true, "수면 — 죽음 보호로 처치 무효");
+  assert.equal(newState.players.ally.counters.nightmare ?? 0, 0, "수면 — 악몽 표식 무효(Cleanse 복합)");
+  assert.ok(events.some((e: any) => e.type === "slept"), "수면 이벤트");
+}
+
 // --- 3. 런타임 계약 ---
 const roles = readFileSync("supabase/functions/_shared/engine/roles.ts", "utf8");
 assert.match(roles, /id: "seika_supernova"[\s\S]*?type: "Cleanse"[\s\S]*?type: "Silence", target: "Target", tag: "seikaMark"/, "세이카 초신성 = Cleanse + 봉인(마크)");
 assert.match(roles, /id: "phantom_seal"[\s\S]*?type: "Silence"/, "팬텀 봉인");
 assert.match(roles, /id: "mizlet_revive"[\s\S]*?SINGLE_DEAD[\s\S]*?type: "Heal"/, "미즐렛 부활(탈락자 대상)");
 assert.match(roles, /id: "helen_revive"[\s\S]*?SINGLE_DEAD/, "헬렌 부활");
+assert.match(roles, /id: "helen_sleep"[\s\S]*?type: "Sleep"/, "헬렌 황금빛 수면(생존자 Sleep)");
 const migration = readFileSync("supabase/migrations/20260610140000_gomdori_v2_abilities.sql", "utf8");
 for (const a of ["mizlet_revive", "helen_revive", "seika_supernova", "phantom_seal"]) {
   assert.match(migration, new RegExp(`'${a}'`), `migration allows ${a}`);
@@ -168,6 +186,9 @@ for (const a of ["mizlet_revive", "helen_revive", "seika_supernova", "phantom_se
 const matchAction = readFileSync("supabase/functions/match-action/index.ts", "utf8");
 assert.match(matchAction, /REVIVE_ACTIONS/, "부활은 탈락자 대상 검증");
 assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행동 허용");
+assert.match(matchAction, /helen: \["helen_revive", "helen_sleep"\]/, "헬렌 수면 행동 허용");
+const helenSleepMig = readFileSync("supabase/migrations/20260614120000_gomdori_helen_sleep.sql", "utf8");
+assert.match(helenSleepMig, /'helen_sleep'/, "마이그레이션 action_type 에 수면 추가");
 
 // --- 4. 변환(루나 공포 속에 밀어 넣다): 천사 → 악마팀 ---
 {

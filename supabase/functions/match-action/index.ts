@@ -30,7 +30,7 @@ const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
   dordan: ["police_investigate"], // 도르단 = 탐정 조사
   habreterus: ["doctor_heal"],
   mizlet: ["mizlet_revive"], // 디저트 선물 = 탈락자 부활(v2)
-  helen: ["helen_revive"], // 황금빛 수면 = 탈락자 부활(v2)
+  helen: ["helen_revive", "helen_sleep"], // 황금빛 수면 — 탈락자 부활 + 생존자 수면(v2)
   romaz: ["romaz_suspect"],
   rainer: ["rainer_summon"], // 백호 소환(self, 1회) — 천사팀 카운트 획득(v2)
   seika: ["seika_supernova"], // 초신성 = 봉인(v2)
