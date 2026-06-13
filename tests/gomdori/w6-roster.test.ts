@@ -39,10 +39,8 @@ for (const id of ANGEL_ROLES) {
 assert.ok(def("dordan")!.actions.night?.some((a) => a.id === "police_investigate"), "도르단 조사");
 assert.ok(def("habreterus")!.actions.night?.some((a) => a.id === "doctor_heal"), "하브레터스 치료");
 assert.ok(def("romaz")!.actions.night?.some((a) => a.id === "romaz_suspect"), "로마즈 색출");
-// 패시브 천사(밤 능동 없음). v2 에서 세이카·우노·아서·루루 능동화되어 라이너만 남음.
-for (const id of ["rainer"]) {
-  assert.ok(!def(id)!.actions.night?.length, `${id} 는 패시브(밤 능동 없음)`);
-}
+// 라이너 백호 소환(self, 1회) — v2 에서 능동화.
+assert.ok(def("rainer")!.actions.night?.some((a) => a.id === "rainer_summon" && a.maxUses === 1), "라이너 백호 소환(1회 self)");
 
 // --- 3. match-start 런타임 계약(풀 추첨 + engine_state 주입) ---
 const matchStart = readFileSync("supabase/functions/match-start/index.ts", "utf8");
@@ -53,6 +51,7 @@ assert.match(matchStart, /shuffle\(ANGEL_ROLES\)\.slice\(0, angelSlots\)/, "천�
 assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지 않는다");
 assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 1/, "우노 명예 카운트 주입");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
+assert.ok(!/role === "rainer"/.test(matchStart), "라이너 배정 자동 카운트 주입 폐지(소환으로 획득)");
 
 // 변종 선택 제출 fn + role_assign 마감 폴백 계약
 const selectFn = readFileSync("supabase/functions/match-select-role/index.ts", "utf8");

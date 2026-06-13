@@ -80,11 +80,7 @@ function engineStateForAssignment(card: RoleCard): Record<string, unknown> | nul
 
   const counters: Record<string, number> = {};
 
-  if (card.role === "rainer") {
-    // 라이너 백호: 천사팀 카운트 +1, 생존 무관(deadCountBonus). v1 은 +1.
-    counters.countBonus = 1;
-    counters.deadCountBonus = 1;
-  }
+  // 라이너 백호: v2 에서 자동 주입 폐지 — rainer_summon(1회 self 액션)으로 능동 획득한다.
 
   if (card.role === "uno") {
     // 우노 명예: 생존 시 천사팀 카운트 +1 (canon 은 +10, v1 은 +1).
