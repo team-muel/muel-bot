@@ -76,7 +76,23 @@ export const CORE_ROLES: RoleDefinition[] = [
     name: "라이너",
     faction: "angel",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        {
+          // 백호 소환: 1회 self 액션 — 천사팀 카운트 +1(생존 가산) + +1(생존 무관 지속).
+          // v1 자동 주입과 동일 자석, 구조만 능동 소환으로(canon 은 +3, 튜닝은 후속).
+          id: "rainer_summon",
+          name: "백호 소환",
+          targetType: "SELF",
+          priority: 5,
+          maxUses: 1,
+          effects: [
+            { type: "GrantCount", target: "self", amount: 1 },
+            { type: "GrantCount", target: "self", amount: 1, tag: "deadCountBonus" },
+          ],
+        },
+      ],
+    },
   },
   {
     // 로마즈: 용의자 색출 = 대상에게 +5 투표가치 / +10 의심가치(받는-표 가산).
