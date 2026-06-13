@@ -273,8 +273,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "포교", text: "대상 포교(악마·중립 불가). 전향자는 기존 승리조건 삭제+파스아 승리 부여. 연속 발동 불가." },
       { kind: "능력2", name: "신앙", text: "대상 탈락(악마는 탈락 안 함)." },
     ],
-    v1: "구현됨. pasua_convert → 천사·가인 전향(currentRole=converted, 중립). 누적 3명+파스아 생존 시 checkWinCondition 우선 중립 승리.",
-    v2: "신앙(대상 탈락) 능력 추가 + 승리 임계 라이브 튜닝. 연속 포교 제한.",
+    v1: "구현됨. pasua_convert → 천사·가인 전향(currentRole=converted, 중립). 누적 3명+파스아 생존 시 checkWinCondition 우선 중립 승리. pasua_faith(신앙) → 대상 탈락(Kill, 악마 면역 immuneFactions). 연속 포교 제한(convertCooldown).",
+    v2: "승리 임계 라이브 튜닝(후속). 신앙·연속 포교 제한은 v2 반영 완료.",
     vault: "Universes/BoW/Characters/파스아.md",
   },
 ];

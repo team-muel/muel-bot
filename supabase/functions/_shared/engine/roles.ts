@@ -128,7 +128,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     // 파스아: 사이비 교주(중립). 시그니처 = 포교(전향). 매 밤 대상 1명을 전향시켜
     // 자기 진영(converted)으로 흡수. 누적 3명 전향 시 파스아 단독 즉시 승리(checkWinCondition).
     // canon: 악마·중립 포교 불가 → 효과/검증에서 차단(천사 + 가인만 전향 가능).
-    // v1 단순화: 신앙(대상 탈락)은 v2 보류, 포교만.
+    // v2: 포교(전향) + 신앙(대상 탈락, 악마 면역). 연속 포교 불가(convertCooldown).
     id: "pasua",
     name: "파스아",
     faction: "neutral",
@@ -141,6 +141,14 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 5,
           effects: [{ type: "ChangeFaction", target: "Target" }],
+        },
+        {
+          // 신앙: 대상 탈락(악마는 탈락 안 함, canon §파스아). Kill 재사용 + immuneFactions.
+          id: "pasua_faith",
+          name: "신앙",
+          targetType: "SINGLE_ALIVE",
+          priority: 4,
+          effects: [{ type: "Kill", target: "Target", immuneFactions: ["demon"] }],
         },
       ],
     },
