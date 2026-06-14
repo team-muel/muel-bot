@@ -153,10 +153,10 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       applyEffect(newState, sourcePlayer, target, effect, events);
     }
 
-    // 포교가 실제로 발동한 밤에만 쿨다운 1 — 봉인/지목/사망으로 막혔으면 위에서 continue 돼
-    // 여기 못 옴(연속 포교 불가, canon §파스아).
-    if (action.actionType === "pasua_convert") {
-      sourcePlayer.counters.convertCooldown = 1;
+    // 발동 성공 후 카운터 세팅(ADR-006 S3, 선언형) — 파스아 연속 포교 쿨다운 등. 봉인/지목/
+    // 사망으로 막혔으면 위에서 continue 돼 여기 못 옴(연속 포교 불가, canon §파스아).
+    if (ability.onFireSetCounter) {
+      sourcePlayer.counters[ability.onFireSetCounter.key] = ability.onFireSetCounter.value;
     }
   }
 
@@ -185,25 +185,29 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
-  // 악담(말렌 SoulCounter): 이 밤 탈락자 1명당 살아있는 말렌이 '혼' +1. 혼 2개 → 시체 1구
-  // (악마팀 카운트 보조 deadCountBonus +1). 혼령 방출 다단계는 후속. role-keyed 단일 패스.
+  // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
+  // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
+  // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
   const deathsThisRound = events.filter((e) => (e as { type?: string }).type === "player_died").length;
   if (deathsThisRound > 0) {
-    const malen = Object.values(newState.players).find((p) => p.currentRole === "malen" && p.alive);
-    if (malen) {
-      malen.counters.soul = (malen.counters.soul ?? 0) + deathsThisRound;
-      while ((malen.counters.soul ?? 0) >= 2) {
-        malen.counters.soul -= 2;
-        malen.counters.deadCountBonus = (malen.counters.deadCountBonus ?? 0) + 1;
-        events.push({ type: "corpse_formed", payload: { user_id: malen.userId } });
+    for (const p of Object.values(newState.players)) {
+      if (!p.alive) continue;
+      const hook = getRoleDefinition(p.currentRole)?.deathHook;
+      if (!hook) continue;
+      p.counters[hook.perDeath.counter] =
+        (p.counters[hook.perDeath.counter] ?? 0) + deathsThisRound * hook.perDeath.amount;
+      if (hook.convert) {
+        const { from, threshold, to, amount } = hook.convert;
+        while ((p.counters[from] ?? 0) >= threshold) {
+          p.counters[from] -= threshold;
+          p.counters[to] = (p.counters[to] ?? 0) + amount;
+          events.push({ type: "death_hook_convert", payload: { user_id: p.userId, from, to } });
+        }
       }
-    }
-    // 침착한 탐정(도르단 단서): 탈락 발생마다 단서 +1. 단서 3개부터 조사가 정확한 직업까지
-    // 밝힌다(match-action investigate). 사건의 전말(페이즈 조작)은 후속.
-    const dordan = Object.values(newState.players).find((p) => p.currentRole === "dordan" && p.alive);
-    if (dordan) {
-      dordan.counters.clue = (dordan.counters.clue ?? 0) + deathsThisRound;
-      events.push({ type: "clue_gathered", payload: { user_id: dordan.userId, clue: dordan.counters.clue } });
+      events.push({
+        type: "death_hook",
+        payload: { user_id: p.userId, counter: hook.perDeath.counter, value: p.counters[hook.perDeath.counter] },
+      });
     }
   }
 

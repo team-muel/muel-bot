@@ -100,6 +100,9 @@ export interface ActiveAbility {
   // 발동 전 카운터 게이트(루나 달 게이지·우노 1회성 등 재사용). min 미만이면 발동 차단,
   // consume 면 발동 후 0 으로 소비.
   requiresCounter?: { key: string; min: number; consume?: boolean };
+  // 발동 성공 후 source 카운터 세팅(ADR-006 S3) — 파스아 연속 포교 쿨다운 등.
+  // 과거 resolveNightActions 의 actionType 분기를 선언형으로 대체.
+  onFireSetCounter?: { key: string; value: number };
 }
 
 export interface RoleDefinition {
@@ -110,5 +113,12 @@ export interface RoleDefinition {
   actions: {
     night?: ActiveAbility[];
     day?: ActiveAbility[];
+  };
+  // 밤 탈락 발생 시 살아있는 이 직업이 카운터를 얻는 후크(ADR-006 S3) — 도르단 단서,
+  // 말렌 혼/시체. 과거 resolveNightActions 의 currentRole 분기를 선언형으로 대체.
+  // perDeath: 탈락 1명당 counter += amount. convert: from 이 threshold 이상이면 차감하고 to += amount.
+  deathHook?: {
+    perDeath: { counter: string; amount: number };
+    convert?: { from: string; threshold: number; to: string; amount: number };
   };
 }
