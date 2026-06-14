@@ -147,6 +147,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           excludeSelf: true,
           // 천사·조력자만 전향(악마 처치자·중립 불가). 엔진 ChangeFaction 도 이중 가드.
           targetFilter: { excludeRoleSets: ["demonKiller"], excludeRoles: ["pasua", "converted"], message: "악마와 중립은 포교할 수 없습니다." },
+          onFireSetCounter: { key: "convertCooldown", value: 1 },
           effects: [{ type: "ChangeFaction", target: "Target" }],
         },
         {
@@ -212,6 +213,8 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
       ],
     },
+    // 악담: 밤 탈락 1명당 혼 +1. 혼 2개 → 시체 1구(악마팀 카운트 deadCountBonus +1).
+    deathHook: { perDeath: { counter: "soul", amount: 1 }, convert: { from: "soul", threshold: 2, to: "deadCountBonus", amount: 1 } },
   },
   {
     // 베스토(악마-14): 히든 포지션(처치) + 변신(솔/하베스토 토글 — 조사 회피). 배후 다단계는 후속.
@@ -288,6 +291,8 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "police_investigate", name: "조사", targetType: "SINGLE_ALIVE", priority: 5, effects: [] },
       ],
     },
+    // 침착한 탐정: 밤 탈락 1명당 단서 +1(3개부터 정밀 조사 — match-action).
+    deathHook: { perDeath: { counter: "clue", amount: 1 } },
   },
   {
     // 하브레터스(천사-4): 생명의 언약 = 치료. v1 = 치료(doctor_heal 재사용). vault [[하브레터스]].
