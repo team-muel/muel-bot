@@ -4,6 +4,10 @@ import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { readJsonObject, readRequiredString, getMatch } from "../_shared/game.ts";
 
+// 채팅 발화 — 채널은 페이즈+상태로 서버가 결정한다(정본 2026-06-15):
+//   밤  : 회로원(circleChat)만 'demon_circle' 밀회.
+//   낮  : 생존자 → 'town'(전원 열람), 사망자 → 'dead'(영혼, 사망자만 열람).
+// 그 외 페이즈는 채팅 불가. 읽기 가시성은 RLS(20260615140000) 가 강제한다.
 Deno.serve((req: Request) => {
   return withErrorHandling(req, async () => {
     const origin = req.headers.get("Origin");
@@ -21,61 +25,57 @@ Deno.serve((req: Request) => {
     const body = readJsonObject(await req.json().catch(() => null));
     const matchId = readRequiredString(body, "matchId");
     const message = readRequiredString(body, "message");
+    if (message.length > 2000) {
+      throw badRequest("message_too_long", "메시지가 너무 깁니다 (2000자 이내).");
+    }
 
     const supabase = getSupabaseAdmin();
-
-    // 1. Get current match and phase
     const match = await getMatch(matchId);
-    
-    if (match.status !== "night") {
-      throw badRequest("invalid_phase", "채팅은 밤에만 가능합니다.");
-    }
 
     const { data: currentPhase, error: phaseError } = await supabase
       .from("match_phases")
-      .select("*")
+      .select("id")
       .eq("match_id", matchId)
       .is("ended_at", null)
       .order("phase_number", { ascending: false })
       .limit(1)
       .single();
-
     if (phaseError || !currentPhase) {
       throw conflict("no_active_phase", "현재 활성화된 페이즈가 없습니다.");
     }
 
-    // 2. Validate circle membership
     const { data: player, error: playerError } = await supabase
       .from("match_players")
-      .select("faction, alive, engine_state")
+      .select("alive, engine_state")
       .eq("match_id", matchId)
       .eq("user_id", claims.sub)
       .single();
-
     if (playerError || !player) throw forbidden("not_participant", "게임 참가자가 아닙니다.");
-    if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 채팅할 수 없습니다.");
 
-    // 접선 정본(2026-06-12): 채팅은 진영이 아니라 회로(circleChat)가 연다 —
-    // 가인(밤2까지)·로건(영구)만. 팬텀 페어·루나·엘런·타락자는 회로 없음.
-    const inCircle =
-      ((player.engine_state as { circleChat?: unknown } | null)?.circleChat) === true;
-    if (!inCircle) {
-      throw forbidden("invalid_role", "접선된 회로가 없습니다.");
+    // 채널 결정.
+    let channel: "demon_circle" | "town" | "dead";
+    if (match.status === "night") {
+      if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 밤 회로에 참여할 수 없습니다.");
+      const inCircle = ((player.engine_state as { circleChat?: unknown } | null)?.circleChat) === true;
+      if (!inCircle) throw forbidden("invalid_role", "접선된 회로가 없습니다.");
+      channel = "demon_circle";
+    } else if (match.status === "day") {
+      channel = player.alive ? "town" : "dead";
+    } else {
+      throw badRequest("invalid_phase", "지금은 채팅할 수 없습니다.");
     }
 
-    // 3. Insert chat message
     const { error: chatError } = await supabase
       .from("match_chats")
       .insert({
         match_id: matchId,
         phase_id: currentPhase.id,
-        channel: "demon_circle",
+        channel,
         sender_user_id: claims.sub,
-        message: message
+        message,
       });
-
     if (chatError) throw chatError;
 
-    return jsonResponse({ success: true }, { origin });
+    return jsonResponse({ success: true, channel }, { origin });
   });
 });

@@ -30,9 +30,10 @@ assert.match(matchStart, /pending: "helper"/, "helper slot is a pending selectio
 assert.match(matchStart, /shuffle\(ANGEL_ROLES\)/, "angels drawn distinct from angel pool");
 assert.match(matchStart, /counters\.shield = 1/, "gain should seed demon shield");
 assert.match(matchAction, /romaz: \["romaz_suspect"\]/, "romaz night action should be accepted");
-assert.match(matchChat, /select\("faction, alive, engine_state"\)/, "demon chat reads circle flag state");
+assert.match(matchChat, /select\("alive, engine_state"\)/, "chat reads alive + circle flag state");
 assert.match(matchChat, /circleChat/, "demon chat gated by contact circle, not faction");
-assert.match(matchChat, /channel: "demon_circle"/, "match chat insert should match DB column name");
+assert.match(matchChat, /channel = "demon_circle"/, "night chat → demon_circle channel");
+assert.match(matchChat, /player\.alive \? "town" : "dead"/, "day chat → 생존 town / 사망 dead 채널");
 assert.match(phaseAdvance, /execution_blocked_shield/, "verdict execution should honor shield");
 assert.match(phaseAdvance, /blocked_by_shield/, "verdict payload should expose shield block");
 assert.match(roles, /id: "gain"[\s\S]*?faction: "demon"/, "gain engine faction should align with DB/frontend");
