@@ -149,7 +149,8 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
 const read = (p: string) => readFileSync(p, "utf8");
 const migration = read("supabase/migrations/20260610120000_gomdori_w6_pasua_neutral.sql");
 const matchStart = read("supabase/functions/match-start/index.ts");
-const matchAction = read("supabase/functions/match-action/index.ts");
+const matchAction = read("supabase/functions/match-action/index.ts") +
+  read("supabase/functions/_shared/match-action-core.ts");
 const matchSettings = read("supabase/functions/match-settings/index.ts");
 const sharedGame = read("supabase/functions/_shared/game.ts");
 const roles = read("supabase/functions/_shared/engine/roles.ts");

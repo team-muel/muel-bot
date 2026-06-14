@@ -7,7 +7,8 @@ function read(path: string) {
 
 const migration = read("supabase/migrations/20260607111250_gomdori_w4_db_runtime_contract.sql");
 const matchStart = read("supabase/functions/match-start/index.ts");
-const matchAction = read("supabase/functions/match-action/index.ts");
+const matchAction = read("supabase/functions/match-action/index.ts") +
+  read("supabase/functions/_shared/match-action-core.ts");
 const matchChat = read("supabase/functions/match-chat/index.ts");
 const phaseAdvance = read("supabase/functions/phase-advance/index.ts");
 const roles = read("supabase/functions/_shared/engine/roles.ts");
