@@ -29,7 +29,7 @@ assert.match(matchStart, /pending: "demon"/, "demon slot is a pending selection"
 assert.match(matchStart, /pending: "helper"/, "helper slot is a pending selection");
 assert.match(matchStart, /shuffle\(ANGEL_ROLES\)/, "angels drawn distinct from angel pool");
 assert.match(matchStart, /counters\.shield = 1/, "gain should seed demon shield");
-assert.match(matchAction, /romaz: \["romaz_suspect"\]/, "romaz night action should be accepted");
+assert.match(roles, /id: "romaz_suspect"/, "romaz 능력 정의(단일 출처 CORE_ROLES)");
 assert.match(matchChat, /select\("alive, engine_state"\)/, "chat reads alive + circle flag state");
 assert.match(matchChat, /circleChat/, "demon chat gated by contact circle, not faction");
 assert.match(matchChat, /channel = "demon_circle"/, "night chat → demon_circle channel");

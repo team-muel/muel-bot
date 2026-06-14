@@ -1,7 +1,7 @@
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { conflict, badRequest, forbidden } from "./errors.ts";
 import { getMatch } from "./game.ts";
-import { HELPER_ROLES, isDemonKillerRole } from "./engine/roles.ts";
+import { CORE_ROLES, HELPER_ROLES, isDemonKillerRole } from "./engine/roles.ts";
 import { getRoleDefinition } from "./engine/engine.ts";
 
 // match-action 의 검증+기록 코어. 사람(match-action)과 AI(match-ai-act)가 같은 규칙을
@@ -14,42 +14,22 @@ export function effectiveRole(row: { role: string; engine_state?: Record<string,
   return typeof cur === "string" ? cur : row.role;
 }
 
+// 검증 테이블은 단일 출처(CORE_ROLES)에서 도출한다(ADR-006 S1). 능력을 roles.ts 한 곳에
+// 정의하면 match-action 검증이 자동으로 따라온다 — 과거 손유지 복제 테이블을 대체.
+const ALL_NIGHT_ABILITIES = CORE_ROLES.flatMap((r) => r.actions.night ?? []);
+
 // 부활 계열(SINGLE_DEAD) — 탈락자를 대상으로.
-export const REVIVE_ACTIONS = ["mizlet_revive", "helen_revive"];
-// 자기 대상(SELF) 행동 — 대상 없이 자기에게 발동.
-export const SELF_ACTIONS = ["phantom_eclipse", "besto_shift", "rainer_summon", "luna_moonlight", "ellen_persecute", "uno_valor", "daeakma_dominion", "luru_sonata"];
-
-export const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = {
-  // 악마 풀
-  demon: ["demon_kill", "daeakma_brand", "daeakma_dominion"],
-  phantom: ["phantom_nightmare", "phantom_seal", "phantom_eclipse"],
-  malen: ["malen_release", "malen_possess"],
-  besto: ["besto_hidden", "besto_shift"],
-  // 천사 능동
-  dordan: ["police_investigate"],
-  habreterus: ["doctor_heal"],
-  mizlet: ["mizlet_revive", "mizlet_dessert"],
-  helen: ["helen_revive", "helen_sleep"],
-  romaz: ["romaz_suspect"],
-  rainer: ["rainer_summon"],
-  seika: ["seika_supernova"],
-  arthur: ["arthur_emberblade", "arthur_judge"],
-  luru: ["luru_charm", "luru_sonata"],
-  // 조력자 고유(v2)
-  luna: ["luna_moonlight", "luna_corrupt"],
-  logen: ["logen_nullify"],
-  ellen: ["ellen_persecute"],
-  uno: ["uno_struggle", "uno_valor"],
-  // 중립
-  pasua: ["pasua_convert", "pasua_faith"],
-  // 레거시
-  doctor: ["doctor_heal"],
-  police: ["police_investigate"],
-};
-
-// 처치류(자기 자신 불가) — 대상 검증용.
-const KILL_LIKE = ["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden", "pasua_faith", "arthur_judge"];
-const NO_SELF_TARGET = ["pasua_convert", "luna_corrupt", "logen_nullify", "ellen_persecute", "uno_struggle", "arthur_emberblade", "luru_charm", "malen_possess", "daeakma_brand"];
+export const REVIVE_ACTIONS: string[] = ALL_NIGHT_ABILITIES
+  .filter((a) => a.targetType === "SINGLE_DEAD")
+  .map((a) => a.id);
+// 대상 없이 발동(SELF/NONE/ALL) — 자기/무대상 행동.
+export const SELF_ACTIONS: string[] = ALL_NIGHT_ABILITIES
+  .filter((a) => a.targetType === "SELF" || a.targetType === "NONE" || a.targetType === "ALL")
+  .map((a) => a.id);
+// role → 그 직업이 쓸 수 있는 밤 액션 id 목록.
+export const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = Object.fromEntries(
+  CORE_ROLES.map((r) => [r.id, (r.actions.night ?? []).map((a) => a.id)]),
+);
 
 export type SubmitActionParams = {
   matchId: string;
@@ -97,12 +77,12 @@ export async function submitMatchAction(
       throw conflict("first_night", "첫 번째 밤에는 능력을 사용할 수 없습니다.");
     }
     const actorRole = effectiveRole(player);
-    const allowedActions = NIGHT_ACTIONS_BY_ROLE[actorRole] ?? [];
-    if (!allowedActions.includes(actionType)) {
+    // 단일 출처(CORE_ROLES): 허용 액션·대상 규칙을 능력 정의에서 직접 도출(ADR-006 S1).
+    const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);
+    if (!ability) {
       throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
     }
-    const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);
-    if (ability?.maxUses != null) {
+    if (ability.maxUses != null) {
       const counters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters;
       if ((counters?.[`used_${actionType}`] ?? 0) >= ability.maxUses) {
         throw conflict("ability_exhausted", "이미 사용한 능력입니다.");
@@ -114,12 +94,12 @@ export async function submitMatchAction(
         throw conflict("convert_cooldown", "연속으로 포교할 수 없습니다. 다음 밤에 다시 시도하세요.");
       }
     }
-    if (!SELF_ACTIONS.includes(actionType)) {
+    // 대상 없이 발동(SELF/NONE/ALL)이면 대상 검증 생략.
+    const requiresNoTarget =
+      ability.targetType === "SELF" || ability.targetType === "NONE" || ability.targetType === "ALL";
+    if (!requiresNoTarget) {
       if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
-      if (KILL_LIKE.includes(actionType) && targetUserId === actorUserId) {
-        throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
-      }
-      if (NO_SELF_TARGET.includes(actionType) && targetUserId === actorUserId) {
+      if (ability.excludeSelf && targetUserId === actorUserId) {
         throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
       }
       const { data: targetState } = await supabase
@@ -130,7 +110,7 @@ export async function submitMatchAction(
         .single();
       if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
       const targetRole = effectiveRole(targetState);
-      if (REVIVE_ACTIONS.includes(actionType)) {
+      if (ability.targetType === "SINGLE_DEAD") {
         if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
       } else if (!targetState.alive) {
         throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");

@@ -55,9 +55,10 @@ export const CORE_ROLES: RoleDefinition[] = [
           name: "처치",
           targetType: "SINGLE_ALIVE",
           priority: 4,
+          excludeSelf: true,
           effects: [{ type: "Kill", target: "Target" }],
         },
-        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Rebrand", target: "Target" }] },
+        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
         // 압도적 존재감(v2, 1회): 공포로 전원의 그 밤 능력을 봉인(Silence All). 사탄의 마(전역
         // 악마판정)는 후속. priority 1 — 대상들 능력보다 먼저 봉인.
         { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "All" }] },
@@ -143,6 +144,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           name: "포교",
           targetType: "SINGLE_ALIVE",
           priority: 5,
+          excludeSelf: true,
           effects: [{ type: "ChangeFaction", target: "Target" }],
         },
         {
@@ -151,6 +153,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           name: "신앙",
           targetType: "SINGLE_ALIVE",
           priority: 4,
+          excludeSelf: true,
           effects: [{ type: "Kill", target: "Target", immuneFactions: ["demon"] }],
         },
       ],
@@ -188,7 +191,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Nightmare", target: "Target" }] },
+        { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Nightmare", target: "Target" }] },
         { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Silence", target: "Target" }] },
         { id: "phantom_eclipse", name: "일식", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Eclipse", target: "self" }] },
       ],
@@ -203,8 +206,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
-        { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Possess", target: "Target" }] },
+        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
       ],
     },
   },
@@ -216,7 +219,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, effects: [{ type: "Kill", target: "Target" }] },
+        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
         { id: "besto_shift", name: "변신", targetType: "SELF", priority: 1, effects: [{ type: "Disguise", target: "self" }] },
       ],
     },
@@ -238,7 +241,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           { type: "AddTag", target: "SuspectTarget", tag: "moonlit" },
         ] },
         // 공포 속에 밀어 넣다: 달의 힘 2 이상일 때만 발동(소비) — 천사→악마팀 타락.
-        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
       ],
     },
   },
@@ -252,7 +255,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 네 안에 없는 것(v2): 대상의 *다음* 능력 효과를 소멸(Nullify, 지속·발동 시 소비).
         // 봉인(그 밤만)과 달리 대상이 능력을 쓸 때까지 기다렸다 무효화한다.
-        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Nullify", target: "Target" }] },
+        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Nullify", target: "Target" }] },
       ],
     },
   },
@@ -334,7 +337,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
+        { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
         // 용맹함(v2, 1회): 군인의 사명 — 자기 부정효과 제거(Cleanse) + 명예 강화(천사팀 카운트 +1).
         // canon 전원 효과·소속 공개·명예 실추는 후속.
         { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "self", amount: 1 }] },
@@ -349,10 +352,10 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, excludeSelf: true, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
         // 단죄(v2): 첫 적용은 폭열(branded), 폭열된 대상에 재적용하면 소멸(부활 불가). 결백/타락
         // 판정 다단계는 후속. 처치(4)와 같은 우선도로 그 밤 처리.
-        { id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, effects: [{ type: "Annihilate", target: "Target" }] },
+        { id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true, effects: [{ type: "Annihilate", target: "Target" }] },
       ],
     },
   },
@@ -378,7 +381,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "luru_charm", name: "영혼을 만지는 음색", targetType: "SINGLE_ALIVE", priority: 5, effects: [{ type: "Charm", target: "Target" }] },
+        { id: "luru_charm", name: "영혼을 만지는 음색", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Charm", target: "Target" }] },
         // 소나타(v2): 매료 3명 누적(charmCount) 시 연주 — 전원 부정효과 제거(Cleanse All) +
         // 루루 자신 하루 무적(Protect). 발동 시 게이지 소비. 악보 교체(투표 재설계)는 후속.
         { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, effects: [{ type: "Cleanse", target: "All" }, { type: "Protect", target: "self", duration: "1_NIGHT" }] },
