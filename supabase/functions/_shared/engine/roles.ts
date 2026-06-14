@@ -145,6 +145,8 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 5,
           excludeSelf: true,
+          // 천사·조력자만 전향(악마 처치자·중립 불가). 엔진 ChangeFaction 도 이중 가드.
+          targetFilter: { excludeRoleSets: ["demonKiller"], excludeRoles: ["pasua", "converted"], message: "악마와 중립은 포교할 수 없습니다." },
           effects: [{ type: "ChangeFaction", target: "Target" }],
         },
         {
@@ -241,7 +243,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           { type: "AddTag", target: "SuspectTarget", tag: "moonlit" },
         ] },
         // 공포 속에 밀어 넣다: 달의 힘 2 이상일 때만 발동(소비) — 천사→악마팀 타락.
-        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], excludeRoles: ["pasua", "converted", "corrupted"], message: "천사만 타락시킬 수 있습니다." }, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
       ],
     },
   },

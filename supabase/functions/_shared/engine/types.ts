@@ -87,6 +87,16 @@ export interface ActiveAbility {
   // 자기 자신을 대상으로 지정할 수 없는 능력(처치·변환·박해 등). match-action 검증의
   // 단일 출처(ADR-006 S1) — 과거 KILL_LIKE/NO_SELF_TARGET 하드코딩을 대체한다.
   excludeSelf?: boolean;
+  // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
+  // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
+  // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).
+  // excludeRoles: 유효 직업(currentRole) 직접 제외. excludeFactions: actualFaction 제외.
+  targetFilter?: {
+    excludeRoleSets?: ("demonKiller" | "helper")[];
+    excludeRoles?: string[];
+    excludeFactions?: Faction[];
+    message?: string;
+  };
   // 발동 전 카운터 게이트(루나 달 게이지·우노 1회성 등 재사용). min 미만이면 발동 차단,
   // consume 면 발동 후 0 으로 소비.
   requiresCounter?: { key: string; min: number; consume?: boolean };
