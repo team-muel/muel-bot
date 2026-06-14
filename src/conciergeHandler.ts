@@ -8,7 +8,7 @@ import { generateMuelReply, toDiscordReply } from './muelAgent.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
-import { logMuelAiEvent } from './muelAiEvents.js';
+import { logMuelAiEvent, classifyAiError } from './muelAiEvents.js';
 import { classifyMentionIntent, type MuelRouterIntent } from './muelRouter.js';
 import { acquireMentionSlot } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
@@ -478,7 +478,8 @@ export const handleHubChannelMessage = async (
       },
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const classifiedAiError = classifyAiError(error);
+    const reason = classifiedAiError.errorMessage;
     console.error('[hub] channel message handling failed', error);
 
     const aiEventId = await logMuelAiEvent(supabase, {
@@ -490,7 +491,7 @@ export const handleHubChannelMessage = async (
       latencyMs: Date.now() - startedAt,
       taskType: 'chat',
       modelLane: 'chat',
-      errorClass: error instanceof Error ? error.name : typeof error,
+      errorClass: classifiedAiError.errorClass,
       errorMessage: reason,
       metadata: { triggerSource: 'allowlist_channel', discordMessageId: message.id },
     });
