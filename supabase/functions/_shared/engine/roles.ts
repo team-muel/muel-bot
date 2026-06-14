@@ -56,6 +56,9 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 4,
           excludeSelf: true,
+          // 사탄의 마(전원 투표가치 -1)는 ModifyVoteValue 프리미티브로 구현돼 있으나,
+          // 기본 투표가치=1 에서 -1 은 즉시 전원 0(투표 무력화)이라 보류 — 투표가치 스케일
+          // 재설계(기본값 상향) 후 연결한다(후속). 프리미티브/tally 배선은 준비됨.
           effects: [{ type: "Kill", target: "Target" }],
         },
         { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
@@ -347,7 +350,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
         // 용맹함(v2, 1회): 군인의 사명 — 자기 부정효과 제거(Cleanse) + 명예 강화(천사팀 카운트 +1).
         // canon 전원 효과·소속 공개·명예 실추는 후속.
-        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "self", amount: 1 }] },
+        // 용맹함(v2 verbatim): 전원에게 투쟁(GrantCount All) + 자기 부정효과 제거(Cleanse self). 1회.
+        // 소속 공개·명예 실추(밤행동 불가)는 새 프리미티브 필요 — 후속.
+        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "All", amount: 1 }] },
       ],
     },
   },

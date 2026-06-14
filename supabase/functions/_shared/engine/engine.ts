@@ -242,8 +242,8 @@ export function tallyEliminationVotes(
       continue;
     }
 
-    // 루루 매료 양도분(counters.voteWeightBonus)을 행사 가치에 합산.
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0));
+    // 루루 매료 양도분(voteWeightBonus) + 사탄의 마 감소분(voteValueMod)을 행사 가치에 합산.
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -352,7 +352,7 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const actor = players[action.actorUserId];
     if (!actor?.alive) continue;
 
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0));
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -557,6 +557,12 @@ function applyEffect(
     case "ModifyReceivedSuspicion":
       target.counters.suspicionBias = (target.counters.suspicionBias ?? 0) + (effect.amount ?? 0);
       events.push({ type: "suspicion_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
+      break;
+    case "ModifyVoteValue":
+      // 사탄의 마(대악마): 대상의 *행사* 투표가치를 amount 만큼 조정(음수=감소, 지속).
+      // tally(처형/판결)에서 voteValueMod 로 합산. 라운드 리셋 X(누적).
+      target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) + (effect.amount ?? 0);
+      events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
       break;
     case "ChangeFaction":
       // 포교(파스아): 천사 + 조력자(가인)만 전향 가능. 악마(currentRole 'demon')·이미
