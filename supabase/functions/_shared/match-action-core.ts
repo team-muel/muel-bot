@@ -104,7 +104,7 @@ export async function submitMatchAction(
       }
       const { data: targetState } = await supabase
         .from("match_players")
-        .select("alive, role, engine_state")
+        .select("alive, role, faction, engine_state")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
@@ -115,19 +115,21 @@ export async function submitMatchAction(
       } else if (!targetState.alive) {
         throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
       }
-      if (
-        actionType === "pasua_convert" &&
-        (isDemonKillerRole(targetRole) || targetRole === "pasua" || targetRole === "converted")
-      ) {
-        throw badRequest("invalid_target", "악마와 중립은 포교할 수 없습니다.");
-      }
-      if (
-        actionType === "luna_corrupt" &&
-        (isDemonKillerRole(targetRole) ||
-          HELPER_ROLES.includes(targetRole) ||
-          ["pasua", "converted", "corrupted"].includes(targetRole))
-      ) {
-        throw badRequest("invalid_target", "천사만 타락시킬 수 있습니다.");
+      // 대상 직업/진영 제한(ADR-006 S2): 능력 선언(targetFilter)에서 제네릭 평가.
+      // 과거 파스아·루나 하드코딩 if-블록을 대체. 엔진 applyEffect 도 이중 가드.
+      const tf = ability.targetFilter;
+      if (tf) {
+        const targetFaction =
+          (targetState.engine_state as { currentFaction?: string } | null)?.currentFaction ??
+          (typeof targetState.faction === "string" ? targetState.faction : null);
+        const blocked =
+          (tf.excludeRoleSets?.includes("demonKiller") && isDemonKillerRole(targetRole)) ||
+          (tf.excludeRoleSets?.includes("helper") && HELPER_ROLES.includes(targetRole)) ||
+          (tf.excludeRoles?.includes(targetRole)) ||
+          (targetFaction != null && tf.excludeFactions?.includes(targetFaction as never));
+        if (blocked) {
+          throw badRequest("invalid_target", tf.message ?? "그 대상에게는 사용할 수 없습니다.");
+        }
       }
     }
   } else if (match.status === "vote") {
