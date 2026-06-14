@@ -84,6 +84,9 @@ export interface ActiveAbility {
   priority: number;
   effects: Effect[];
   maxUses?: number;
+  // 자기 자신을 대상으로 지정할 수 없는 능력(처치·변환·박해 등). match-action 검증의
+  // 단일 출처(ADR-006 S1) — 과거 KILL_LIKE/NO_SELF_TARGET 하드코딩을 대체한다.
+  excludeSelf?: boolean;
   // 발동 전 카운터 게이트(루나 달 게이지·우노 1회성 등 재사용). min 미만이면 발동 차단,
   // consume 면 발동 후 0 으로 소비.
   requiresCounter?: { key: string; min: number; consume?: boolean };

@@ -187,15 +187,16 @@ for (const a of ["mizlet_revive", "helen_revive", "seika_supernova", "phantom_se
 const matchAction = readFileSync("supabase/functions/match-action/index.ts", "utf8") +
   readFileSync("supabase/functions/_shared/match-action-core.ts", "utf8");
 assert.match(matchAction, /REVIVE_ACTIONS/, "부활은 탈락자 대상 검증");
-assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행동 허용");
-assert.match(matchAction, /helen: \["helen_revive", "helen_sleep"\]/, "헬렌 수면 행동 허용");
+// 검증 테이블은 CORE_ROLES 도출(ADR-006 S1) — 능력 정의는 단일 출처(roles.ts)에서 확인.
+assert.match(roles, /id: "seika_supernova"/, "세이카 초신성 능력 정의");
+assert.match(roles, /id: "helen_sleep"/, "헬렌 수면 능력 정의");
 const helenSleepMig = readFileSync("supabase/migrations/20260614120000_gomdori_helen_sleep.sql", "utf8");
 assert.match(helenSleepMig, /'helen_sleep'/, "마이그레이션 action_type 에 수면 추가");
 // 배치B 배선
 assert.match(roles, /id: "arthur_judge"[\s\S]*?type: "Annihilate"/, "아서 단죄(Annihilate)");
 assert.match(roles, /id: "mizlet_dessert"[\s\S]*?type: "Protect"/, "미즐렛 디저트 버프(Protect)");
-assert.match(matchAction, /arthur: \["arthur_emberblade", "arthur_judge"\]/, "아서 단죄 허용");
-assert.match(matchAction, /mizlet: \["mizlet_revive", "mizlet_dessert"\]/, "미즐렛 디저트 허용");
+assert.match(roles, /id: "arthur_judge"/, "아서 단죄 능력 정의(단일 출처)");
+assert.match(roles, /id: "mizlet_dessert"/, "미즐렛 디저트 능력 정의(단일 출처)");
 const batch2bMig = readFileSync("supabase/migrations/20260614150000_gomdori_batch_tier2b.sql", "utf8");
 assert.match(batch2bMig, /'arthur_judge'/, "마이그레이션 — 단죄");
 assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트");
@@ -593,15 +594,15 @@ assert.match(roles, /id: "besto_shift"[\s\S]*?type: "Disguise"/, "베스토 변�
 assert.match(roles, /id: "daeakma_brand"[\s\S]*?type: "Rebrand"/, "대악마 낙인");
 assert.match(roles, /id: "phantom_eclipse"[\s\S]*?type: "Eclipse"/, "팬텀 일식");
 // match-action: SELF 행동 null 타겟 허용 + 베스토 조사 회피.
-assert.match(matchAction, /SELF_ACTIONS = \[[^\]]*"daeakma_dominion", "luru_sonata"\]/, "SELF/무대상 행동 집합(+소나타)");
-assert.match(matchAction, /demon: \["demon_kill", "daeakma_brand", "daeakma_dominion"\]/, "대악마 존재감 허용");
-assert.match(matchAction, /uno: \["uno_struggle", "uno_valor"\]/, "우노 용맹함 허용");
+assert.match(matchAction, /SELF_ACTIONS[\s\S]*?targetType === "SELF"[\s\S]*?"NONE"[\s\S]*?"ALL"/, "SELF/무대상 행동은 targetType 으로 도출(단일 출처)");
+assert.match(roles, /id: "daeakma_dominion"/, "대악마 존재감 능력 정의(단일 출처)");
+assert.match(roles, /id: "uno_valor"/, "우노 용맹함 능력 정의(단일 출처)");
 const batch2aMig = readFileSync("supabase/migrations/20260614140000_gomdori_batch_tier2a.sql", "utf8");
 assert.match(batch2aMig, /'uno_valor'/, "마이그레이션 — 용맹함");
 assert.match(batch2aMig, /'daeakma_dominion'/, "마이그레이션 — 압도적 존재감");
 assert.match(roles, /id: "ellen_persecute"[\s\S]*?target: "VoteTarget"/, "엘런 박해 — substrate VoteTarget");
-assert.match(matchAction, /besto: \["besto_hidden", "besto_shift"\]/, "베스토 행동 허용");
-assert.match(matchAction, /demon: \["demon_kill", "daeakma_brand", "daeakma_dominion"\]/, "대악마 처치+낙인+존재감 허용");
+assert.match(roles, /id: "besto_hidden"/, "베스토 능력 정의(단일 출처)");
+assert.match(roles, /id: "demon_kill"/, "대악마 처치 능력 정의(단일 출처)");
 // 2026-06-12: 조사 판정은 유효 직업(effectiveRole — 낙인 재배정 반영) 기준으로 이동.
 assert.match(matchAction, /isDemonKillerRole\(effectiveRole\(target\)\) && !disguised/, "베스토 변신 조사 회피 (유효 직업 기준)");
 // phase-advance: 일식 소멸 + 다음 밤 전환.
@@ -618,7 +619,7 @@ assert.match(roles, /id: "phantom_nightmare"[\s\S]*?type: "Nightmare"/, "팬텀 
 assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Protect"/, "아서 잔불 대검");
 assert.match(roles, /id: "luru_charm"[\s\S]*?type: "Charm"/, "루루 매료");
 assert.match(roles, /id: "luru_sonata"[\s\S]*?requiresCounter: \{ key: "charmCount", min: 3/, "루루 소나타(매료 3 게이트)");
-assert.match(matchAction, /luru: \["luru_charm", "luru_sonata"\]/, "루루 소나타 허용");
+assert.match(roles, /id: "luru_sonata"/, "루루 소나타 능력 정의(단일 출처)");
 assert.match(matchAction, /clue >= 3 && !disguised/, "도르단 단서 3 — 정밀 조사");
 const batch2cMig = readFileSync("supabase/migrations/20260614160000_gomdori_batch_tier2c.sql", "utf8");
 assert.match(batch2cMig, /'luru_sonata'/, "마이그레이션 — 소나타");
@@ -628,7 +629,7 @@ assert.match(roles, /id: "luna_corrupt"[\s\S]*?type: "Corrupt"/, "루나 변환"
 assert.match(roles, /id: "logen_nullify"[\s\S]*?type: "Nullify"/, "로건 무력화(다음 능력 소멸)");
 assert.match(roles, /id: "daeakma_dominion"[\s\S]*?type: "Silence", target: "All"/, "대악마 압도적 존재감(전원 봉인)");
 assert.match(roles, /id: "uno_valor"[\s\S]*?type: "Cleanse"/, "우노 용맹함(자기 정화)");
-assert.match(matchAction, /luna: \["luna_moonlight", "luna_corrupt"\]/, "루나 적막+공포 행동 허용");
+assert.match(roles, /id: "luna_corrupt"/, "루나 공포 능력 정의(단일 출처)");
 assert.match(roles, /id: "luna_corrupt"[\s\S]*?requiresCounter: \{ key: "moonGauge", min: 2/, "루나 공포 — 달 게이지 게이트");
 assert.match(roles, /id: "luna_moonlight"[\s\S]*?target: "VoteTarget"/, "루나 적막 — substrate VoteTarget 달빛");
 const lunaMig = readFileSync("supabase/migrations/20260614130000_gomdori_luna_moonlight.sql", "utf8");
@@ -731,8 +732,8 @@ assert.match(
 assert.match(matchAction, /function effectiveRole\(/, "match-action 유효 직업 헬퍼");
 assert.match(
   matchAction,
-  /const actorRole = effectiveRole\(player\);\s*\n\s*const allowedActions = NIGHT_ACTIONS_BY_ROLE\[actorRole\]/,
-  "행동 허용 판정은 유효 직업 기준",
+  /const actorRole = effectiveRole\(player\);[\s\S]*?getRoleDefinition\(actorRole\)\?\.actions\.night\?\.find/,
+  "행동 허용 판정은 유효 직업 기준 + CORE_ROLES 도출",
 );
 assert.match(matchAction, /const targetRole = effectiveRole\(targetState\)/, "대상 판정도 유효 직업 기준");
 assert.match(
@@ -775,7 +776,7 @@ assert.match(circleMigration, /as circle_chat/, "뷰 본인 전용 circle_chat �
 
 // --- 신앙 배선(파스아 v2): 능력 정의·허용·priority·마이그레이션 ---
 assert.match(rolesSrc, /id: "pasua_faith"[\s\S]*?immuneFactions: \["demon"\]/, "신앙 — Kill + 악마 면역");
-assert.match(matchAction, /pasua: \["pasua_convert", "pasua_faith"\]/, "match-action 신앙 허용");
+assert.match(roles, /id: "pasua_convert"/, "포교 능력 정의(단일 출처)");
 assert.match(matchAction, /convert_cooldown/, "연속 포교 거부 가드");
 assert.match(phaseAdvanceSrc, /"pasua_faith"[\s\S]{0,200}\? 4/, "신앙 priority 4(처치)");
 const pasuaFaithMigration = readFileSync("supabase/migrations/20260614100000_gomdori_pasua_faith.sql", "utf8");
@@ -784,7 +785,7 @@ assert.match(pasuaFaithMigration, /'pasua_faith'/, "마이그레이션 action_ty
 // --- 백호 소환 배선(라이너 v2) ---
 assert.match(roles, /id: "rainer_summon"[\s\S]*?targetType: "SELF"[\s\S]*?maxUses: 1/, "백호 — 1회 self 소환");
 assert.match(roles, /tag: "deadCountBonus"/, "백호 — 생존 무관 카운터 지정");
-assert.match(matchAction, /rainer: \["rainer_summon"\]/, "match-action 백호 소환 허용");
+assert.match(matchAction, /Object\.fromEntries\([\s\S]*?CORE_ROLES/, "검증 테이블은 CORE_ROLES 도출(단일 출처)");
 const rainerMigration = readFileSync("supabase/migrations/20260614110000_gomdori_rainer_summon.sql", "utf8");
 assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type 에 백호 소환 추가");
 
