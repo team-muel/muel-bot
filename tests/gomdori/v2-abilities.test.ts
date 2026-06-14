@@ -183,7 +183,9 @@ const migration = readFileSync("supabase/migrations/20260610140000_gomdori_v2_ab
 for (const a of ["mizlet_revive", "helen_revive", "seika_supernova", "phantom_seal"]) {
   assert.match(migration, new RegExp(`'${a}'`), `migration allows ${a}`);
 }
-const matchAction = readFileSync("supabase/functions/match-action/index.ts", "utf8");
+// 검증+행동맵은 match-action-core(submitMatchAction)로 단일화됨(ADR-005). 두 파일을 함께 검사.
+const matchAction = readFileSync("supabase/functions/match-action/index.ts", "utf8") +
+  readFileSync("supabase/functions/_shared/match-action-core.ts", "utf8");
 assert.match(matchAction, /REVIVE_ACTIONS/, "부활은 탈락자 대상 검증");
 assert.match(matchAction, /seika: \["seika_supernova"\]/, "세이카 봉인 행동 허용");
 assert.match(matchAction, /helen: \["helen_revive", "helen_sleep"\]/, "헬렌 수면 행동 허용");
