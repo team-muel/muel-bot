@@ -31,7 +31,31 @@ export type PlayerSummary = {
   lastSeenAt: string | null;
   role: string | null;
   faction: string | null;
+  isAi: boolean;
+  aiProvider: string | null;
 };
+
+// --- AI 용병 플레이어 (ADR-005) ---
+// 봇 유저 슬롯 3개 — FK 충족용 고정 행(마이그레이션 20260615120000 가 시드). 모델 정체는
+// 매치별 match_players(ai_provider/display_name)에 실린다.
+export const AI_BOT_USER_IDS = [
+  "aaaa0001-0000-4000-8000-000000000001",
+  "aaaa0002-0000-4000-8000-000000000002",
+  "aaaa0003-0000-4000-8000-000000000003",
+] as const;
+
+export type AiProvider = "chatgpt" | "gemini" | "claude";
+
+export const AI_PROVIDERS: readonly AiProvider[] = ["chatgpt", "gemini", "claude"];
+
+export const AI_PROVIDER_LABEL: Record<AiProvider, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  claude: "Claude",
+};
+
+// 한 매치당 최대 AI 수 = 서로 다른 모델 3개.
+export const MAX_AI_PLAYERS = AI_PROVIDERS.length;
 
 // --- 중립(파스아) 등장 모드 (M3-1, 결정 잠금 #2) ---
 // 기본은 "auto" = 존재 여부를 알 수 없는 확률 스폰. 호스트는 로비 게임 설정에서
@@ -110,6 +134,8 @@ export function toPlayerSummary(row: Record<string, unknown>): PlayerSummary {
     lastSeenAt: typeof row.last_seen_at === "string" ? row.last_seen_at : null,
     role: typeof row.role === "string" ? row.role : null,
     faction: typeof row.faction === "string" ? row.faction : null,
+    isAi: Boolean(row.is_ai),
+    aiProvider: typeof row.ai_provider === "string" ? row.ai_provider : null,
   };
 }
 

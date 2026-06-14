@@ -113,5 +113,11 @@ verify_jwt = false
 [functions.match-heartbeat]
 verify_jwt = false
 
+[functions.match-invite-ai]
+verify_jwt = false
+
+[functions.match-remove-ai]
+verify_jwt = false
+
 [realtime]
 enabled = true
