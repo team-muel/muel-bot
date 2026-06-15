@@ -173,8 +173,22 @@ export async function submitMatchAction(
     throw conflict("invalid_phase", "지금은 행동을 할 수 없는 페이즈입니다.");
   }
 
-  // police 조사 즉시 결과
+  // 약간의 위선(가인): 대상 진영 통지(악마팀 정찰). 정밀조사/전역판정/사건의전말 없이 기본 판정만.
   let investigationResult: string | null = null;
+  if (actionType === "gain_hypocrisy" && targetUserId) {
+    const { data: target } = await supabase
+      .from("match_players")
+      .select("role, engine_state")
+      .eq("match_id", matchId)
+      .eq("user_id", targetUserId)
+      .single();
+    if (target) {
+      const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
+      investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+    }
+  }
+
+  // police 조사 즉시 결과
   if (actionType === "police_investigate" && targetUserId) {
     const { data: target } = await supabase
       .from("match_players")

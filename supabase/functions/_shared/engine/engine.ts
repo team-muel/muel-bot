@@ -528,6 +528,10 @@ function applyEffect(
   if (effect.onlyFactions && !effect.onlyFactions.includes(target.actualFaction)) {
     return;
   }
+  // 홀수날 게이트(엘런 박해자): 짝수날이면 이 효과를 건너뛴다(canon 홀수날 한정).
+  if (effect.oddDayOnly && (_state.dayCount % 2 === 0)) {
+    return;
+  }
   switch (effect.type) {
     case "Kill":
       // 면역 진영(파스아 신앙: 악마 면역). 대상 지정은 허용하되 탈락만 무효 — 방어가
