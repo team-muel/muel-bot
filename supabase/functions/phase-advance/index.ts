@@ -358,6 +358,45 @@ async function performPresenceSweep(supabase: ReturnType<typeof getSupabaseAdmin
   }
 }
 
+// 진행 중(in-progress) 매치 버려짐 정리: 사람(비-AI) 참가자가 전원 heartbeat 끊기면
+// (전원 이탈) 매치를 중단한다. AI 는 heartbeat 가 없으므로 present 판정에서 제외 — AI 만
+// 남은 게임이 maxDays 타임아웃까지 도는 좀비화를 막는다. 로비 sweep(performPresenceSweep)
+// 과 같은 2분 임계. 사람이 한 명이라도 최근 heartbeat 가 있으면 건드리지 않는다.
+const IN_PROGRESS_STATUSES = ["role_assign", "night", "night_suspect", "night_resolve", "day", "vote", "verdict"];
+async function performAbandonedMatchSweep(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  const threshold = new Date(Date.now() - 120 * 1000).toISOString();
+  const { data: matches, error } = await supabase
+    .from("matches")
+    .select("id")
+    .in("status", IN_PROGRESS_STATUSES);
+  if (error || !matches || matches.length === 0) return;
+
+  for (const m of matches) {
+    const { count, error: countError } = await supabase
+      .from("match_players")
+      .select("user_id", { count: "exact", head: true })
+      .eq("match_id", m.id)
+      .eq("is_ai", false)
+      .gte("last_seen_at", threshold);
+    if (countError) continue;
+    if ((count ?? 0) > 0) continue; // 사람이 한 명이라도 남아 있으면 유지.
+
+    const endedAt = new Date().toISOString();
+    await supabase.from("match_phases").update({ ended_at: endedAt }).eq("match_id", m.id).is("ended_at", null);
+    await supabase
+      .from("matches")
+      .update({ status: "aborted", abort_reason: "abandoned_all_left", ended_at: endedAt })
+      .eq("id", m.id)
+      .in("status", IN_PROGRESS_STATUSES); // 동시 전환 레이스 방지(아직 진행 중일 때만).
+    await supabase.from("match_events").insert({
+      match_id: m.id,
+      event_type: "match_aborted",
+      visibility: "public",
+      payload: { reason: "abandoned_all_left" },
+    });
+  }
+}
+
 // Called by pg_cron or an external scheduler. JWT verification is disabled in
 // supabase/config.toml, so all authority stays in the service-role DB writes.
 Deno.serve((req: Request) => {
@@ -388,6 +427,8 @@ Deno.serve((req: Request) => {
 
     // Perform Lobby Presence GC Sweep
     await performPresenceSweep(supabase).catch((err) => console.error("Presence sweep failed:", err));
+    // 진행 중 매치 전원 이탈 → 자동 abort (좀비 게임 방지)
+    await performAbandonedMatchSweep(supabase).catch((err) => console.error("Abandoned match sweep failed:", err));
 
     const expiredPhases = requireNoError(
       await supabase
