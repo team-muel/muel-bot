@@ -102,9 +102,8 @@ export async function submitMatchAction(
   if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 행동할 수 없습니다.");
 
   if (match.status === "night") {
-    if (currentPhase.phase_number === 1) {
-      throw conflict("first_night", "첫 번째 밤에는 능력을 사용할 수 없습니다.");
-    }
+    // 2026-06-15 설계 변경: 첫 밤도 능력 사용 가능(silent 해제). 과거 phase_number===1 차단 제거 —
+    // 이게 남아 있으면 엔진은 첫 밤을 해소하는데 제출이 막혀 첫 밤이 사실상 침묵으로 남았다.
     const actorRole = effectiveRole(player);
     // 단일 출처(CORE_ROLES): 허용 액션·대상 규칙을 능력 정의에서 직접 도출(ADR-006 S1).
     const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);
@@ -133,7 +132,7 @@ export async function submitMatchAction(
       }
       const { data: targetState } = await supabase
         .from("match_players")
-        .select("alive, role, faction, engine_state")
+        .select("alive, role, faction, engine_state, eliminated_phase_number")
         .eq("match_id", matchId)
         .eq("user_id", targetUserId)
         .single();
@@ -141,6 +140,13 @@ export async function submitMatchAction(
       const targetRole = effectiveRole(targetState);
       if (ability.targetType === "SINGLE_DEAD") {
         if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
+        // 부활 딜레이(canon 미즐렛 — 즉시 복귀가 아니라 예측 가능한 메커니즘): 탈락 직후
+        // 다음 밤 즉시 부활을 막는다. 탈락 시점(eliminated_phase_number)으로부터 2일차 이상
+        // 지나야 부활 가능 — "1일차에 죽고 2일차에 부활" 방지.
+        const deathPhase = (targetState as { eliminated_phase_number?: number | null }).eliminated_phase_number ?? null;
+        if (deathPhase != null && currentPhase.phase_number - deathPhase < 2) {
+          throw conflict("revive_too_soon", "최근에 탈락한 대상은 아직 되살릴 수 없습니다. 며칠 지나야 합니다.");
+        }
       } else if (!targetState.alive) {
         throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
       }
