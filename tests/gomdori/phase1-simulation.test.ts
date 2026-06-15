@@ -122,6 +122,13 @@ function runAngelWinSimulation() {
   assert.equal(newState.players.citizen1.alive, true);
   assert.equal(events.some((event: any) => event.type === "attack_prevented"), true);
 
+  // 사탄의 마(canon): demon_kill 발동 시 자신 제외 전원 투표가치 -1 → 마을은 그 라운드
+  // 표로 악마를 처형할 수 없다(악마 독점, 의도된 설계). 이 시나리오는 치료/투표·판결
+  // 기계 자체를 검증하므로 사탄의 마 영향을 분리한다(사탄의 마는 v2-abilities 에서 별도 검증).
+  for (const id of ["citizen1", "citizen2", "doctor", "police"]) {
+    if (newState.players[id]?.counters) newState.players[id].counters.voteValueMod = 0;
+  }
+
   const vote = tallyEliminationVotes(
     [
       { actorUserId: "citizen1", targetUserId: "demon" },

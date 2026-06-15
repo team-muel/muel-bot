@@ -56,12 +56,16 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 4,
           excludeSelf: true,
-          effects: [{ type: "Kill", target: "Target" }],
+          // 사탄의 마(canon): 처치 발동 시 자신을 제외한 전원의 행사 투표가치 -1(지속 누적,
+          // tally 의 voteValueMod). 의도된 설계 — 마을은 곧 표로 악마를 처형할 수 없고(악마가
+          // 투표 독점), 천사 진영은 빠르게 식별·제거해야 한다(의심 봉인·조사·단죄 등). 기본
+          // 투표가치=1 이므로 한 번이면 전원 0 — 의도(표로는 못 이김). 천사팀 전역 0 판정은 후속.
+          effects: [{ type: "Kill", target: "Target" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }],
         },
         { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
-        // 압도적 존재감(v2, 1회): 공포로 전원의 그 밤 능력을 봉인(Silence All). 사탄의 마(전역
-        // 악마판정)는 후속. priority 1 — 대상들 능력보다 먼저 봉인.
-        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "All" }] },
+        // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
+        // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인.
+        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }] },
       ],
     },
   },
@@ -347,7 +351,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
         // 용맹함(v2, 1회): 군인의 사명 — 자기 부정효과 제거(Cleanse) + 명예 강화(천사팀 카운트 +1).
         // canon 전원 효과·소속 공개·명예 실추는 후속.
-        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "self", amount: 1 }] },
+        // 용맹함(v2 verbatim): 전원에게 투쟁(GrantCount All) + 자기 부정효과 제거(Cleanse self). 1회.
+        // 소속 공개·명예 실추(밤행동 불가)는 새 프리미티브 필요 — 후속.
+        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "All", amount: 1 }] },
       ],
     },
   },
@@ -360,9 +366,17 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, excludeSelf: true, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
-        // 단죄(v2): 첫 적용은 폭열(branded), 폭열된 대상에 재적용하면 소멸(부활 불가). 결백/타락
-        // 판정 다단계는 후속. 처치(4)와 같은 우선도로 그 밤 처리.
-        { id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true, effects: [{ type: "Annihilate", target: "Target" }] },
+        // 단죄(v2 canon 결백/타락 판정): 대상이 타락(악마팀)이면 폭열→소멸(branded→annihilated,
+        // 부활 불가), 결백(천사·중립)이면 무적(Protect). onlyFactions 진영 게이트로 분기 —
+        // 친화적 무오사살(결백자를 단죄해도 보호만, 죽지 않음). 식별→야간 악마 제거 천사 경로.
+        // 처치(4)와 같은 우선도로 그 밤 처리. 2회 제한(폭열+소멸에 같은 대상 2밤 필요).
+        {
+          id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true,
+          effects: [
+            { type: "Annihilate", target: "Target", onlyFactions: ["demon"] },
+            { type: "Protect", target: "Target", duration: "1_NIGHT", onlyFactions: ["angel", "neutral"] },
+          ],
+        },
       ],
     },
   },

@@ -61,7 +61,9 @@ export interface Effect {
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
   type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify";
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
-  target: "self" | "Target" | "All" | "VoteTarget" | "SuspectTarget";
+  // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
+  // 압도적 존재감). All 은 source 포함(천사 버프 등).
+  target: "self" | "Target" | "All" | "AllOthers" | "VoteTarget" | "SuspectTarget";
   amount?: number;
   tag?: string;
   duration?: "1_NIGHT" | "1_DAY" | "PERMANENT";
@@ -69,6 +71,10 @@ export interface Effect {
   // 시점에 actualFaction 이 목록에 들면 markedForDeath 를 세우지 않는다(클린 — 처치
   // 프리미티브 재사용, 직업 하드코딩 금지).
   immuneFactions?: Faction[];
+  // 진영 게이트(아서 단죄 결백/타락 판정). 대상 actualFaction 이 이 목록에 없으면 이 효과
+  // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
+  // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.
+  onlyFactions?: Faction[];
 }
 
 export interface PassiveAbility {

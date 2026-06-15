@@ -38,6 +38,35 @@ export type SubmitActionParams = {
   targetUserId: string | null;
 };
 
+// 사탄의 마 전역 판정(canon 대악마): 생존 천사팀(currentFaction='angel') 전원의 행사
+// 투표가치가 0 이하면(사탄의 마 누적 -1 로 전원 무력화) 모든 조사가 '악마'로 판정된다.
+// 우노 명예(voteValueMod +10)가 살아있으면 그 한 명이 양수라 트리거되지 않는다 — 천사
+// 진영 식별의 마지막 보루. 행사가치 = 1(base) + bonusVoteValue + voteWeightBonus + voteValueMod
+// (tally 와 동일식). 생존 천사 0명이면 게임 종료 임박 — 굳이 강제하지 않는다(false).
+async function isAngelTeamVoteFullySuppressed(
+  // deno-lint-ignore no-explicit-any
+  supabase: SupabaseClient<any, "mafia">,
+  matchId: string,
+): Promise<boolean> {
+  const { data: rows } = await supabase
+    .from("match_players")
+    .select("faction, engine_state")
+    .eq("match_id", matchId)
+    .eq("alive", true);
+  if (!rows) return false;
+  const angels = rows.filter((r) => {
+    const cf = (r.engine_state as { currentFaction?: string } | null)?.currentFaction;
+    return (typeof cf === "string" ? cf : r.faction) === "angel";
+  });
+  if (angels.length === 0) return false;
+  return angels.every((r) => {
+    const es = (r.engine_state as { bonusVoteValue?: number; counters?: Record<string, number> } | null) ?? {};
+    const c = es.counters ?? {};
+    const v = 1 + (es.bonusVoteValue ?? 0) + (c.voteWeightBonus ?? 0) + (c.voteValueMod ?? 0);
+    return v <= 0;
+  });
+}
+
 /**
  * 한 플레이어의 행동을 검증하고 match_actions 에 기록한다(사람·AI 공용).
  * 검증 실패 시 GameError 를 throw. police_investigate 는 즉시 결과를 계산해 반환.
@@ -157,7 +186,10 @@ export async function submitMatchAction(
     if (target) {
       const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
       const clue = (player.engine_state as { counters?: { clue?: number } } | null)?.counters?.clue ?? 0;
-      if (clue >= 3 && !disguised) {
+      // 사탄의 마 전역 판정 우선(천사팀 전원 투표가치 0 → 모든 조사가 '악마', 변신·정밀조사 무시).
+      if (await isAngelTeamVoteFullySuppressed(supabase, matchId)) {
+        investigationResult = "demon";
+      } else if (clue >= 3 && !disguised) {
         investigationResult = effectiveRole(target);
       } else {
         investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
