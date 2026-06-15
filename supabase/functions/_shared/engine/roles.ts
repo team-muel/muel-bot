@@ -125,11 +125,17 @@ export const CORE_ROLES: RoleDefinition[] = [
   },
   {
     // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입).
+    // 약간의 위선(v2): 대상 직업(진영) 통지 — 악마팀을 위한 정찰. match-action 이 즉시 결과 반환.
+    // 효과 연기(다음 밤)는 지속 카운터 필요 — 후속(TAG_DELAYED 가 밤 종료 시 리셋되는 타이밍 제약).
     id: "gain",
     name: "가인",
     faction: "demon",
     passives: [],
-    actions: {},
+    actions: {
+      night: [
+        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [] },
+      ],
+    },
   },
   // --- W6 v1 중립 (canon §1 중립, 특수 카테고리-4 파스아) ---
   {
