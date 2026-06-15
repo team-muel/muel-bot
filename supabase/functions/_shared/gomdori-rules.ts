@@ -15,14 +15,14 @@ export const GOMDORI_RULES = {
    * `match_phases.expected_ended_at` 기준으로 만료 감지.
    */
   phases: {
-    // 30초 (2026-06-12, 8→30): 악마/조력자 변종 선택(4지선다)이 이 창 안에서
-    // 일어난다 — 8초는 읽기도 전에 랜덤 폴백돼 선택 기능이 사실상 죽어 있었다.
-    roleAssign: { durationSec: 30 },
-    nightSuspect: { durationSec: 30 },
-    night: { durationSec: 60 },
+    // 2026-06-15 페이스 단축(사용자 피드백 "특정 구간이 너무 길다"). 변종 선택은
+    // 4지선다라 12초면 충분(미선택은 랜덤 폴백). 밤 20초, 의심·투표 10초.
+    roleAssign: { durationSec: 12 },
+    nightSuspect: { durationSec: 10 },
+    night: { durationSec: 20 },
     nightResolve: { durationSec: 3 },
     day: { durationSec: 180 },
-    vote: { durationSec: 60 },
+    vote: { durationSec: 10 },
     verdict: { durationSec: 60 },
   },
 
@@ -36,7 +36,7 @@ export const GOMDORI_RULES = {
    */
   firstNight: {
     skipsAbilities: false,
-    durationSec: 60,
+    durationSec: 20,
   },
 
   /**
