@@ -62,9 +62,9 @@ export const CORE_ROLES: RoleDefinition[] = [
           effects: [{ type: "Kill", target: "Target" }],
         },
         { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
-        // 압도적 존재감(v2, 1회): 공포로 전원의 그 밤 능력을 봉인(Silence All). 사탄의 마(전역
-        // 악마판정)는 후속. priority 1 — 대상들 능력보다 먼저 봉인.
-        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "All" }] },
+        // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
+        // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인.
+        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }] },
       ],
     },
   },

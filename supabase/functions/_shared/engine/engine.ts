@@ -139,6 +139,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         }
         continue;
       }
+      // AllOthers: source 제외 생존자 전체 — 악마 "전원" 능력은 자신 제외(혼자 투표·처치).
+      if (effect.target === "AllOthers") {
+        for (const other of Object.values(newState.players)) {
+          if (other.alive && other.userId !== sourcePlayer.userId) {
+            applyEffect(newState, sourcePlayer, other, effect, events);
+          }
+        }
+        continue;
+      }
 
       let target: PlayerState | null = null;
       if (effect.target === "self") target = sourcePlayer;

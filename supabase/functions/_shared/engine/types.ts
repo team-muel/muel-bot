@@ -61,7 +61,9 @@ export interface Effect {
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
   type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify";
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
-  target: "self" | "Target" | "All" | "VoteTarget" | "SuspectTarget";
+  // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
+  // 압도적 존재감). All 은 source 포함(천사 버프 등).
+  target: "self" | "Target" | "All" | "AllOthers" | "VoteTarget" | "SuspectTarget";
   amount?: number;
   tag?: string;
   duration?: "1_NIGHT" | "1_DAY" | "PERMANENT";
