@@ -722,6 +722,60 @@ Deno.serve((req: Request) => {
         }
         if (eclipseActive) players = await loadPlayers(supabase, matchId);
 
+        // 행복을 파는 가게(미즐렛 다수복귀, canon 패시브·1회): 탈락자가 생존자보다 많아지면
+        // 미즐렛이 가장 최근 탈락 2명을 복귀(소멸·부활불가 무시)시키고 자신은 탈락한다.
+        // used_mizlet_comeback 으로 1회 제한 — 천사 진영 역전 장치. 승패 영향이라 win 체크 전에.
+        {
+          const aliveCount = players.filter((p) => p.alive).length;
+          const deadCount = players.length - aliveCount;
+          const mizlet = players.find((p) => {
+            const cr = (p.engine_state as { currentRole?: string } | null)?.currentRole ?? p.role;
+            return p.alive && cr === "mizlet";
+          });
+          const used = ((mizlet?.engine_state as { counters?: { used_mizlet_comeback?: number } } | null)?.counters?.used_mizlet_comeback ?? 0) > 0;
+          if (mizlet && !used && deadCount > aliveCount && deadCount > 0) {
+            const recentDead = (requireNoError(
+              await supabase
+                .from("match_players")
+                .select("user_id, engine_state")
+                .eq("match_id", matchId)
+                .eq("alive", false)
+                .order("eliminated_at", { ascending: false })
+                .limit(2),
+            ) as Array<{ user_id: string; engine_state: Record<string, unknown> | null }>);
+            for (const r of recentDead) {
+              const rc = { ...((r.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}) };
+              delete rc.annihilated; // 소멸·부활불가 무시(canon).
+              requireNoError(
+                await supabase
+                  .from("match_players")
+                  .update({ alive: true, eliminated_at: null, eliminated_phase_number: null, eliminated_cause: null, engine_state: { ...(r.engine_state || {}), counters: rc } })
+                  .eq("match_id", matchId)
+                  .eq("user_id", r.user_id),
+              );
+              requireNoError(
+                await supabase
+                  .from("match_events")
+                  .insert({ match_id: matchId, phase_id: phase.id, event_type: "player_revived", visibility: "public", payload: { user_id: r.user_id, source: "mizlet_comeback" } }),
+              );
+            }
+            const mc = { ...((mizlet.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}), used_mizlet_comeback: 1 };
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "night_kill", engine_state: { ...(mizlet.engine_state || {}), counters: mc } })
+                .eq("match_id", matchId)
+                .eq("user_id", mizlet.user_id),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({ match_id: matchId, phase_id: phase.id, event_type: "mizlet_comeback", visibility: "public", payload: { user_id: mizlet.user_id, revived: recentDead.map((r) => r.user_id) } }),
+            );
+            players = await loadPlayers(supabase, matchId);
+          }
+        }
+
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
           results.push({ matchId, advancedTo: "ended", winner: win.winner });

@@ -97,7 +97,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "디저트 선물", text: "쿠키(탈락해도 그 밤 능력 발동)/푸딩(무시불가 버프, 탈락 시점 밤으로 조정)." },
       { kind: "능력2", name: "고급 와인", text: "디저트 받은 대상은 부정효과 제거+미즐렛과 대화. 미제공 대상은 자기 부정효과 사라지고 투표가치 -1." },
     ],
-    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(디저트 선물: 생존자 보호+디저트 태그, Protect+AddTag). 다수복귀 패시브·고급 와인은 후속.",
+    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(디저트 선물: 생존자 보호+디저트 태그, Protect+AddTag) + 다수복귀 패시브(행복을 파는 가게: 탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). 고급 와인은 후속.",
     v2: "부활(탈락자 대상 Heal) + 디저트 버프(쿠키/푸딩 태그) + 다수 복귀 패시브(탈락>생존 트리거). 새 이펙트: Revive(SINGLE_DEAD).",
     vault: "Universes/BoW/Characters/미즐렛.md",
   },
