@@ -509,6 +509,11 @@ function applyEffect(
   effect: Effect,
   events: unknown[],
 ) {
+  // 진영 게이트(아서 단죄): 대상 진영이 onlyFactions 에 없으면 이 효과를 건너뛴다.
+  // 한 능력에 진영별 분기 효과를 붙여 결백(천사·중립)/타락(악마팀)을 다르게 처리한다.
+  if (effect.onlyFactions && !effect.onlyFactions.includes(target.actualFaction)) {
+    return;
+  }
   switch (effect.type) {
     case "Kill":
       // 면역 진영(파스아 신앙: 악마 면역). 대상 지정은 허용하되 탈락만 무효 — 방어가

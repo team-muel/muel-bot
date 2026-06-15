@@ -133,7 +133,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "잔불이 꺼지기 전에", text: "대상에게 '해오름' 하루(조사 시 결백/타락만 통지). '잔불 대검' 1회 충전. 3인 지정." },
       { kind: "능력2", name: "잔불 대검", text: "결백자에게 하루 무적. 타락자에게 '폭열'(다음 잔불 대검에 베이면 소멸). 0회 제한·충전." },
     ],
-    v1: "구현됨. self shield +1(배정) + arthur_emberblade(잔불 대검: 하루 무적, Protect) + arthur_judge(단죄: 폭열 branded → 재적용 시 소멸 annihilated·부활 불가, 2회). 결백/타락 판정·조건부 면역은 후속.",
+    v1: "구현됨. self shield +1(배정) + arthur_emberblade(잔불 대검: 하루 무적, Protect) + arthur_judge(단죄 결백/타락 판정: 악마팀이면 폭열 branded→소멸 annihilated·부활 불가, 천사·중립이면 무적 Protect — onlyFactions 진영 게이트, 친화적 무오사살, 2회). 탈락 면역 패시브는 후속.",
     v2: "탈락 면역 패시브(결백 천사 3명 탈락 시 해제) + 해오름/잔불 대검(결백·타락 판정, 무적·폭열·소멸). 새 이펙트: Invuln/Brand/Annihilate-tag.",
     vault: "Universes/BoW/Characters/아서.md",
   },

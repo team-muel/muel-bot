@@ -366,9 +366,17 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, excludeSelf: true, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
-        // 단죄(v2): 첫 적용은 폭열(branded), 폭열된 대상에 재적용하면 소멸(부활 불가). 결백/타락
-        // 판정 다단계는 후속. 처치(4)와 같은 우선도로 그 밤 처리.
-        { id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true, effects: [{ type: "Annihilate", target: "Target" }] },
+        // 단죄(v2 canon 결백/타락 판정): 대상이 타락(악마팀)이면 폭열→소멸(branded→annihilated,
+        // 부활 불가), 결백(천사·중립)이면 무적(Protect). onlyFactions 진영 게이트로 분기 —
+        // 친화적 무오사살(결백자를 단죄해도 보호만, 죽지 않음). 식별→야간 악마 제거 천사 경로.
+        // 처치(4)와 같은 우선도로 그 밤 처리. 2회 제한(폭열+소멸에 같은 대상 2밤 필요).
+        {
+          id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true,
+          effects: [
+            { type: "Annihilate", target: "Target", onlyFactions: ["demon"] },
+            { type: "Protect", target: "Target", duration: "1_NIGHT", onlyFactions: ["angel", "neutral"] },
+          ],
+        },
       ],
     },
   },

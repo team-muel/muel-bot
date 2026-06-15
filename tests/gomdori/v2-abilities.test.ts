@@ -839,4 +839,36 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(vote.candidateUserId, "demon", "우노 명예가 사탄의 마를 뚫어 악마 지목 — 천사 표 경로 성립");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예) checks passed");
+// --- 아서 단죄(결백/타락 판정): 악마팀이면 폭열→소멸, 천사·중립이면 무적(무오사살) ---
+{
+  // 타락(악마) 대상: 1회차 폭열(branded), 2회차 소멸(annihilated, 부활 불가).
+  const state = emptyState(
+    { arthur: player("arthur", "arthur", "angel"), demon: player("demon", "demon", "demon") },
+    [{ sourceUserId: "arthur", targetUserId: "demon", actionType: "arthur_judge", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.demon.counters.branded, 1, "단죄 1회 — 악마 폭열(branded)");
+  assert.equal(newState.players.demon.alive, true, "단죄 1회 — 아직 소멸 안 함");
+  const round2 = emptyState(
+    { arthur: { ...newState.players.arthur }, demon: { ...newState.players.demon } },
+    [{ sourceUserId: "arthur", targetUserId: "demon", actionType: "arthur_judge", priority: 4 }],
+  );
+  const { newState: after } = resolveNightActions(round2);
+  assert.equal(after.players.demon.alive, false, "단죄 2회 — 폭열된 악마 소멸");
+  assert.equal(after.players.demon.counters.annihilated, 1, "소멸 — 부활 불가 표식");
+}
+{
+  // 결백(천사) 대상: 폭열 안 함 + 무적(보호)만 — 친화적 무오사살.
+  const state = emptyState(
+    { arthur: player("arthur", "arthur", "angel"), ally: player("ally", "citizen", "angel"), demon: player("demon", "demon", "demon") },
+    [
+      { sourceUserId: "arthur", targetUserId: "ally", actionType: "arthur_judge", priority: 4 },
+      { sourceUserId: "demon", targetUserId: "ally", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.ally.counters.branded ?? 0, 0, "단죄 — 결백한 천사는 폭열 안 함");
+  assert.equal(newState.players.ally.alive, true, "단죄 — 결백자는 무적(보호)이라 그 밤 처치 무효");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄) checks passed");

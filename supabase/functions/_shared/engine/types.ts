@@ -71,6 +71,10 @@ export interface Effect {
   // 시점에 actualFaction 이 목록에 들면 markedForDeath 를 세우지 않는다(클린 — 처치
   // 프리미티브 재사용, 직업 하드코딩 금지).
   immuneFactions?: Faction[];
+  // 진영 게이트(아서 단죄 결백/타락 판정). 대상 actualFaction 이 이 목록에 없으면 이 효과
+  // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
+  // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.
+  onlyFactions?: Faction[];
 }
 
 export interface PassiveAbility {
