@@ -213,7 +213,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
+        // 혼령 방출(canon 다단계): 1회차 혼령 표식, 2회차(표식 보유)에 잠식=탈락+투표가치 조공(Haunt).
+        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Haunt", target: "Target" }] },
         { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
       ],
     },

@@ -543,6 +543,20 @@ function applyEffect(
         events.push({ type: "branded", payload: { user_id: target.userId } });
       }
       break;
+    case "Haunt":
+      // 혼령 방출(말렌 다단계): 1회차 → 혼령 표식(haunted, 지속). 2회차(표식 보유) → 영에게
+      // 잠식: 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
+      // (마비=다음 밤 행동 봉인은 후속 — silencedNights 는 그 밤 한정 리셋이라 별도 카운터 필요.)
+      if ((target.counters?.haunted ?? 0) > 0) {
+        target.markedForDeath = true;
+        target.counters.haunted = 0;
+        _source.counters.voteWeightBonus = (_source.counters.voteWeightBonus ?? 0) + 1;
+        events.push({ type: "haunt_consumed", payload: { user_id: target.userId } });
+      } else {
+        target.counters.haunted = 1;
+        events.push({ type: "haunted", payload: { user_id: target.userId } });
+      }
+      break;
     case "Sleep":
       // 황금빛 수면(헬렌): 대상을 수면 — 죽음 보호(밤 살해 무효) + 그 밤 행동 봉인 +
       // 받은 부정효과 무효(Cleanse 복합). 깨어나면 평소대로. 보호는 1밤(TAG_PROTECTED).

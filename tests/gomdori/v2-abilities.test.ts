@@ -871,4 +871,22 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(newState.players.ally.alive, true, "단죄 — 결백자는 무적(보호)이라 그 밤 처치 무효");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄) checks passed");
+// --- 말렌 혼령 방출 다단계(Haunt): 1회 표식, 2회 잠식 탈락 + 투표가치 조공 ---
+{
+  const state = emptyState(
+    { malen: player("malen", "malen", "demon"), v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "malen", targetUserId: "v", actionType: "malen_release", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.v.counters.haunted, 1, "혼령 방출 1회 — 혼령 표식");
+  assert.equal(newState.players.v.alive, true, "1회차는 탈락하지 않음");
+  const r2 = emptyState(
+    { malen: { ...newState.players.malen }, v: { ...newState.players.v } },
+    [{ sourceUserId: "malen", targetUserId: "v", actionType: "malen_release", priority: 4 }],
+  );
+  const { newState: after } = resolveNightActions(r2);
+  assert.equal(after.players.v.alive, false, "2회차 — 영에게 잠식(탈락)");
+  assert.equal(after.players.malen.counters.voteWeightBonus, 1, "투표가치 조공 — 말렌 voteWeightBonus +1");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령) checks passed");

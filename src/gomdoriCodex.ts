@@ -198,7 +198,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "혼령 방출", text: "지목 대상 무차별 공격. 1회→'혼령' 표식+마비, 2회→영에게 잠식(생존 미취급, 투표가치 조공)." },
       { kind: "능력2", name: "신출귀몰", text: "혼령 표식 수거→다음 밤 시체 소환. 1회 제한." },
     ],
-    v1: "구현됨. malen_release(혼령 방출: 처치) + malen_possess(빙의) + SoulCounter death-hook(밤 탈락자 1명당 혼 +1, 혼 2개→시체 1구 = 악마팀 deadCountBonus +1). 혼령 방출 다단계·신출귀몰은 후속.",
+    v1: "구현됨. malen_release(혼령 방출 다단계 Haunt: 1회차 혼령 표식, 2회차 잠식=탈락+투표가치 조공[말렌 voteWeightBonus +1]) + malen_possess(빙의) + SoulCounter death-hook(밤 탈락자 1명당 혼 +1, 혼 2개→시체 1구 = 악마팀 deadCountBonus +1). 마비(다음 밤 봉인)·신출귀몰은 후속.",
     v2: "빙의(대상 행동봉인+악마팀 카운트 전환) + 혼/시체 카운터(탈락자→혼→시체→공격 대상 증가) + 혼령 방출 다단계. 새 이펙트: Possess/SoulCounter.",
     vault: "Universes/BoW/Characters/말렌.md",
   },
