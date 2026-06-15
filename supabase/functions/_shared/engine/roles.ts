@@ -213,7 +213,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
+        // 혼령 방출(canon 다단계): 1회차 혼령 표식, 2회차(표식 보유)에 잠식=탈락+투표가치 조공(Haunt).
+        { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Haunt", target: "Target" }] },
         { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
       ],
     },
@@ -306,7 +307,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "doctor_heal", name: "치료", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        // 생명의 언약(하브레터스): 치료 + 소명 — 그 밤 실제 공격을 막으면 시전자 투표가치 +3.
+        { id: "doctor_heal", name: "치료", targetType: "SINGLE_ALIVE", priority: 3, onSaveGrantSelf: { counter: "voteValueMod", amount: 3 }, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
       ],
     },
   },
@@ -390,7 +392,12 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 초신성(v2): 대상의 받은 부여 효과 제거(Cleanse) + 그 밤 능력 봉인(Silence). 같은
         // 대상 재적용 시 영구 봉인(tag=seikaMark 표식 누적). Cleanse→Silence 순(먼저 씻고 봉인).
-        { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, effects: [{ type: "Cleanse", target: "Target" }, { type: "Silence", target: "Target", tag: "seikaMark" }] },
+        // 별이 떠오른 밤(canon 패시브): 초신성 발동 다음 밤은 의심 투표가 생략된다. onFireSetCounter
+        // 로 source(세이카)에 starlitNext 표식 → phase-advance 가 다음 night_suspect 진입을 night 로 전환.
+        { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, onFireSetCounter: { key: "starlitNext", value: 1 }, effects: [{ type: "Cleanse", target: "Target" }, { type: "Silence", target: "Target", tag: "seikaMark" }] },
+        // 자신만 아플 거야(v2, 1회): 전원의 부여 효과를 흡수=전원 정화(Cleanse All). priority 5
+        // (마지막) — 그 밤 걸린 효과들을 모두 씻는다. 악마팀 효과 3개+ 소멸·악마팀 공개는 후속.
+        { id: "seika_absorb", name: "자신만 아플 거야", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "All" }] },
       ],
     },
   },

@@ -15,6 +15,7 @@ import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
 import { CONTACT_BLOCKED_DEMONS, DEMON_KILLER_ROLES, HELPER_CONTACT, HELPER_ROLES } from "../_shared/engine/roles.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 import {
+  PHASE_NIGHT,
   PHASE_NIGHT_SUSPECT,
   firstNightTransition,
   nextNightSuspectTransition,
@@ -722,19 +723,96 @@ Deno.serve((req: Request) => {
         }
         if (eclipseActive) players = await loadPlayers(supabase, matchId);
 
+        // 행복을 파는 가게(미즐렛 다수복귀, canon 패시브·1회): 탈락자가 생존자보다 많아지면
+        // 미즐렛이 가장 최근 탈락 2명을 복귀(소멸·부활불가 무시)시키고 자신은 탈락한다.
+        // used_mizlet_comeback 으로 1회 제한 — 천사 진영 역전 장치. 승패 영향이라 win 체크 전에.
+        {
+          const aliveCount = players.filter((p) => p.alive).length;
+          const deadCount = players.length - aliveCount;
+          const mizlet = players.find((p) => {
+            const cr = (p.engine_state as { currentRole?: string } | null)?.currentRole ?? p.role;
+            return p.alive && cr === "mizlet";
+          });
+          const used = ((mizlet?.engine_state as { counters?: { used_mizlet_comeback?: number } } | null)?.counters?.used_mizlet_comeback ?? 0) > 0;
+          if (mizlet && !used && deadCount > aliveCount && deadCount > 0) {
+            const recentDead = (requireNoError(
+              await supabase
+                .from("match_players")
+                .select("user_id, engine_state")
+                .eq("match_id", matchId)
+                .eq("alive", false)
+                .order("eliminated_at", { ascending: false })
+                .limit(2),
+            ) as Array<{ user_id: string; engine_state: Record<string, unknown> | null }>);
+            for (const r of recentDead) {
+              const rc = { ...((r.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}) };
+              delete rc.annihilated; // 소멸·부활불가 무시(canon).
+              requireNoError(
+                await supabase
+                  .from("match_players")
+                  .update({ alive: true, eliminated_at: null, eliminated_phase_number: null, eliminated_cause: null, engine_state: { ...(r.engine_state || {}), counters: rc } })
+                  .eq("match_id", matchId)
+                  .eq("user_id", r.user_id),
+              );
+              requireNoError(
+                await supabase
+                  .from("match_events")
+                  .insert({ match_id: matchId, phase_id: phase.id, event_type: "player_revived", visibility: "public", payload: { user_id: r.user_id, source: "mizlet_comeback" } }),
+              );
+            }
+            const mc = { ...((mizlet.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}), used_mizlet_comeback: 1 };
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "night_kill", engine_state: { ...(mizlet.engine_state || {}), counters: mc } })
+                .eq("match_id", matchId)
+                .eq("user_id", mizlet.user_id),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({ match_id: matchId, phase_id: phase.id, event_type: "mizlet_comeback", visibility: "public", payload: { user_id: mizlet.user_id, revived: recentDead.map((r) => r.user_id) } }),
+            );
+            players = await loadPlayers(supabase, matchId);
+          }
+        }
+
         const win = await finishMatchIfWon(supabase, matchId, phase.id, players);
         if (win) {
           results.push({ matchId, advancedTo: "ended", winner: win.winner });
           continue;
         }
 
-        if (eclipseActive) {
+        // 사건의 전말(도르단): caseClosed 가 설정되고 그 악마가 아직 생존해 있으면 아침을
+        // 생략하고 곧장 판결(verdict)로 — 식별된 악마를 판결대에 세운다(표식 소비). 일식보다 우선.
+        const caseClosed = (engineState as { caseClosed?: { demonUserId?: string } }).caseClosed;
+        const caseDemonAlive = caseClosed?.demonUserId
+          ? players.some((p) => p.user_id === caseClosed.demonUserId && p.alive)
+          : false;
+        if (caseClosed?.demonUserId && caseDemonAlive) {
+          const { caseClosed: _cc, verdict: _v, ...rest } = engineState as Record<string, unknown>;
+          engineState = { ...rest, verdict: { candidateUserId: caseClosed.demonUserId, tallies: {}, skipped: 0, tie: false, maxVotes: 0, phaseId: phase.id } };
+          requireNoError(
+            await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId),
+          );
+          requireNoError(
+            await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "case_closed", visibility: "public", payload: { user_id: caseClosed.demonUserId } }),
+          );
+          nextPhaseType = "verdict";
+          nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
+        } else if (eclipseActive) {
           // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로.
           const transition = nextNightSuspectTransition(phase.phase_number);
           nextPhaseType = transition.phaseType;
           nextDurationSec = transition.durationSec;
           nextPhaseNumber = transition.phaseNumber;
         } else {
+          // caseClosed 가 있었으나 악마가 이미 탈락했으면 표식만 정리.
+          if (caseClosed?.demonUserId) {
+            const { caseClosed: _cc, ...rest } = engineState as Record<string, unknown>;
+            engineState = rest;
+            requireNoError(await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId));
+          }
           nextPhaseType = "day";
           nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
         }
@@ -977,6 +1055,27 @@ Deno.serve((req: Request) => {
 
         results.push({ matchId, advancedTo: "ended", winner: timeout.winner, timeout: true });
         continue;
+      }
+
+      // 별이 떠오른 밤(세이카): 초신성 발동(starlitNext 표식) 다음 밤은 의심 투표를 생략하고
+      // 곧장 밤으로 간다. 의심 진입의 단일 관문(maxDays 안전망 통과 후)이라 여기 한 곳에서 처리.
+      if (nextPhaseType === PHASE_NIGHT_SUSPECT) {
+        const starlit = (await loadPlayers(supabase, matchId)).filter(
+          (p) => p.alive && (((p.engine_state as { counters?: { starlitNext?: number } } | null)?.counters?.starlitNext ?? 0) > 0),
+        );
+        if (starlit.length > 0) {
+          for (const sp of starlit) {
+            const c = { ...((sp.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}), starlitNext: 0 };
+            requireNoError(
+              await supabase.from("match_players").update({ engine_state: { ...(sp.engine_state || {}), counters: c } }).eq("match_id", matchId).eq("user_id", sp.user_id),
+            );
+          }
+          requireNoError(
+            await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "starlit_night", visibility: "public", payload: { night_number: nextPhaseNumber } }),
+          );
+          nextPhaseType = PHASE_NIGHT;
+          nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
+        }
       }
 
       const expectedEndedAt = new Date(Date.now() + nextDurationSec * 1000).toISOString();

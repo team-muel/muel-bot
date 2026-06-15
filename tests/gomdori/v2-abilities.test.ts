@@ -871,4 +871,47 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(newState.players.ally.alive, true, "단죄 — 결백자는 무적(보호)이라 그 밤 처치 무효");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄) checks passed");
+// --- 말렌 혼령 방출 다단계(Haunt): 1회 표식, 2회 잠식 탈락 + 투표가치 조공 ---
+{
+  const state = emptyState(
+    { malen: player("malen", "malen", "demon"), v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "malen", targetUserId: "v", actionType: "malen_release", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.v.counters.haunted, 1, "혼령 방출 1회 — 혼령 표식");
+  assert.equal(newState.players.v.alive, true, "1회차는 탈락하지 않음");
+  const r2 = emptyState(
+    { malen: { ...newState.players.malen }, v: { ...newState.players.v } },
+    [{ sourceUserId: "malen", targetUserId: "v", actionType: "malen_release", priority: 4 }],
+  );
+  const { newState: after } = resolveNightActions(r2);
+  assert.equal(after.players.v.alive, false, "2회차 — 영에게 잠식(탈락)");
+  assert.equal(after.players.malen.counters.voteWeightBonus, 1, "투표가치 조공 — 말렌 voteWeightBonus +1");
+}
+
+// --- 하브레터스 소명(생명의 언약 성공): 공격을 실제로 막으면 시전자 투표가치 +3 ---
+{
+  // 막은 경우: 공격받은 대상을 치료 → attack_prevented → 하브레터스 voteValueMod +3.
+  // 공격자는 사탄의 마 간섭이 없는 파스아 신앙(Kill)으로 두어 소명만 격리 검증한다.
+  const state = emptyState(
+    { hab: player("hab", "habreterus", "angel"), v: player("v", "citizen", "angel"), pasua: player("pasua", "pasua", "neutral") },
+    [
+      { sourceUserId: "hab", targetUserId: "v", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "pasua", targetUserId: "v", actionType: "pasua_faith", priority: 4 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.v.alive, true, "생명의 언약 — 대상 생존");
+  assert.equal(newState.players.hab.counters.voteValueMod, 3, "소명 — 공격을 막아 투표가치 +3");
+}
+{
+  // 공격이 없던 경우: 보상 없음(성공 조건 미충족).
+  const state = emptyState(
+    { hab: player("hab", "habreterus", "angel"), v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "hab", targetUserId: "v", actionType: "doctor_heal", priority: 3 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.hab.counters.voteValueMod ?? 0, 0, "소명 — 막은 공격이 없으면 보상 없음");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명) checks passed");

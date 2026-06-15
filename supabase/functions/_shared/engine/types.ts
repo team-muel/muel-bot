@@ -59,7 +59,9 @@ export interface Effect {
   // Rebrand(대악마 낙인): 대상의 currentRole 을 임의의 천사 직업으로 재배정(직업 삭제→비밀 재배정).
   // Eclipse(팬텀 일식): self.counters.eclipse=1 — phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀 소멸.
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify";
+  // Haunt(말렌 혼령 방출 다단계): 1회차 → 혼령 표식(haunted). 2회차(표식 보유) → 영에게 잠식
+  //   = 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt";
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
   // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
   // 압도적 존재감). All 은 source 포함(천사 버프 등).
@@ -109,6 +111,9 @@ export interface ActiveAbility {
   // 발동 성공 후 source 카운터 세팅(ADR-006 S3) — 파스아 연속 포교 쿨다운 등.
   // 과거 resolveNightActions 의 actionType 분기를 선언형으로 대체.
   onFireSetCounter?: { key: string; value: number };
+  // 보호가 실제로 공격을 막았을 때(attack_prevented) 시전자에게 카운터 보상(하브레터스 소명:
+  // 생명의 언약 성공 시 투표가치 +3). Protect 효과가 그 밤 실제 살해를 무효화한 경우에만 적용.
+  onSaveGrantSelf?: { counter: string; amount: number };
 }
 
 export interface RoleDefinition {
