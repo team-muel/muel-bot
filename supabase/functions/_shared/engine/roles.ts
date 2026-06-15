@@ -56,10 +56,11 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 4,
           excludeSelf: true,
-          // 사탄의 마(전원 투표가치 -1)는 ModifyVoteValue 프리미티브로 구현돼 있으나,
-          // 기본 투표가치=1 에서 -1 은 즉시 전원 0(투표 무력화)이라 보류 — 투표가치 스케일
-          // 재설계(기본값 상향) 후 연결한다(후속). 프리미티브/tally 배선은 준비됨.
-          effects: [{ type: "Kill", target: "Target" }],
+          // 사탄의 마(canon): 처치 발동 시 자신을 제외한 전원의 행사 투표가치 -1(지속 누적,
+          // tally 의 voteValueMod). 의도된 설계 — 마을은 곧 표로 악마를 처형할 수 없고(악마가
+          // 투표 독점), 천사 진영은 빠르게 식별·제거해야 한다(의심 봉인·조사·단죄 등). 기본
+          // 투표가치=1 이므로 한 번이면 전원 0 — 의도(표로는 못 이김). 천사팀 전역 0 판정은 후속.
+          effects: [{ type: "Kill", target: "Target" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }],
         },
         { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
         // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers

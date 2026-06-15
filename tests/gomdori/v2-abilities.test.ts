@@ -789,4 +789,29 @@ assert.match(matchAction, /Object\.fromEntries\([\s\S]*?CORE_ROLES/, "검증 테
 const rainerMigration = readFileSync("supabase/migrations/20260614110000_gomdori_rainer_summon.sql", "utf8");
 assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type 에 백호 소환 추가");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호) checks passed");
+// --- 사탄의 마(대악마 demon_kill): 발동 시 자신 제외 전원 투표가치 -1 → 악마 투표 독점 ---
+{
+  const state = emptyState(
+    {
+      demon: player("demon", "demon", "demon"),
+      a1: player("a1", "citizen", "angel"),
+      a2: player("a2", "citizen", "angel"),
+    },
+    [{ sourceUserId: "demon", targetUserId: "a1", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.a1.alive, false, "처치 — 대상 탈락");
+  assert.equal(newState.players.a2.counters.voteValueMod, -1, "사탄의 마 — 생존 천사 투표가치 -1");
+  assert.equal(newState.players.demon.counters.voteValueMod ?? 0, 0, "사탄의 마 — 악마 자신은 영향 없음(독점)");
+  // 행사 투표: 천사 표 max(0, 1-1)=0, 악마 표 1 → 악마가 투표를 독점(표로는 못 이김).
+  const vote = tallyEliminationVotes(
+    [
+      { actorUserId: "a2", targetUserId: "demon" },
+      { actorUserId: "demon", targetUserId: "a2" },
+    ],
+    newState.players,
+  );
+  assert.equal(vote.candidateUserId, "a2", "마을 표 무력화 → 악마 단독 지목이 후보(독점)");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마) checks passed");
