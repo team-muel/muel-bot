@@ -158,7 +158,10 @@ Deno.serve((req: Request) => {
       user_id: p.user_id,
       role: roles[index].role,
       faction: roles[index].faction,
-      engine_state: engineStateForAssignment(roles[index]),
+      // match_players.engine_state 는 NOT NULL — 능력 카운터가 없는 직업(uno/arthur 외 천사,
+      // 라이너 자동주입 폐지 후 대부분)은 engineStateForAssignment 가 null 을 반환하므로 {} 로
+      // 폴백한다. null 을 그대로 UPDATE 하면 NOT NULL 위반 → 게임 시작 500. (2026-06-15 핫픽스)
+      engine_state: engineStateForAssignment(roles[index]) ?? {},
     }));
 
     // Update match_players roles in a loop (since no bulk update in pure Supabase JS easily without RPC, but we can do it via promise all or rpc. 
