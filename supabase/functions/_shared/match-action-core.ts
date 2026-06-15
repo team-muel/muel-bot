@@ -194,6 +194,18 @@ export async function submitMatchAction(
       } else {
         investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
       }
+
+      // 사건의 전말(도르단): 정밀 조사(clue≥3)로 악마 처치자를 정확히 식별하면 다음 아침을
+      // 생략하고 그 악마를 곧장 판결대에 세운다. matches.engine_state.caseClosed 에 기록 →
+      // phase-advance(night_resolve)가 읽어 verdict 를 강제(전원 통지·아침 생략·판결). canon §도르단.
+      if (effectiveRole(player) === "dordan" && clue >= 3 && !disguised && isDemonKillerRole(effectiveRole(target))) {
+        const { data: m } = await supabase.from("matches").select("engine_state").eq("id", matchId).single();
+        const es = ((m?.engine_state ?? {}) as Record<string, unknown>);
+        await supabase
+          .from("matches")
+          .update({ engine_state: { ...es, caseClosed: { demonUserId: targetUserId, byUserId: actorUserId } } })
+          .eq("id", matchId);
+      }
     }
   }
 

@@ -783,13 +783,36 @@ Deno.serve((req: Request) => {
           continue;
         }
 
-        if (eclipseActive) {
+        // 사건의 전말(도르단): caseClosed 가 설정되고 그 악마가 아직 생존해 있으면 아침을
+        // 생략하고 곧장 판결(verdict)로 — 식별된 악마를 판결대에 세운다(표식 소비). 일식보다 우선.
+        const caseClosed = (engineState as { caseClosed?: { demonUserId?: string } }).caseClosed;
+        const caseDemonAlive = caseClosed?.demonUserId
+          ? players.some((p) => p.user_id === caseClosed.demonUserId && p.alive)
+          : false;
+        if (caseClosed?.demonUserId && caseDemonAlive) {
+          const { caseClosed: _cc, verdict: _v, ...rest } = engineState as Record<string, unknown>;
+          engineState = { ...rest, verdict: { candidateUserId: caseClosed.demonUserId, tallies: {}, skipped: 0, tie: false, maxVotes: 0, phaseId: phase.id } };
+          requireNoError(
+            await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId),
+          );
+          requireNoError(
+            await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "case_closed", visibility: "public", payload: { user_id: caseClosed.demonUserId } }),
+          );
+          nextPhaseType = "verdict";
+          nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
+        } else if (eclipseActive) {
           // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로.
           const transition = nextNightSuspectTransition(phase.phase_number);
           nextPhaseType = transition.phaseType;
           nextDurationSec = transition.durationSec;
           nextPhaseNumber = transition.phaseNumber;
         } else {
+          // caseClosed 가 있었으나 악마가 이미 탈락했으면 표식만 정리.
+          if (caseClosed?.demonUserId) {
+            const { caseClosed: _cc, ...rest } = engineState as Record<string, unknown>;
+            engineState = rest;
+            requireNoError(await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId));
+          }
           nextPhaseType = "day";
           nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
         }
