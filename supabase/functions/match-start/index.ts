@@ -83,8 +83,11 @@ function engineStateForAssignment(card: RoleCard): Record<string, unknown> | nul
   // 라이너 백호: v2 에서 자동 주입 폐지 — rainer_summon(1회 self 액션)으로 능동 획득한다.
 
   if (card.role === "uno") {
-    // 우노 명예: 생존 시 천사팀 카운트 +1 (canon 은 +10, v1 은 +1).
+    // 우노 명예(canon): 생존 시 천사팀 카운트 +1(canon +10, v1 +1) + 행사 투표가치 +10.
+    // voteValueMod +10 은 사탄의 마(전원 -1)를 뚫고 우노의 표를 살린다 — 악마 투표 독점에
+    // 맞서는 천사 진영의 표 경로(tally 가 voteValueMod 합산). 명예 실추(밤행동 불가)는 후속.
     counters.countBonus = 1;
+    counters.voteValueMod = 10;
   }
 
   if (card.role === "arthur") {

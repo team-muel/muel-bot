@@ -814,4 +814,29 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(vote.candidateUserId, "a2", "마을 표 무력화 → 악마 단독 지목이 후보(독점)");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마) checks passed");
+// --- 우노 명예(투표가치 +10): 사탄의 마(-1)를 뚫고 우노의 표가 살아남는 천사 표 경로 ---
+{
+  const uno = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } }; // 배정 시 명예 주입
+  const state = emptyState(
+    {
+      demon: player("demon", "demon", "demon"),
+      uno,
+      a1: player("a1", "citizen", "angel"),
+    },
+    [{ sourceUserId: "demon", targetUserId: "a1", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.uno.counters.voteValueMod, 9, "사탄의 마 적용 후 우노 명예 10-1=9 잔존");
+  // 우노 표=1+9=10, 일반 천사 표=max(0,1-1)=0 → 우노가 악마를 처형대로 보낼 수 있다(천사 표 경로).
+  const vote = tallyEliminationVotes(
+    [
+      { actorUserId: "uno", targetUserId: "demon" },
+      { actorUserId: "a1", targetUserId: "demon" },
+      { actorUserId: "demon", targetUserId: "uno" },
+    ],
+    newState.players,
+  );
+  assert.equal(vote.candidateUserId, "demon", "우노 명예가 사탄의 마를 뚫어 악마 지목 — 천사 표 경로 성립");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예) checks passed");

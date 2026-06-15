@@ -121,7 +121,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1 + '군인의 사명' 부여. 발동/생존 시 우노 '명예'(천사팀 카운트·투표가치 +10)." },
       { kind: "능력2", name: "용맹함", text: "전원 투쟁 발동. 우노 투표 대상은 사망 기록+소속 공개. 천사면 '명예 실추'(밤 행동 불가). 1회." },
     ],
-    v1: "구현됨. 명예 countBonus +1(배정) + uno_struggle(투쟁, GrantCount) + uno_valor(용맹함 1회: 자기 Cleanse + 명예 +1). 전원 효과·소속 공개는 후속.",
+    v1: "구현됨. 명예 countBonus +1 + 투표가치 +10(배정 — 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁, GrantCount) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁). 소속 공개·명예 실추는 후속.",
     v2: "투쟁(대상 카운트 +1 + 악마효과 제거 충전) 능동화 + 용맹함(전원 효과·소속 공개·명예 실추) 1회.",
     vault: "Universes/BoW/Characters/우노.md",
   },
