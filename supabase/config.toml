@@ -90,6 +90,8 @@ verify_jwt = false
 
 [functions.match-action]
 verify_jwt = false
+[functions.match-adjust-time]
+verify_jwt = false
 
 [functions.match-chat]
 verify_jwt = false
