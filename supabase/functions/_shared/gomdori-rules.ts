@@ -29,14 +29,14 @@ export const GOMDORI_RULES = {
   /**
    * 첫째 밤 (phase_number === 1) 룰.
    *
-   * BoW Gomdori 마피아 규칙:
-   * - 직업 배정 → 첫 밤 → 아침. 첫 밤은 모든 능력 비활성.
-   * - 이유: 시민 정보 누적 전에 첫 능력으로 게임 결판나는 것 방지.
-   * - 첫 밤 duration 은 짧음 (안내성).
+   * 2026-06-15 설계 변경(사용자 결정): 첫 밤도 일반 밤처럼 능력 사용 가능.
+   * "배정 직후 밤은 능력 없음"이 아니라 첫 밤부터 대악마 처치 등이 돌아야 한다.
+   * skipsAbilities=false → phase-advance 가 night1 을 정상 해소(능력 발동), duration 은
+   * 일반 밤과 동일(60초)로 행동 시간 확보. (구: silent 8초 안내성 밤.)
    */
   firstNight: {
-    skipsAbilities: true,
-    durationSec: 8,
+    skipsAbilities: false,
+    durationSec: 60,
   },
 
   /**
