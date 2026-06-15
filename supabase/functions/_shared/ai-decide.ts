@@ -28,6 +28,63 @@ function modelFor(provider: string): string {
 }
 
 export type DecideResult = { ok: false } | { ok: true; choice: string | null };
+export type ChatResult = { ok: false } | { ok: true; text: string };
+
+// 페르소나별 어조 — 채팅 발언 톤을 모델 정체에 맞게 살짝 다르게.
+const PERSONA_TONE: Record<string, string> = {
+  chatgpt: "차분하고 논리적으로, 근거를 들어 말한다.",
+  gemini: "발랄하고 적극적으로, 먼저 의심을 던진다.",
+  claude: "신중하고 관찰자적으로, 조심스럽게 추론한다.",
+};
+
+/**
+ * 토론(낮) 자유 발언 생성(MindLogic). 정체를 드러내지 않고 1~2문장으로 짧게.
+ * 키/실패 시 ok:false → 호출부가 캔드 라인으로 폴백(그래도 "말은 한다").
+ */
+export async function generateChatLine(opts: {
+  provider: string;
+  systemHint: string; // 자기 정체/진영
+  context: string; // 게임 상황(사망·생존자·이전 발언 등)
+}): Promise<ChatResult> {
+  const key = Deno.env.get("MINDLOGIC_API_KEY");
+  if (!key) return { ok: false };
+
+  const tone = PERSONA_TONE[opts.provider] ?? "자연스럽게 말한다.";
+  const system =
+    "너는 한국어 마피아 게임 'Gomdori'의 플레이어다. 낮 토론에서 캐릭터에 맞게 1~2문장으로 짧게 발언한다. " +
+    `${tone} 자기 정체(직업/진영)는 절대 직접 밝히지 말고 전략적으로 행동한다. ` +
+    "자연스러운 한국어 채팅체로. 게임 메타발언('나는 AI다' 등) 금지. 다른 플레이어 이름을 불러 말 걸어도 좋다.";
+  const user = `${opts.systemHint}\n\n[상황]\n${opts.context}\n\n토론에서 한마디(1~2문장):`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${MINDLOGIC_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: modelFor(opts.provider),
+        temperature: 0.95,
+        max_tokens: 120,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    let text: string = data?.choices?.[0]?.message?.content ?? "";
+    text = text.trim().replace(/^["'\s]+|["'\s]+$/g, "").slice(0, 280);
+    if (!text) return { ok: false };
+    return { ok: true, text };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export type DecideOptions = {
   provider: string;

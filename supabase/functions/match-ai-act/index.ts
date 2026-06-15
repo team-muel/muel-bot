@@ -9,14 +9,26 @@ import {
   SELF_ACTIONS,
   submitMatchAction,
 } from "../_shared/match-action-core.ts";
-import { decideChoice } from "../_shared/ai-decide.ts";
+import { decideChoice, generateChatLine } from "../_shared/ai-decide.ts";
 
 // match-ai-act (ADR-005, Increment 2) — AI 용병의 행동을 채운다.
 // 사람과 동일한 검증 코어(submitMatchAction)를 거치고, LLM(MindLogic) 결정은
 // best-effort 다. LLM 이 없거나 실패하면 합법 휴리스틱으로 폴백하므로 게임은 항상
 // 정상적으로 진행/완주된다. pg_cron(run_phase_advance_loop)이 5초마다 호출한다.
+// day(토론): AI 가 채팅으로 한마디 한다(LLM 자유발언, 실패 시 캔드 라인). 토론당 1회.
 
-const ACTIVE_AI_PHASES = ["night", "night_suspect", "vote", "verdict"];
+const ACTIVE_AI_PHASES = ["night", "night_suspect", "vote", "verdict", "day"];
+
+// LLM 실패 시 폴백 발언 — 그래도 "말은 한다". 정체 비노출·범용.
+const CANNED_LINES = [
+  "음… 아직은 누가 수상한지 확신이 안 서네요.",
+  "조용히 있는 사람이 제일 신경 쓰이는데요.",
+  "근거 없이 몰아가지는 맙시다. 천천히 봅시다.",
+  "어젯밤 정황을 다시 맞춰볼 필요가 있어요.",
+  "저는 떳떳합니다. 의심되면 이유를 말해주세요.",
+  "표를 급하게 던지면 악마만 이득이에요.",
+  "지금까지 행동이 가장 어색한 사람은 누구죠?",
+];
 
 type PlayerRow = {
   user_id: string;
@@ -84,8 +96,7 @@ async function processMatch(
     .maybeSingle();
   if (!phase) return 0;
 
-  // 첫 밤은 능력 없음.
-  if (status === "night" && phase.phase_number === 1) return 0;
+  // (2026-06-15) 첫 밤도 능력 사용 — 과거 night phase_number===1 스킵 제거(첫밤 활성화 동기).
 
   const { data: players } = await supabase
     .from("match_players")
@@ -110,7 +121,7 @@ async function processMatch(
   let count = 0;
   for (const ai of aiPlayers) {
     const did = actedByActor.get(ai.user_id) ?? new Set<string>();
-    const ok = await actForAi(supabase, matchId, status, ai, allPlayers, did);
+    const ok = await actForAi(supabase, matchId, status, ai, allPlayers, did, phase.id);
     if (ok) count++;
   }
   return count;
@@ -124,10 +135,29 @@ async function actForAi(
   ai: PlayerRow,
   players: PlayerRow[],
   did: Set<string>,
+  phaseId: string,
 ): Promise<boolean> {
   const aliveOthers = players.filter((p) => p.alive && p.user_id !== ai.user_id);
   const dead = players.filter((p) => !p.alive);
   const selfHint = `너는 '${ai.role}' 직업(${effectiveFaction(ai)} 진영)이다.`;
+
+  // 낮 토론: AI 가 채팅으로 한마디 한다(LLM 자유발언, 실패 시 캔드). 토론(=이 day 페이즈)당 1회.
+  if (status === "day") {
+    if (did.has("ai_day_chat")) return false;
+    const aliveNames = aliveOthers.map((p) => p.display_name).join(", ") || "없음";
+    const deadNames = dead.map((p) => p.display_name).join(", ") || "없음";
+    const context = `생존자: ${aliveNames}. 탈락자: ${deadNames}. 지금은 낮 토론 — 마을은 악마를 찾아 처형하려 한다.`;
+    const res = await generateChatLine({ provider: ai.ai_provider ?? "gemini", systemHint: selfHint, context });
+    const text = (res.ok ? res.text : (pick(CANNED_LINES) ?? "…")).slice(0, 2000);
+    try {
+      await supabase.from("match_chats").insert({ match_id: matchId, channel: "town", sender_user_id: ai.user_id, message: text });
+      // 토론당 1회 가드 마커(게임 액션 아님). action_type CHECK 에 ai_day_chat 추가됨.
+      await supabase.from("match_actions").insert({ phase_id: phaseId, match_id: matchId, actor_user_id: ai.user_id, action_type: "ai_day_chat", target_user_id: null, submitted_at: new Date().toISOString() });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   const submit = async (actionType: string, targetUserId: string | null): Promise<boolean> => {
     try {
