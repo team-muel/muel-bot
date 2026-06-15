@@ -395,6 +395,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 별이 떠오른 밤(canon 패시브): 초신성 발동 다음 밤은 의심 투표가 생략된다. onFireSetCounter
         // 로 source(세이카)에 starlitNext 표식 → phase-advance 가 다음 night_suspect 진입을 night 로 전환.
         { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, onFireSetCounter: { key: "starlitNext", value: 1 }, effects: [{ type: "Cleanse", target: "Target" }, { type: "Silence", target: "Target", tag: "seikaMark" }] },
+        // 자신만 아플 거야(v2, 1회): 전원의 부여 효과를 흡수=전원 정화(Cleanse All). priority 5
+        // (마지막) — 그 밤 걸린 효과들을 모두 씻는다. 악마팀 효과 3개+ 소멸·악마팀 공개는 후속.
+        { id: "seika_absorb", name: "자신만 아플 거야", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "All" }] },
       ],
     },
   },

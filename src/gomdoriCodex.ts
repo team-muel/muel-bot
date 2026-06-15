@@ -146,7 +146,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력2", name: "자신만 아플 거야", text: "전원 부여 효과를 세이카에게. 악마팀 효과 3개+ 받으면 소멸, 이틀 후 악마팀 공개. 1회." },
     ],
     v1: "구현됨. seika_supernova — 초신성(Cleanse 부정효과 제거 + Silence 봉인, priority 1; seikaMark 재적용 시 silencedPermanent 영구 봉인) + 별이 떠오른 밤(onFireSetCounter starlitNext → phase-advance 가 다음 밤 의심 투표 생략). 새 이펙트 Cleanse 도입.",
-    v2: "자신만 아플 거야(전원 효과 흡수) 후속.",
+    v2: "자신만 아플 거야 핵심(seika_absorb: 전원 정화 Cleanse All, 1회) 라이브. 악마팀 효과 3개+ 소멸·이틀 후 악마팀 공개 downside 는 후속.",
     vault: "Universes/BoW/Characters/세이카.md",
   },
   {
