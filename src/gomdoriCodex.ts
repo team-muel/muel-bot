@@ -145,8 +145,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "초신성", text: "그 밤 대상이 받는 부여 효과 모두 제거 + 능력 발동 불가. 같은 대상 재적용 시 폭발→영구 능력 봉인+세이카에게 직업 통지(셀레스트:희망)." },
       { kind: "능력2", name: "자신만 아플 거야", text: "전원 부여 효과를 세이카에게. 악마팀 효과 3개+ 받으면 소멸, 이틀 후 악마팀 공개. 1회." },
     ],
-    v1: "구현됨. seika_supernova — 초신성(Cleanse 부정효과 제거 + Silence 봉인, priority 1; seikaMark 재적용 시 silencedPermanent 영구 봉인). 새 이펙트 Cleanse 도입.",
-    v2: "별이 떠오른 밤(폭발 다음 밤 의심 생략) + 자신만 아플 거야(전원 효과 흡수) 후속.",
+    v1: "구현됨. seika_supernova — 초신성(Cleanse 부정효과 제거 + Silence 봉인, priority 1; seikaMark 재적용 시 silencedPermanent 영구 봉인) + 별이 떠오른 밤(onFireSetCounter starlitNext → phase-advance 가 다음 밤 의심 투표 생략). 새 이펙트 Cleanse 도입.",
+    v2: "자신만 아플 거야(전원 효과 흡수) 후속.",
     vault: "Universes/BoW/Characters/세이카.md",
   },
   {

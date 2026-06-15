@@ -15,6 +15,7 @@ import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
 import { CONTACT_BLOCKED_DEMONS, DEMON_KILLER_ROLES, HELPER_CONTACT, HELPER_ROLES } from "../_shared/engine/roles.ts";
 import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
 import {
+  PHASE_NIGHT,
   PHASE_NIGHT_SUSPECT,
   firstNightTransition,
   nextNightSuspectTransition,
@@ -1031,6 +1032,27 @@ Deno.serve((req: Request) => {
 
         results.push({ matchId, advancedTo: "ended", winner: timeout.winner, timeout: true });
         continue;
+      }
+
+      // 별이 떠오른 밤(세이카): 초신성 발동(starlitNext 표식) 다음 밤은 의심 투표를 생략하고
+      // 곧장 밤으로 간다. 의심 진입의 단일 관문(maxDays 안전망 통과 후)이라 여기 한 곳에서 처리.
+      if (nextPhaseType === PHASE_NIGHT_SUSPECT) {
+        const starlit = (await loadPlayers(supabase, matchId)).filter(
+          (p) => p.alive && (((p.engine_state as { counters?: { starlitNext?: number } } | null)?.counters?.starlitNext ?? 0) > 0),
+        );
+        if (starlit.length > 0) {
+          for (const sp of starlit) {
+            const c = { ...((sp.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {}), starlitNext: 0 };
+            requireNoError(
+              await supabase.from("match_players").update({ engine_state: { ...(sp.engine_state || {}), counters: c } }).eq("match_id", matchId).eq("user_id", sp.user_id),
+            );
+          }
+          requireNoError(
+            await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "starlit_night", visibility: "public", payload: { night_number: nextPhaseNumber } }),
+          );
+          nextPhaseType = PHASE_NIGHT;
+          nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
+        }
       }
 
       const expectedEndedAt = new Date(Date.now() + nextDurationSec * 1000).toISOString();
