@@ -53,6 +53,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   const sortedActions = [...newState.actionStack].sort((a, b) => a.priority - b.priority);
   newState.actionStack = [];
 
+  // 소명(하브레터스): 보호가 실제 공격을 막았을 때 시전자에게 줄 보상 예약(targetUserId → 시전자/카운터).
+  const saveRewards: Record<string, { source: string; counter: string; amount: number }> = {};
+
   // GAME-2: voteBias/suspicionBias are per-round boosts (romaz). Clear last
   // round's leftover before applying this night's effects so suspecting the same
   // target on consecutive nights cannot accumulate an unbeatable bias.
@@ -167,6 +170,11 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (ability.onFireSetCounter) {
       sourcePlayer.counters[ability.onFireSetCounter.key] = ability.onFireSetCounter.value;
     }
+    // 소명 예약(하브레터스): onSaveGrantSelf 를 가진 보호 능력이 대상에 걸렸으면, 그 대상이
+    // 이 밤 실제 공격을 막았을 때(아래 death 해소의 attack_prevented) 시전자에게 보상한다.
+    if (ability.onSaveGrantSelf && targetPlayer) {
+      saveRewards[targetPlayer.userId] = { source: sourcePlayer.userId, ...ability.onSaveGrantSelf };
+    }
   }
 
   for (const userId in newState.players) {
@@ -177,6 +185,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.markedForDeath = false;
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "attack_prevented", userId: player.userId });
+        // 소명(하브레터스): 이 보호가 실제 살해를 막았으므로 시전자에게 보상(투표가치 +3 등).
+        const rw = saveRewards[player.userId];
+        if (rw && newState.players[rw.source]) {
+          newState.players[rw.source].counters[rw.counter] = (newState.players[rw.source].counters[rw.counter] ?? 0) + rw.amount;
+          events.push({ type: "oath_fulfilled", payload: { user_id: rw.source, counter: rw.counter, amount: rw.amount } });
+        }
       } else if ((player.counters?.shield ?? 0) > 0) {
         // 보호막(가인 등): 밤 살해 1회 무효 + 소비. 처형 차단은 phase-advance에서 처리한다.
         player.counters.shield -= 1;

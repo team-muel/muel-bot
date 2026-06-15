@@ -111,6 +111,9 @@ export interface ActiveAbility {
   // 발동 성공 후 source 카운터 세팅(ADR-006 S3) — 파스아 연속 포교 쿨다운 등.
   // 과거 resolveNightActions 의 actionType 분기를 선언형으로 대체.
   onFireSetCounter?: { key: string; value: number };
+  // 보호가 실제로 공격을 막았을 때(attack_prevented) 시전자에게 카운터 보상(하브레터스 소명:
+  // 생명의 언약 성공 시 투표가치 +3). Protect 효과가 그 밤 실제 살해를 무효화한 경우에만 적용.
+  onSaveGrantSelf?: { counter: string; amount: number };
 }
 
 export interface RoleDefinition {
