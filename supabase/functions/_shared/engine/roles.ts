@@ -285,7 +285,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 박해자(v2): 직전에 *투표*한 대상이 다음 집계에서 받는-투표가치 +3(substrate VoteTarget).
         // 표적을 처형대로 민다 — 별도 지목 없이 자기 투표를 따라간다(canon 박해자).
-        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "VoteTarget", amount: 3 }] },
+        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, oddDayOnly: true }] },
       ],
     },
   },

@@ -77,6 +77,8 @@ export interface Effect {
   // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
   // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.
   onlyFactions?: Faction[];
+  // 홀수날 한정(엘런 박해자: 홀수날에만 발동). state.dayCount 가 홀수일 때만 적용한다.
+  oddDayOnly?: boolean;
 }
 
 export interface PassiveAbility {

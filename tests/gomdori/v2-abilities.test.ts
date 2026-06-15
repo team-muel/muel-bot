@@ -284,8 +284,17 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
     },
     [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
   );
+  state.dayCount = 1; // 홀수날 — 박해 발동.
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.target.counters.voteBias, 3, "박해 — 투표 대상(VoteTarget) 받는-투표가치 +3");
+  assert.equal(newState.players.target.counters.voteBias, 3, "박해(홀수날) — 투표 대상 받는-투표가치 +3");
+  // 짝수날에는 박해가 발동하지 않는다(canon 홀수날 한정, oddDayOnly 게이트).
+  const evenState = emptyState(
+    { ellen: { ...player("ellen", "ellen", "demon"), lastVoteTarget: "target" }, target: player("target", "citizen", "angel") },
+    [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
+  );
+  evenState.dayCount = 2;
+  const { newState: evenNew } = resolveNightActions(evenState);
+  assert.equal(evenNew.players.target.counters.voteBias ?? 0, 0, "박해 — 짝수날 미발동");
 }
 
 // --- 6b. 로건 Nullify: 대상의 다음 능력 발동을 소멸(지속) ---
