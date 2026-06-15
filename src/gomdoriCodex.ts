@@ -172,7 +172,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "만악의 근원 / 감시", text: "대상 탈락 + 낙인 적용자 존재 시 감시 추가." },
       { kind: "능력2", name: "압도적인 존재감", text: "전원 지정대상이 낙인 적용자로 변경. 공포로 다음 밤까지 횟수제한·중첩 효과 손실(조력자 예외). 1회." },
     ],
-    v1: "구현됨. demon_kill(처치) + daeakma_brand(낙인: Rebrand) + daeakma_dominion(압도적 존재감 1회: 전원 봉인, Silence All). 가인 있으면 보호막 1. 사탄의 마(전역 악마판정)는 후속.",
+    v1: "구현됨. demon_kill(처치 + 사탄의 마: 자신 제외 전원 투표가치 -1, 악마 투표 독점) + daeakma_brand(낙인: Rebrand) + daeakma_dominion(압도적 존재감 1회: 전원 봉인, Silence AllOthers). 가인 있으면 보호막 1. 사탄의 마 전역 판정(생존 천사팀 전원 투표가치 0 → 모든 조사 '악마', match-action-core)도 라이브. 전역 '취급'(승리·효과 전반) 확장은 후속.",
     v2: "메피스토 낙인(직업 삭제→비밀 재배정) + 사탄의 마(전원 투표가치 -1, 천사팀 0 시 전역 악마 판정) + 압도적 존재감(전원 능력 봉인 1회).",
     vault: "Universes/BoW/Characters/대악마.md",
   },
