@@ -21,7 +21,7 @@ prefer explicit lanes:
 
 - `MUEL_CHAT_MODEL`: Discord mention replies and character voice.
 - `MUEL_ROUTER_MODEL`: cheap pre-generation classification.
-- `MUEL_EXTRACT_MODEL`: structured extraction for memory, dreams, posts, and
+- `MUEL_EXTRACT_MODEL`: structured extraction for memory, legacy dreams, posts, and
   metadata.
 - `MUEL_SUMMARY_MODEL`: community, channel, and YouTube summaries.
 - `MUEL_HEAVY_MODEL`: expensive escalation for complex reasoning, risky
@@ -66,7 +66,7 @@ Candidate extraction lanes:
 
 - long-term memory candidate extraction and merge decisions
 - YouTube community post rendering
-- Weave dream emotions, keywords, and main tag
+- Weave memory correction, user-taught facts, and legacy dream emotions/keywords/main tag
 - future digest or service-event metadata
 
 Expected behavior:

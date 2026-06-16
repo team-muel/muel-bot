@@ -52,7 +52,7 @@ const ROUTER_PROMPT = [
   'Classify a Discord mention to Muel into ONE intent label. Be conservative.',
   '',
   'Labels:',
-  '- cs_help: user needs help with a Muel feature (Weave 일기, Gomdori game, /구독, /도움말).',
+  '- cs_help: user needs help with a Muel feature (Weave memory correction, Gomdori game, /메모, /구독, /도움말).',
   '- small_talk: greeting, mood, casual chit-chat with no actionable request.',
   '- news_query: asks about recent YouTube videos, community posts, or subscribed channels.',
   '- memory_query: refers to past conversation ("기억해?", "전에", "지난번").',

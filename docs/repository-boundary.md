@@ -8,15 +8,15 @@
 
 - Repository: `muel-bot`
 - Role: small Render-hosted Discord bot for the current Muel platform
-- Current command surface: `/도움말`, `/일기`, `/구독`, `/ping`
-- Current utility focus: Muel hub entry, Weave entry, YouTube video/community procurement
+- Current command surface: `/도움말`, `/메모`, `/허브`, `/구독`, `/ping`
+- Current utility focus: Muel hub entry, memory capture/correction, Weave entry, YouTube video/community procurement
 - Current operations layer: optional private Discord MCP server for Codex/Cowork/Claude Code
 
 ## Product Boundary: Muel vs. Gomdori
 
 `muel-bot` and `muel-tree` are shared implementation repositories. They are not the product taxonomy.
 
-- **Muel** is the platform and identity layer: the main assistant surface, memory/context spine, hub entry, Weave, subscriptions, service registry, and shared infrastructure.
+- **Muel** is the platform and identity layer: the main assistant surface, memory/context spine, hub entry, Weave memory correction surface, subscriptions, service registry, and shared infrastructure.
 - **Gomdori** is a separate product experience inside the Muel platform: the mafia game, its own Discord application, its own Activity route, and its own game server state under the `mafia` schema.
 - Sharing `muel-bot` and `muel-tree` is an implementation choice. It must not collapse product naming, Discord app ownership, secrets, OAuth credentials, or UX language back into "Muel Bot."
 - New miniapps should follow the same factory model: shared Muel infrastructure, product-specific Discord/Toss credentials, product-specific routes, and product-specific user-facing names.
