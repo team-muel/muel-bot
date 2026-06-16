@@ -509,8 +509,10 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.equal(tally.tallies.bob, 2, "매료자 표 0 + 루루 표 2(기본1+양도1)");
 }
 
-// --- 9. 악몽(팬텀): 밤 보호 무시 + 아침(resolveNightmares) 탈락 ---
+// --- 9. 악몽(팬텀): vault canon 2단계 지연 — 캐스트 밤 N 에 pending → 다음 밤 N+1 에
+//        nightmare 활성 → 그 다음 아침(N+2)에 탈락. 밤 보호로는 막을 수 없는 지연 효과. ---
 {
+  // 캐스트 밤(N)
   const state = emptyState(
     {
       phantom: player("phantom", "phantom", "demon"),
@@ -524,11 +526,22 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   const { newState } = resolveNightActions(state);
   assert.equal(newState.players.victim.alive, true, "악몽은 그 밤엔 죽이지 않음(지연)");
-  assert.equal(newState.players.victim.counters.nightmare, 1, "악몽 표식");
-  // 아침 해소 — 밤 보호(이미 해제됨)로 막지 못하고 탈락.
-  const nm = resolveNightmares(newState.players) as Array<{ type: string; payload?: { user_id?: string } }>;
-  assert.equal(newState.players.victim.alive, false, "아침에 악몽으로 탈락(보호 무시)");
-  assert.ok(nm.some((e) => e.type === "nightmare_death" && e.payload?.user_id === "victim"), "악몽 사망 이벤트");
+  assert.equal(newState.players.victim.counters.nightmarePending, 1, "캐스트 밤엔 pending 표식만");
+  assert.ok(!newState.players.victim.counters.nightmare, "캐스트 밤에는 아직 nightmare 활성화 X");
+  // 캐스트 밤의 아침(N+1) — 아직 nightmare 가 활성화 안 됐으므로 탈락 X.
+  const nmA = resolveNightmares(newState.players) as Array<{ type: string }>;
+  assert.equal(newState.players.victim.alive, true, "캐스트 밤 아침엔 아직 살아있음");
+  assert.equal(nmA.length, 0, "캐스트 밤 아침엔 악몽 사망 이벤트 없음");
+
+  // 다음 밤(N+1) 시작 — pending → nightmare 이동.
+  const nextNight = emptyState({ phantom: newState.players.phantom, victim: newState.players.victim }, []);
+  const { newState: n2 } = resolveNightActions(nextNight);
+  assert.equal(n2.players.victim.counters.nightmare, 1, "다음 밤 시작 시 nightmare 활성");
+  assert.equal(n2.players.victim.counters.nightmarePending, 0, "pending 은 소비됨");
+  // 그 다음 아침(N+2) 에 탈락.
+  const nmB = resolveNightmares(n2.players) as Array<{ type: string; payload?: { user_id?: string } }>;
+  assert.equal(n2.players.victim.alive, false, "지정한 다음 다음 아침에 탈락(보호 무시)");
+  assert.ok(nmB.some((e) => e.type === "nightmare_death" && e.payload?.user_id === "victim"), "악몽 사망 이벤트");
 }
 
 // --- 10. 빙의(말렌): 행동 봉인 + 그 라운드 악마팀 카운트 ---

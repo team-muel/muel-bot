@@ -34,8 +34,11 @@ assert.match(matchChat, /select\("alive, engine_state"\)/, "chat reads alive + c
 assert.match(matchChat, /circleChat/, "demon chat gated by contact circle, not faction");
 assert.match(matchChat, /channel = "demon_circle"/, "night chat → demon_circle channel");
 assert.match(matchChat, /player\.alive \? "town" : "dead"/, "day chat → 생존 town / 사망 dead 채널");
-assert.match(phaseAdvance, /execution_blocked_shield/, "verdict execution should honor shield");
-assert.match(phaseAdvance, /blocked_by_shield/, "verdict payload should expose shield block");
+// vault canon §8 — '처형'은 능력 기반 '탈락'과 별개 메커니즘. shield 는 능력 사망에만
+// 적용되고 vote 처형은 막지 못한다(아서 여명의 기사 패시브 "어떤 효과로도 탈락 X"도
+// 능력 한정). verdict 경로에서 shield 분기·blocked_by_shield 페이로드 제거를 강제.
+assert.doesNotMatch(phaseAdvance, /execution_blocked_shield/, "shield 는 vote 처형을 막지 않는다(canon §8)");
+assert.doesNotMatch(phaseAdvance, /blocked_by_shield/, "verdict 페이로드에 shield 차단 필드 없음");
 assert.match(roles, /id: "gain"[\s\S]*?faction: "demon"/, "gain engine faction should align with DB/frontend");
 
 console.log("Gomdori W4 runtime contract checks passed");

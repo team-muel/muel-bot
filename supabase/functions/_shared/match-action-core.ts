@@ -3,6 +3,7 @@ import { conflict, badRequest, forbidden } from "./errors.ts";
 import { getMatch } from "./game.ts";
 import { CORE_ROLES, HELPER_ROLES, isDemonKillerRole } from "./engine/roles.ts";
 import { getRoleDefinition } from "./engine/engine.ts";
+import { GOMDORI_RULES } from "./gomdori-rules.ts";
 
 // match-action 의 검증+기록 코어. 사람(match-action)과 AI(match-ai-act)가 같은 규칙을
 // 통과하도록 단일화한다(ADR-005). actorUserId 만 다르고 로직은 동일.
@@ -102,8 +103,11 @@ export async function submitMatchAction(
   if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 행동할 수 없습니다.");
 
   if (match.status === "night") {
-    // 2026-06-15 설계 변경: 첫 밤도 능력 사용 가능(silent 해제). 과거 phase_number===1 차단 제거 —
-    // 이게 남아 있으면 엔진은 첫 밤을 해소하는데 제출이 막혀 첫 밤이 사실상 침묵으로 남았다.
+    // 첫 밤 silent (vault canon §34): phase_number===1 + firstNight.skipsAbilities 면
+    // 모든 능력 제출 차단. 정보 누적 전 첫 능력으로 결판나는 것 방지.
+    if (currentPhase.phase_number === 1 && GOMDORI_RULES.firstNight.skipsAbilities) {
+      throw conflict("first_night_silent", "첫 밤은 모두가 잠듭니다. 아침을 기다리세요.");
+    }
     const actorRole = effectiveRole(player);
     // 단일 출처(CORE_ROLES): 허용 액션·대상 규칙을 능력 정의에서 직접 도출(ADR-006 S1).
     const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);

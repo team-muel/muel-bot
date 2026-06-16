@@ -69,6 +69,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // 연속 포교 제한(파스아): 포교한 밤에 1 로 세팅 → 다음 밤 submission 을 match-action
       // 이 거부. 매 밤 1 씩 감소시켜 한 밤 건너 다시 가능하게 한다(리셋 아닌 카운트다운).
       if (counters.convertCooldown) counters.convertCooldown = Math.max(0, counters.convertCooldown - 1);
+      // 악몽 지연 (vault canon 팬텀): 지정한 그 밤(N)이 아니라 *다음* 밤(N+1)이 와야
+      // 대상이 '악몽' 상태가 되고, 그 다음 아침(D N+2)에 탈락한다. 지정 시점엔
+      // nightmarePending 만 세우고, 다음 밤 시작(여기)에서 nightmare 로 옮긴다.
+      if (counters.nightmarePending && counters.nightmarePending > 0) {
+        counters.nightmare = (counters.nightmare ?? 0) + counters.nightmarePending;
+        counters.nightmarePending = 0;
+      }
     }
   }
 
@@ -706,15 +713,17 @@ function applyEffect(
       events.push({ type: "eclipse_cast", payload: { user_id: target.userId } });
       break;
     case "Nightmare":
-      // 악몽(팬텀): 지연 탈락 표식 누적. 밤 보호(Protect, 1_NIGHT)는 밤 종료 시 사라지므로
-      // 막지 못한다 — 아침 해소(resolveNightmares)에서 탈락. 누적 2 = 영면(후속 단계).
-      target.counters.nightmare = (target.counters.nightmare ?? 0) + 1;
-      events.push({ type: "nightmare_marked", payload: { user_id: target.userId, level: target.counters.nightmare } });
-      // 영면(v2): 악몽 2회 누적이면 그 밤 즉시 처리(밤 보호 무시는 아침 악몽 해소와 동일하게
-      // markedForDeath 로 — 보호/수면이 막을 수 있으나 누적 악몽의 무게를 반영).
-      if (target.counters.nightmare >= 2) {
+      // 악몽(팬텀, vault canon — 2단계 지연): 지정한 그 밤(N) 에 표식만 예약 → 다음 밤(N+1)
+      // 시작 시 nightmarePending → nightmare 로 이동 → 그 다음 아침(D N+2)에 탈락
+      // (resolveNightmares). 밤 보호는 그 밤만 막을 수 있고 다음다음 아침의 탈락은 막지 못한다.
+      // 같은 대상 연속 지정 시 nightmare 가 누적되면 '영면' — 즉시 처치(markedForDeath, 그 밤).
+      if ((target.counters.nightmare ?? 0) >= 1) {
+        // 이미 '악몽' 상태에서 재지정 = 영면. 밤 보호/수면이 막을 수 있으나 누적 무게를 반영.
         target.markedForDeath = true;
         events.push({ type: "deep_sleep", payload: { user_id: target.userId } });
+      } else {
+        target.counters.nightmarePending = (target.counters.nightmarePending ?? 0) + 1;
+        events.push({ type: "nightmare_marked", payload: { user_id: target.userId, level: 1 } });
       }
       break;
     case "Corrupt":
