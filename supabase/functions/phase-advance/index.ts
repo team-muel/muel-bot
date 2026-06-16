@@ -823,13 +823,15 @@ Deno.serve((req: Request) => {
             );
           } else if (pending > 0) {
             // 추가 밤이 끝나고 오는 정상 아침 — 이때 팬텀 소멸. eclipseSoulOut 표식은
-            // 정상 day 진입을 보장(추가 밤 한 번 더 삽입되지 않도록).
+            // 정상 day 진입을 보장(추가 밤 한 번 더 삽입되지 않도록). vault canon §8 의
+            // '소멸' — 부활 불가. counters.annihilated=1 로 영속화해 미즐렛/헬렌 부활이
+            // 무효가 되도록(engine Heal effect 가 이 표식 체크).
             eclipseSoulOut = true;
-            const nextCounters = { ...(counters as Record<string, number>), eclipsePending: 0 };
+            const nextCounters = { ...(counters as Record<string, number>), eclipsePending: 0, annihilated: 1 };
             requireNoError(
               await supabase
                 .from("match_players")
-                .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "night_kill", engine_state: { ...(p.engine_state || {}), counters: nextCounters } })
+                .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "annihilation", engine_state: { ...(p.engine_state || {}), counters: nextCounters } })
                 .eq("match_id", matchId)
                 .eq("user_id", p.user_id),
             );
@@ -1010,43 +1012,15 @@ Deno.serve((req: Request) => {
         const candidateUserId = engineState.verdict?.candidateUserId || null;
         const candidate = candidateUserId ? players.find((player) => player.user_id === candidateUserId) : null;
         let executed = false;
-        let blockedByShield = false;
 
         if (verdict.approved && candidate?.alive) {
-          const counters =
-            candidate.engine_state?.counters && typeof candidate.engine_state.counters === "object" && !Array.isArray(candidate.engine_state.counters)
-              ? { ...(candidate.engine_state.counters as Record<string, number>) }
-              : {};
-          const shield = typeof counters.shield === "number" ? counters.shield : 0;
-
-          if (shield > 0) {
-            blockedByShield = true;
-            counters.shield = shield - 1;
-            requireNoError(
-              await supabase
-                .from("match_players")
-                .update({ engine_state: { ...(candidate.engine_state || {}), counters } })
-                .eq("match_id", matchId)
-                .eq("user_id", candidateUserId),
-            );
-
-            requireNoError(
-              await supabase
-                .from("match_events")
-                .insert({
-                  match_id: matchId,
-                  phase_id: phase.id,
-                  event_type: "execution_blocked_shield",
-                  visibility: "public",
-                  payload: {
-                    user_id: candidate.user_id,
-                    display_name: candidate.display_name,
-                    role: candidate.role,
-                    faction: candidate.faction,
-                  },
-                }),
-            );
-          } else {
+          // 처형(execution) — vault canon §8: '처형'은 '탈락'과 분류상 동질이지만 메커니즘
+          // 측면에서 별개. shield/protection 등 차단 효과는 *능력으로 인한 탈락*(engine 의
+          // markedForDeath 경로)에만 적용되고, 마을의 투표가 만드는 처형은 막을 수 없다.
+          // 아서 여명의 기사 패시브 "어떤 효과로도 탈락 X"도 능력 기반 탈락에 한정 — 투표
+          // 처형으로는 죽을 수 있어야 한다(canon: 마을의 의지). counters.shield 는 여기서
+          // 소비하지 않고 그대로 둬, 다음 밤 살해 1회 무효 자석으로 남는다.
+          {
             executed = true;
             requireNoError(
               await supabase
@@ -1096,7 +1070,6 @@ Deno.serve((req: Request) => {
                 skipped: verdict.skipped,
                 approved: verdict.approved,
                 executed,
-                blocked_by_shield: blockedByShield,
               },
             }),
         );
