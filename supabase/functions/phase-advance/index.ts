@@ -594,6 +594,38 @@ Deno.serve((req: Request) => {
               .eq("id", matchId),
           );
 
+          // 타락(루나) 후속 처리 (vault canon §28): corrupted 가 된 자는 새 진영의
+          // 동료 정체를 인지한다. circleKnown=true 로 영속화해 frontend 뷰가 demon
+          // 라인업을 노출하도록 한다. 채팅 회로(circleChat)는 캐논상 명시 없음 → 통지만.
+          // engine_state 갱신은 위 루프(line 555-588)가 currentFaction/currentRole 을
+          // 이미 영속화했으므로, 여기서는 circleKnown 만 추가로 패치한다.
+          const corruptedEvents = (events as Array<{ type: string; payload?: { user_id?: string; new_faction?: string } }>)
+            .filter((e) => e.type === "faction_changed" && e.payload?.new_faction === "demon" && typeof e.payload?.user_id === "string");
+          for (const ev of corruptedEvents) {
+            const uid = ev.payload!.user_id!;
+            const dbp = players.find((p) => p.user_id === uid);
+            if (!dbp) continue;
+            const es = (dbp.engine_state ?? {}) as Record<string, unknown>;
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...es, circleKnown: true } })
+                .eq("match_id", matchId)
+                .eq("user_id", uid),
+            );
+            dbp.engine_state = { ...es, circleKnown: true };
+            requireNoError(
+              await supabase.from("match_events").insert({
+                match_id: matchId,
+                phase_id: phase.id,
+                event_type: "corruption_received",
+                visibility: "private",
+                recipient_user_id: uid,
+                payload: { new_faction: "demon" },
+              }),
+            );
+          }
+
           // 엔진 이벤트 가시성 분류 (2026-06-12): 마을 전체가 알아야 하는 결과만
           // public. 나머지(봉인·매료·빙의·전향·변신·낙인·차단 피드백 등)는 비밀
           // 정보라 영향받은 당사자에게만 private(recipient RLS)로 전달 — 전부
@@ -760,14 +792,40 @@ Deno.serve((req: Request) => {
         }
         if (nmEvents.length > 0) players = await loadPlayers(supabase, matchId);
 
-        // 일식(팬텀): counters.eclipse 표식 보유자는 이 아침에 소멸하고, 아침(day) 대신
-        // 다음 밤으로 넘어간다. 표식은 소비(0). 팬텀 소멸이 승패에 영향하므로 win 체크 전에.
+        // 일식(팬텀, vault canon "다음 아침을 밤으로 변경, 대신 아침이 오면 팬텀 소멸"):
+        // 2단계 모델 — 캐스트 라운드의 아침을 건너뛰고 추가 밤을 삽입 → 그 추가 밤이
+        // 끝나고 오는 정상 아침에 팬텀 소멸. counter eclipse=1 (캐스트 그 밤) →
+        // eclipsePending=1 + eclipse=0 (이번 night_resolve 에 아침 건너뛰기) →
+        // eclipsePending>0 (다음 night_resolve = 정상 아침)에 소멸.
+        // eclipseActive 가 true 면 이번 페이즈는 night_suspect 로 — 아래 분기에서 처리.
         let eclipseActive = false;
+        let eclipseSoulOut = false;
         for (const p of players) {
-          const counters = (p.engine_state as { counters?: { eclipse?: number } } | null)?.counters;
-          if (p.alive && (counters?.eclipse ?? 0) > 0) {
+          const counters = (p.engine_state as { counters?: { eclipse?: number; eclipsePending?: number } } | null)?.counters;
+          if (!p.alive) continue;
+          const eclipse = counters?.eclipse ?? 0;
+          const pending = counters?.eclipsePending ?? 0;
+          if (eclipse > 0) {
+            // 캐스트 라운드의 night_resolve — 추가 밤 삽입 단계. 팬텀은 살아남는다.
             eclipseActive = true;
-            const nextCounters = { ...(counters as Record<string, number>), eclipse: 0 };
+            const nextCounters = { ...(counters as Record<string, number>), eclipse: 0, eclipsePending: 1 };
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(p.engine_state || {}), counters: nextCounters } })
+                .eq("match_id", matchId)
+                .eq("user_id", p.user_id),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({ match_id: matchId, phase_id: phase.id, event_type: "eclipse_cast_resolved", visibility: "public", payload: { user_id: p.user_id, night_number: phase.phase_number } }),
+            );
+          } else if (pending > 0) {
+            // 추가 밤이 끝나고 오는 정상 아침 — 이때 팬텀 소멸. eclipseSoulOut 표식은
+            // 정상 day 진입을 보장(추가 밤 한 번 더 삽입되지 않도록).
+            eclipseSoulOut = true;
+            const nextCounters = { ...(counters as Record<string, number>), eclipsePending: 0 };
             requireNoError(
               await supabase
                 .from("match_players")
@@ -782,7 +840,7 @@ Deno.serve((req: Request) => {
             );
           }
         }
-        if (eclipseActive) players = await loadPlayers(supabase, matchId);
+        if (eclipseActive || eclipseSoulOut) players = await loadPlayers(supabase, matchId);
 
         // 행복을 파는 가게(미즐렛 다수복귀, canon 패시브·1회): 탈락자가 생존자보다 많아지면
         // 미즐렛이 가장 최근 탈락 2명을 복귀(소멸·부활불가 무시)시키고 자신은 탈락한다.
@@ -1160,6 +1218,14 @@ Deno.serve((req: Request) => {
           .eq("id", matchId),
       );
 
+      // 일식 추가 밤 (vault canon, B4) 표식 — 캐스트 라운드 night_resolve 가 다음
+      // night_suspect 진입 시 eclipse_active=true 로 알린다. 그 다음 round (정상 밤)도
+      // eclipsePending 보유자가 살아 있는 동안 추가 밤 컨텍스트라 표식 유지. UI(NightPhase)가
+      // "일식의 밤" 안내를 켠다.
+      const eclipseExtraNightActive = (await loadPlayers(supabase, matchId)).some((p) =>
+        p.alive && (((p.engine_state as { counters?: { eclipsePending?: number } } | null)?.counters?.eclipsePending ?? 0) > 0)
+      );
+
       requireNoError(
         await supabase
           .from("match_events")
@@ -1173,6 +1239,7 @@ Deno.serve((req: Request) => {
               phase_number: nextPhaseNumber,
               expected_ended_at: expectedEndedAt,
               verdict_candidate_user_id: engineState.verdict?.candidateUserId || null,
+              eclipse_active: eclipseExtraNightActive,
             },
           }),
       );

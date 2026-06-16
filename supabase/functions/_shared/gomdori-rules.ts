@@ -41,7 +41,8 @@ export const GOMDORI_RULES = {
    *   (0초 페이즈·무한 토론 방지). 고급 오버라이드도 이 범위로 클램프된다.
    */
   pace: {
-    tunablePhases: ["firstNight", "nightSuspect", "night", "day", "vote", "verdict"],
+    // firstNight 은 능력 비활성 안내 구간 — 페이스 영향 받지 않는 시스템 페이즈.
+    tunablePhases: ["nightSuspect", "night", "day", "vote", "verdict"],
     defaultPreset: "standard",
     presets: {
       blitz: { label: "빠르게", detail: "짧고 빠른 한 판", scale: 0.6 },
@@ -49,7 +50,6 @@ export const GOMDORI_RULES = {
       relaxed: { label: "느긋", detail: "충분한 토론", scale: 1.6 },
     },
     clamp: {
-      firstNight: { min: 10, max: 90 },
       nightSuspect: { min: 5, max: 30 },
       night: { min: 15, max: 90 },
       day: { min: 60, max: 600 },
@@ -59,16 +59,15 @@ export const GOMDORI_RULES = {
   },
 
   /**
-   * 첫째 밤 (phase_number === 1) 룰.
+   * 첫째 밤 (phase_number === 1) 룰 — vault canon §34.
    *
-   * 2026-06-15 설계 변경(사용자 결정): 첫 밤도 일반 밤처럼 능력 사용 가능.
-   * "배정 직후 밤은 능력 없음"이 아니라 첫 밤부터 대악마 처치 등이 돌아야 한다.
-   * skipsAbilities=false → phase-advance 가 night1 을 정상 해소(능력 발동), duration 은
-   * 일반 밤과 동일(60초)로 행동 시간 확보. (구: silent 8초 안내성 밤.)
+   * 직업 배정 → silent first night (8초 안내) → 아침 → 밤 → ...
+   * skipsAbilities=true: 정보 누적 전 첫 능력으로 결판나는 것 방지 — 첫 밤은
+   * 능력 X, phase-advance 는 곧장 day1 로 넘긴다. 페이스 설정과 무관(고정 8초).
    */
   firstNight: {
-    skipsAbilities: false,
-    durationSec: 20,
+    skipsAbilities: true,
+    durationSec: 8,
   },
 
   /**
