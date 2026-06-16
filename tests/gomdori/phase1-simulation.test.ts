@@ -13,6 +13,7 @@ import {
   nextNightSuspectTransition,
   nightAfterSuspicionTransition,
 } from "../../supabase/functions/_shared/phase-flow.ts";
+import { resolvePhaseDurations } from "../../supabase/functions/_shared/gomdori-rules.ts";
 
 function player(userId: string, role: string, faction: "angel" | "demon"): PlayerState {
   return {
@@ -91,23 +92,63 @@ function runSuspicionSimulation() {
 }
 
 function runPhaseFlowSimulation() {
-  assert.deepEqual(firstNightTransition(), {
+  // 페이스 미설정(=standard) durations. duration 기대값은 매니페스트 단일 출처에서
+  // 해소 — 페이스 수치 튜닝 시 테스트가 따라온다(하드코딩 회귀 방지).
+  const durations = resolvePhaseDurations({});
+
+  assert.deepEqual(firstNightTransition(durations), {
     phaseType: "night",
     phaseNumber: 1,
-    durationSec: 8,
+    durationSec: durations.firstNight,
   });
 
-  assert.deepEqual(nextNightSuspectTransition(1), {
+  assert.deepEqual(nextNightSuspectTransition(1, durations), {
     phaseType: "night_suspect",
     phaseNumber: 2,
-    durationSec: 30,
+    durationSec: durations.nightSuspect,
   });
 
-  assert.deepEqual(nightAfterSuspicionTransition(2), {
+  assert.deepEqual(nightAfterSuspicionTransition(2, durations), {
     phaseType: "night",
     phaseNumber: 2,
-    durationSec: 60,
+    durationSec: durations.night,
   });
+}
+
+function runPaceResolutionSimulation() {
+  // 1) 미설정 = standard = 기존 동작 그대로(회귀 없음).
+  const base = resolvePhaseDurations({});
+  const std = resolvePhaseDurations({ pace: { preset: "standard" } });
+  assert.deepEqual(std, base);
+  assert.equal(base.day, 180);
+  assert.equal(base.night, 20);
+  // 고정 페이즈(roleAssign/nightResolve)는 프리셋 영향 밖.
+  assert.equal(base.roleAssign, 12);
+  assert.equal(base.nightResolve, 3);
+
+  // 2) 프리셋 스케일 — blitz < standard < relaxed (체감 페이즈에서).
+  const blitz = resolvePhaseDurations({ pace: { preset: "blitz" } });
+  const relaxed = resolvePhaseDurations({ pace: { preset: "relaxed" } });
+  assert.equal(blitz.day < std.day, true);
+  assert.equal(relaxed.day > std.day, true);
+  // 고정 페이즈는 프리셋과 무관하게 동일.
+  assert.equal(blitz.roleAssign, base.roleAssign);
+  assert.equal(relaxed.nightResolve, base.nightResolve);
+
+  // 3) 페이즈별 오버라이드가 프리셋을 덮어쓴다.
+  const overridden = resolvePhaseDurations({ pace: { preset: "standard", overrides: { day: 300 } } });
+  assert.equal(overridden.day, 300);
+  assert.equal(overridden.night, std.night); // 미오버라이드 페이즈는 프리셋 유지.
+
+  // 4) clamp — 범위 밖 오버라이드는 안전 구간으로 강제(0초/무한 토론 방지).
+  const tooLong = resolvePhaseDurations({ pace: { overrides: { day: 99999 } } });
+  assert.equal(tooLong.day, 600);
+  const tooShort = resolvePhaseDurations({ pace: { overrides: { vote: 0 } } });
+  assert.equal(tooShort.vote, 5);
+
+  // 5) 잘못된 입력은 무시되고 기본으로 폴백.
+  const junk = resolvePhaseDurations({ pace: { preset: "nope", overrides: { notAPhase: 9 } } } as Record<string, unknown>);
+  assert.deepEqual(junk, base);
 }
 
 function runAngelWinSimulation() {
@@ -284,5 +325,6 @@ runCountBonusSimulation();
 
 runSuspicionSimulation();
 runPhaseFlowSimulation();
+runPaceResolutionSimulation();
 
 console.log("Gomdori Phase 1 simulation tests passed.");
