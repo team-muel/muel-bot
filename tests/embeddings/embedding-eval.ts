@@ -8,7 +8,7 @@
  *   - Unexpected dimension/value drift.
  *
  * Dataset structure (kept in this file so it diffs cleanly in git):
- *   - 12 anchor texts (preferences, dream fragments, project facts).
+ *   - 12 anchor texts (preferences, memory fragments, project facts).
  *   - 1 paraphrase per anchor → positive pair, same meaning.
  *   - 1 adversarial near-miss per anchor → negative pair, similar topic/words,
  *     different meaning. The model should rank the paraphrase higher than the
@@ -99,10 +99,10 @@ const dataset: EvalRow[] = [
   { id: 'p11', pairId: 'p11', role: 'paraphrase', text: '사용자에게 vested interest가 있는 화자는 신호로서 가치가 낮다고 본다.' },
   { id: 'n11', pairId: 'p11', role: 'near_miss', text: '사용자는 이해관계가 있는 사람의 정보를 가장 깊이 있는 정보로 본다.' },
 
-  // 12. Project — Weave dream activity.
-  { id: 'a12', pairId: 'p12', role: 'anchor', text: 'Weave는 Discord 안에서 꿈 기록을 받아 Supabase에 저장하는 Muel 플랫폼의 Activity다.' },
-  { id: 'p12', pairId: 'p12', role: 'paraphrase', text: 'Weave는 Discord Activity로 작동하는 Muel 플랫폼의 꿈 기록 서비스이며 Supabase에 데이터가 쌓인다.' },
-  { id: 'n12', pairId: 'p12', role: 'near_miss', text: 'Weave는 외부 메모 앱과 동기화하는 Discord 봇 명령어다.' },
+  // 12. Project — Weave memory correction surface.
+  { id: 'a12', pairId: 'p12', role: 'anchor', text: 'Weave는 Muel이 사용자를 어떻게 기억하는지 보여주고 사용자가 맞음/틀림으로 교정하는 Activity다.' },
+  { id: 'p12', pairId: 'p12', role: 'paraphrase', text: 'Weave는 Discord Activity로 작동하며 Muel의 사용자 기억을 확인하고 바로잡는 기억 교정 표면이다.' },
+  { id: 'n12', pairId: 'p12', role: 'near_miss', text: 'Weave는 꿈 일기만 저장하는 별도 메모 앱이다.' },
 ];
 
 const cosine = (a: number[], b: number[]): number => {
