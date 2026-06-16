@@ -9,9 +9,11 @@ import {
   readRequiredString,
   toMatchSummary,
 } from "../_shared/game.ts";
+import { sanitizePaceSettings } from "../_shared/gomdori-rules.ts";
 
 // 방장이 로비에서 게임 설정을 바꾼다 (M3-1). 허용 키만 골라 settings jsonb 에 머지 —
-// 임의 키 주입 금지. 현재 허용: neutral("auto"|"on"|"off", 중립 등장 모드, 결정 잠금 #2).
+// 임의 키 주입 금지. 현재 허용: neutral("auto"|"on"|"off", 중립 등장 모드, 결정 잠금 #2),
+// pace(게임 시간 프리셋+페이즈별 오버라이드, 매니페스트로 정제).
 Deno.serve((req: Request) => {
   return withErrorHandling(req, async () => {
     const origin = req.headers.get("Origin");
@@ -37,6 +39,10 @@ Deno.serve((req: Request) => {
         throw badRequest("invalid_neutral_mode", "neutral 은 auto|on|off 중 하나여야 합니다.");
       }
       patch.neutral = neutral;
+    }
+    if ("pace" in body) {
+      // 매니페스트 기준 정제(유효 프리셋 + tunable 페이즈 오버라이드만, clamp 적용).
+      patch.pace = sanitizePaceSettings(body.pace);
     }
     if (Object.keys(patch).length === 0) {
       throw badRequest("no_settings", "변경할 설정이 없습니다.");

@@ -13,7 +13,7 @@ import {
 } from "../_shared/engine/engine.ts";
 import type { MatchState, PlayerState } from "../_shared/engine/types.ts";
 import { CONTACT_BLOCKED_DEMONS, DEMON_KILLER_ROLES, HELPER_CONTACT, HELPER_ROLES } from "../_shared/engine/roles.ts";
-import { GOMDORI_RULES } from "../_shared/gomdori-rules.ts";
+import { GOMDORI_RULES, resolvePhaseDurations } from "../_shared/gomdori-rules.ts";
 import {
   PHASE_NIGHT,
   PHASE_NIGHT_SUSPECT,
@@ -260,6 +260,22 @@ async function loadMatchEngineState(supabase: ReturnType<typeof getSupabaseAdmin
   return matchRecord.engine_state || {};
 }
 
+// 로비에서 호스트가 정한 페이스 설정(settings.pace) 로드 — 페이즈 duration 해소에 쓴다.
+async function loadMatchSettings(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  matchId: string,
+): Promise<Record<string, unknown>> {
+  const matchRecord = requireNoError(
+    await supabase
+      .from("matches")
+      .select("settings")
+      .eq("id", matchId)
+      .single(),
+  ) as { settings: Record<string, unknown> | null };
+
+  return matchRecord.settings || {};
+}
+
 async function finishMatchIfWon(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   matchId: string,
@@ -465,6 +481,10 @@ Deno.serve((req: Request) => {
 
       let engineState = await loadMatchEngineState(supabase, matchId);
       let players = await loadPlayers(supabase, matchId);
+      // 페이스: 호스트가 로비에서 정한 시간(프리셋+오버라이드)을 settings 에서 해소.
+      // 시작 후 settings 는 불변이라 매 페이즈마다 동일한 durations 가 나온다.
+      const matchSettings = await loadMatchSettings(supabase, matchId);
+      const durations = resolvePhaseDurations(matchSettings);
       let nextPhaseType: string | null = null;
       let nextDurationSec = 0;
       let nextPhaseNumber = phase.phase_number;
@@ -472,7 +492,7 @@ Deno.serve((req: Request) => {
       if (phase.phase_type === "role_assign") {
         // 변종 선택 마감: 미선택 폴백 + 가인→악마 보호막 재계산 + 접선 회로. 그 뒤 첫째 밤으로.
         await finalizeRoleSelection(supabase, matchId, phase.id);
-        const transition = firstNightTransition();
+        const transition = firstNightTransition(durations);
         nextPhaseType = transition.phaseType;
         nextDurationSec = transition.durationSec;
         nextPhaseNumber = transition.phaseNumber;
@@ -495,7 +515,7 @@ Deno.serve((req: Request) => {
           );
 
           nextPhaseType = "day";
-          nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
+          nextDurationSec = durations.day;
         } else {
           const actions = requireNoError(
             await supabase
@@ -651,7 +671,7 @@ Deno.serve((req: Request) => {
           }
 
           nextPhaseType = "night_resolve";
-          nextDurationSec = GOMDORI_RULES.phases.nightResolve.durationSec;
+          nextDurationSec = durations.nightResolve;
         }
       } else if (phase.phase_type === "night_suspect") {
         // 밤 의심 투표 집계 → 최다 의심자는 다가오는 밤 능력 사용 불가 (canon §3·§4).
@@ -711,7 +731,7 @@ Deno.serve((req: Request) => {
         );
 
         // 의심 투표와 그 밤은 같은 밤 번호 — phase_number 유지하고 night 로 전환.
-        const transition = nightAfterSuspicionTransition(phase.phase_number);
+        const transition = nightAfterSuspicionTransition(phase.phase_number, durations);
         nextPhaseType = transition.phaseType;
         nextDurationSec = transition.durationSec;
         nextPhaseNumber = transition.phaseNumber;
@@ -840,10 +860,10 @@ Deno.serve((req: Request) => {
             await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "case_closed", visibility: "public", payload: { user_id: caseClosed.demonUserId } }),
           );
           nextPhaseType = "verdict";
-          nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
+          nextDurationSec = durations.verdict;
         } else if (eclipseActive) {
           // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로.
-          const transition = nextNightSuspectTransition(phase.phase_number);
+          const transition = nextNightSuspectTransition(phase.phase_number, durations);
           nextPhaseType = transition.phaseType;
           nextDurationSec = transition.durationSec;
           nextPhaseNumber = transition.phaseNumber;
@@ -855,11 +875,11 @@ Deno.serve((req: Request) => {
             requireNoError(await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId));
           }
           nextPhaseType = "day";
-          nextDurationSec = GOMDORI_RULES.phases.day.durationSec;
+          nextDurationSec = durations.day;
         }
       } else if (phase.phase_type === "day") {
         nextPhaseType = "vote";
-        nextDurationSec = GOMDORI_RULES.phases.vote.durationSec;
+        nextDurationSec = durations.vote;
       } else if (phase.phase_type === "vote") {
         const actions = requireNoError(
           await supabase
@@ -911,10 +931,10 @@ Deno.serve((req: Request) => {
 
         if (tally.candidateUserId) {
           nextPhaseType = "verdict";
-          nextDurationSec = GOMDORI_RULES.phases.verdict.durationSec;
+          nextDurationSec = durations.verdict;
         } else {
           // 부결: 다음 밤으로. 둘째 밤부터는 의심 투표(night_suspect)를 먼저 거친다.
-          const transition = nextNightSuspectTransition(phase.phase_number);
+          const transition = nextNightSuspectTransition(phase.phase_number, durations);
           nextPhaseType = transition.phaseType;
           nextDurationSec = transition.durationSec;
           nextPhaseNumber = transition.phaseNumber;
@@ -1041,7 +1061,7 @@ Deno.serve((req: Request) => {
         }
 
         // 처형/부결 처리 후 다음 밤으로. 의심 투표(night_suspect)를 먼저 거친다.
-        const transition = nextNightSuspectTransition(phase.phase_number);
+        const transition = nextNightSuspectTransition(phase.phase_number, durations);
         nextPhaseType = transition.phaseType;
         nextDurationSec = transition.durationSec;
         nextPhaseNumber = transition.phaseNumber;
@@ -1115,7 +1135,7 @@ Deno.serve((req: Request) => {
             await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "starlit_night", visibility: "public", payload: { night_number: nextPhaseNumber } }),
           );
           nextPhaseType = PHASE_NIGHT;
-          nextDurationSec = GOMDORI_RULES.phases.night.durationSec;
+          nextDurationSec = durations.night;
         }
       }
 
