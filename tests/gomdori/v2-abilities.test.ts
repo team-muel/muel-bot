@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkWinCondition, resolveNightActions, resolveNightmares, tallyEliminationVotes } from "../../supabase/functions/_shared/engine/engine.ts";
+import { checkWinCondition, resolveNightActions, resolveNightmares, tallyEliminationVotes, tallySuspicionVotes } from "../../supabase/functions/_shared/engine/engine.ts";
 import { ANGEL_ROLES } from "../../supabase/functions/_shared/engine/roles.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
@@ -1561,4 +1561,75 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 엘런 해체된 퍼즐: shatter → 다음 밤 능력 차단 → 그 다음 밤 자동 회복(selfRecovered) ---
+{
+  const ellen: PlayerState = player("ellen", "ellen", "demon");
+  const a: PlayerState = player("a", "citizen", "angel");
+  // N1: shatter 발동 — brokenSelf=1, brokenAge=0.
+  const r1 = resolveNightActions(emptyState(
+    { ellen, a },
+    [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_shatter", priority: 5 }],
+  ));
+  assert.equal(r1.newState.players.ellen.counters.brokenSelf, 1, "shatter — brokenSelf 세팅");
+  assert.equal(r1.newState.players.ellen.counters.used_ellen_shatter, 1, "shatter — 1회 제한");
+  // N2: 다음 밤 — pre-loop 상태머신이 brokenAge 0→1, brokenSelf 유지. 능력 발동 시 차단.
+  const r2 = resolveNightActions({
+    ...r1.newState,
+    actionStack: [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
+  });
+  assert.equal(r2.newState.players.ellen.counters.brokenSelf, 1, "N2 — 여전히 broken");
+  assert.equal(r2.newState.players.ellen.counters.brokenAge, 1, "N2 — age 1");
+  assert.ok(r2.events.some((e: any) => e.type === "action_blocked_broken_self" && e.userId === "ellen"), "broken 동안 능력 차단");
+  // N3: pre-loop 상태머신이 brokenAge=1 보고 자동 회복(brokenSelf=0, selfRecovered=1).
+  const r3 = resolveNightActions(r2.newState);
+  assert.equal(r3.newState.players.ellen.counters.brokenSelf ?? 0, 0, "N3 — broken 해제");
+  assert.equal(r3.newState.players.ellen.counters.selfRecovered, 1, "N3 — selfRecovered 영속");
+  assert.ok(r3.events.some((e: any) => e.type === "ellen_recovered"), "회복 이벤트");
+}
+
+// --- broken 상태 — 투표·의심 가치 0 ---
+{
+  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), counters: { brokenSelf: 1 } };
+  const t = player("t", "citizen", "angel");
+  const vote = tallyEliminationVotes([{ actorUserId: "ellen", targetUserId: "t" }], { ellen, t });
+  assert.equal(vote.tallies["t"], undefined, "broken 엘런 — 투표 무효");
+  assert.equal(vote.skipped, 1, "broken — skipped");
+  const susp = tallySuspicionVotes([{ actorUserId: "ellen", targetUserId: "t" }], { ellen, t });
+  assert.equal(susp.tallies["t"], undefined, "broken 엘런 — 의심 무효");
+  assert.equal(susp.skipped, 1, "broken — suspicion skipped");
+}
+
+// --- 박해 변경효과: selfRecovered 상태에서 VoteTarget 대신 자기 자신 박해 ---
+{
+  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), counters: { selfRecovered: 1 }, lastVoteTarget: "victim" };
+  const victim: PlayerState = player("victim", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 3, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { ellen, victim },
+    actionStack: [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.ellen.counters.persecuteBias, 3, "selfRecovered — 자해 박해 +3");
+  assert.equal(r.newState.players.victim.counters.persecuteBias ?? 0, 0, "selfRecovered — VoteTarget 박해 차단");
+}
+{
+  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), lastVoteTarget: "victim" };
+  const victim: PlayerState = player("victim", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 3, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { ellen, victim },
+    actionStack: [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.victim.counters.persecuteBias, 3, "평시 — VoteTarget 박해 +3");
+  assert.equal(r.newState.players.ellen.counters.persecuteBias ?? 0, 0, "평시 — 엘런 자해 X");
+}
+
+// 엘런 v2 — 계약 정규식.
+assert.match(roles, /id: "ellen_shatter"[\s\S]*?maxUses: 1[\s\S]*?tag: "brokenSelf"/, "엘런 해체된 퍼즐 — 1회 + brokenSelf 세팅");
+assert.match(roles, /id: "ellen_persecute"[\s\S]*?skipIfSourceCounter: \{ key: "selfRecovered"/, "박해 평시 — selfRecovered 면 VoteTarget 분기 스킵");
+assert.match(roles, /id: "ellen_persecute"[\s\S]*?onlyIfSourceCounter: \{ key: "selfRecovered"/, "박해 변경 — selfRecovered 시 자해 분기");
+const ellenV2Mig = readFileSync("supabase/migrations/20260618130000_gomdori_ellen_v2.sql", "utf8");
+assert.match(ellenV2Mig, /'ellen_shatter'/, "마이그레이션 — 해체된 퍼즐");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/엘런해체) checks passed");

@@ -154,6 +154,19 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       pl.counters.delayPending = 0;
       if (!pl.tags.includes(TAG_DELAYED)) pl.tags.push(TAG_DELAYED);
     }
+    // 엘런 해체된 퍼즐 상태 머신(canon "해체된 퍼즐"): shatter 발동 밤 brokenSelf=1, brokenAge=0 →
+    // 다음 밤(여기) age 1 → 그 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1). 2밤 동안 가치
+    // 상실(tally/action gate)·회복 후 변경효과(자해 박해) 영구 전환. selfRecovered 영속.
+    if ((pl.counters?.brokenSelf ?? 0) > 0) {
+      if ((pl.counters.brokenAge ?? 0) === 0) {
+        pl.counters.brokenAge = 1;
+      } else {
+        pl.counters.brokenSelf = 0;
+        pl.counters.brokenAge = 0;
+        pl.counters.selfRecovered = 1;
+        events.push({ type: "ellen_recovered", payload: { user_id: pl.userId } });
+      }
+    }
   }
 
   for (const action of sortedActions) {
@@ -172,6 +185,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // silencedPermanent(세이카 재적용): 매 밤 지속 — 리셋되지 않아 영구 봉인.
     if ((sourcePlayer.counters?.silencedNights ?? 0) > 0 || (sourcePlayer.counters?.silencedPermanent ?? 0) > 0) {
       events.push({ type: "action_blocked_silenced", userId: sourcePlayer.userId });
+      continue;
+    }
+    // 엘런 해체된 퍼즐(canon "자아 망가진 동안 능력 가치 상실"): brokenSelf 보유자는 능력 발동
+    // 불가. 봉인과 달리 캐스터 자신의 자아 해체 — 그 밤 종료 시 자동 리셋 X (resolveNightActions
+    // 시작 reset 루프의 상태 머신이 brokenSelf→selfRecovered 전환을 직접 처리).
+    if ((sourcePlayer.counters?.brokenSelf ?? 0) > 0) {
+      events.push({ type: "action_blocked_broken_self", userId: sourcePlayer.userId });
       continue;
     }
 
@@ -439,6 +459,12 @@ export function tallyEliminationVotes(
       skipped += 1;
       continue;
     }
+    // 엘런 해체된 퍼즐(canon "자아 망가진 동안 투표 가치 상실"): brokenSelf 보유자(엘런 한정)는
+    // 그 라운드 투표가치 0. selfRecovered 후엔 정상 — 해체 윈도(2밤) 동안만.
+    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+      skipped += 1;
+      continue;
+    }
 
     if (!action.targetUserId) {
       skipped += 1;
@@ -514,6 +540,11 @@ export function tallySuspicionVotes(
       continue;
     }
 
+    // 엘런 해체된 퍼즐: brokenSelf 보유자는 의심가치도 0.
+    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+      skipped += 1;
+      continue;
+    }
     const weight = Math.max(0, 1 + (actor.suspicionValue || 0));
     if (weight === 0) {
       skipped += 1;

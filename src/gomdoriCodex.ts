@@ -259,8 +259,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "패시브", name: "박해자 / 해체된 퍼즐", text: "홀수날 투표 대상은 투표가 진행될 때마다 투표가치 +1. 자아 망가진 동안 투표·의심·능력 가치 상실. 자아 되찾으면 박해자 효과 변경(얻은 투표가치만큼 그날 아침 자신을 투표한 것으로)." },
       { kind: "능력", name: "비치지 않는 자아", text: "(시트 후속 다단계 — v2 정리 대상)." },
     ],
-    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). persecuteBias 가 지속 누적되어 같은 대상 재박해 시 +3/+6/+9로 tally에 반영된다.",
-    v2: "박해 누진 코어는 라이브. 해체된 퍼즐 상태 전환은 별도 확장 대상.",
+    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). persecuteBias 가 지속 누적되어 같은 대상 재박해 시 +3/+6/+9로 tally에 반영된다. ellen_shatter(v2, 1회): 자아 해체 — brokenSelf=1 세팅. engine 이 2밤 동안 brokenSelf 유지(brokenAge 0→1) 후 selfRecovered=1 영구 전환. broken 상태 = 투표·의심 가치 0(tally skip), 능력 발동 차단(action_blocked_broken_self). selfRecovered 상태 = ellen_persecute 변경효과 — VoteTarget 분기 skipIfSourceCounter, self 분기 onlyIfSourceCounter 로 자해 박해(+3 누진 근사 — canon '얻은 투표가치만큼 자신 투표' 의 동적 매핑은 후속).",
+    v2: "박해 누진, 해체된 퍼즐 2밤 가치 상실 + 자동 회복, 회복 후 자해 박해 영구 전환까지 핵심 라이브. 비치지 않는 자아 다단계와 동적 자해 amount(받은 voteValueMod 비례)는 후속.",
     vault: "Universes/BoW/Characters/엘런.md",
   },
 

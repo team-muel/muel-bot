@@ -320,7 +320,19 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 표적을 처형대로 민다 — 별도 지목 없이 자기 투표를 따라간다(canon 박해자).
         // 박해(v2 누진): 직전 투표 대상의 받는-투표가치가 *지속 누적*(persecuteBias). 같은 대상을
         // 거듭 투표·박해하면 +3, +6, +9… 처형대로 점점 민다(canon 투표마다 누진). 홀수날 한정.
-        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true }] },
+        // 해체된 퍼즐 변경효과(canon "박해자 변경 — 얻은 투표가치만큼 그날 아침 자신을 투표한
+        // 것으로 적용"): selfRecovered 상태에선 VoteTarget 대신 *자신*(엘런)에게 +3 누진 자해
+        // 박해(approx). 정확한 "얻은 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
+        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [
+          { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfSourceCounter: { key: "selfRecovered", min: 1 } },
+          { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfSourceCounter: { key: "selfRecovered", min: 1 } },
+        ] },
+        // 해체된 퍼즐(v2 능력 — 비치지 않는 자아 다단계 첫 단계): 자아를 의도적으로 해체(brokenSelf=1).
+        // 그 밤·다음 밤(brokenAge 1) 동안 투표·의심·능력 가치 모두 상실(tally 가 0 강제, 능력 차단).
+        // 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1) — canon "누군가 자아를 되찾으면 박해자
+        // 효과 변경". 회복 후 박해는 자해 박해(위 자신 대상 분기)로 영구 전환. 1회 제한 — 한 번
+        // 해체하면 게임 끝까지 selfRecovered 라 박해 패턴이 바뀐다.
+        { id: "ellen_shatter", name: "해체된 퍼즐", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "brokenSelf", amount: 1 }] },
       ],
     },
   },
