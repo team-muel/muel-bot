@@ -74,7 +74,12 @@ export interface Effect {
   //   annihilated) + demonRevealIn 카운트다운 세팅(이틀 후 악마팀 공개). target:"All" 로 사용.
   // DelayAction(가인 약간의 위선): 대상의 *다음* 능력 발동을 한 밤 연기(counters.delayPending →
   //   다음 밤 시작에 TAG_DELAYED 로 승격). Nullify(소멸)와 달리 효과를 없애지 않고 미룬다.
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction";
+  // Charge(루나 고요한 적막 비례 충전): 시전자(_source)의 counters[tag] 를 amount 만큼 올린다.
+  //   단 해소된 대상이 악마(actualFaction='demon')면 demonAmount 를 쓴다(canon 달빛 +10%/악마 +30%).
+  //   대상은 충전의 '기준'일 뿐 변경 대상이 아니다 — VoteTarget/SuspectTarget substrate 와 함께 쓴다.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge";
+  // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
+  demonAmount?: number;
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
   // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
   // 압도적 존재감). All 은 source 포함(천사 버프 등).

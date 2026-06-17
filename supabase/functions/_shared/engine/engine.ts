@@ -314,6 +314,21 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
           }
           player.tags = player.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비(영구 재발동 방지)
         }
+        // 잠입 수사(도르단) 불심검문: 관찰('infiltrated' 표식) 대상이 그 밤 탈락하면 도르단은
+        // 그 밤 받은 부정 효과(상태이상)를 모두 무시 — retroactive 정화(canon "그 밤 모든 부정 효과
+        // 무시"). 처치 면역은 범위 밖(상태 효과 한정). 표식 1회 소비.
+        if (player.tags.includes("infiltrated")) {
+          for (const d of Object.values(newState.players)) {
+            if (d.alive && d.currentRole === "dordan") {
+              for (const k of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"]) {
+                if (d.counters[k]) d.counters[k] = 0;
+              }
+              d.tags = d.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
+              events.push({ type: "stakeout_triggered", payload: { user_id: d.userId } });
+            }
+          }
+          player.tags = player.tags.filter((t) => t !== "infiltrated");
+        }
       }
     }
 
@@ -932,6 +947,16 @@ function applyEffect(
       const countKey = effect.tag ?? "countBonus";
       target.counters[countKey] = (target.counters[countKey] ?? 0) + (effect.amount ?? 1);
       events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1, counter: countKey } });
+      break;
+    }
+    case "Charge": {
+      // 비례 충전(루나 고요한 적막): 해소된 대상(VoteTarget/SuspectTarget)을 기준으로 시전자의
+      // counters[tag] 를 올린다. 대상이 악마면 demonAmount(canon 달빛 +10%/악마 +30%). 대상 자체는
+      // 변경하지 않는다 — 충전의 '기준'일 뿐. moonGauge 100% = 10(천사 10명분/악마 ~4명분).
+      const chargeKey = effect.tag ?? "moonGauge";
+      const amt = target.actualFaction === "demon" ? (effect.demonAmount ?? effect.amount ?? 0) : (effect.amount ?? 0);
+      _source.counters[chargeKey] = (_source.counters[chargeKey] ?? 0) + amt;
+      events.push({ type: "charged", payload: { user_id: _source.userId, counter: chargeKey, amount: amt } });
       break;
     }
     case "Charm":
