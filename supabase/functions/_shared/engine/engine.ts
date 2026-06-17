@@ -132,6 +132,11 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         events.push({ type: "corpse_summoned", payload: { user_id: userId, amount: counters.corpsePending } });
         counters.corpsePending = 0;
       }
+      // 임종 선언 쿨다운(하브레터스): 소명 발동 후 callingCooldown=3 세팅 → 매 밤 -1 카운트다운.
+      // 생명의 언약 성공 시 saveRewards 분기에서 추가 -1 (canon "성공 시 소명 대기 -1일").
+      if (counters.callingCooldown && counters.callingCooldown > 0) {
+        counters.callingCooldown -= 1;
+      }
       // 세이카 '자신만 아플 거야' 악마팀 공개 카운트다운: 흡수 소멸(demonRevealIn=2) 후 매 밤
       // 시작에 1 씩 감소, 0 이 되는 밤(=소멸 이틀 후)에 악마팀 전원 공개 이벤트를 방출한다.
       if (counters.demonRevealIn && counters.demonRevealIn > 0) {
@@ -293,7 +298,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         if (player.counters?.annihilated) player.counters.annihilated = 0;
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "arthur_immune", payload: { user_id: player.userId } });
-      } else if (player.tags.includes(TAG_PROTECTED)) {
+      } else if (player.tags.includes(TAG_PROTECTED) && !(player.counters?.annihilated ?? 0)) {
+        // Protect 보호 — 단 Annihilate(소멸, counters.annihilated=1) 는 우회한다.
+        // canon 아서 잔불 대검 + 하브레터스 역추리 적중("치료 무시") 모두 Annihilate 경로로 동작.
         player.markedForDeath = false;
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "attack_prevented", userId: player.userId });
@@ -302,6 +309,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         if (rw && newState.players[rw.source]) {
           newState.players[rw.source].counters[rw.counter] = (newState.players[rw.source].counters[rw.counter] ?? 0) + rw.amount;
           events.push({ type: "oath_fulfilled", payload: { user_id: rw.source, counter: rw.counter, amount: rw.amount } });
+          // canon "생명의 언약 성공 시 소명 대기 -1일" — 하브 한정 추가 쿨다운 단축.
+          const src = newState.players[rw.source];
+          if (src.currentRole === "habreterus" && (src.counters.callingCooldown ?? 0) > 0) {
+            src.counters.callingCooldown = Math.max(0, src.counters.callingCooldown - 1);
+            events.push({ type: "calling_cooldown_reduced", payload: { user_id: src.userId } });
+          }
         }
       } else if ((player.counters?.shield ?? 0) > 0) {
         // 보호막(가인 등): 밤 살해 1회 무효 + 소비. 처형 차단은 phase-advance에서 처리한다.
@@ -405,6 +418,26 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         type: "culprit_target_revealed",
         payload: { user_id: dordan.userId, culprit_user_id: dordan.lastVoteTarget, target_user_ids: targetIds },
       });
+    }
+
+    // 임종 선언(하브레터스): deathHook 으로 누적된 callingPending 을 소비하며 쿨다운 0 일 때만 소명
+    // 발동(canon "치료 실패로 탈락한 날 ..."). 발동 효과 = voteValueMod -1(자기 처벌) + countBonus +1
+    // (천사팀 카운트) + 부정효과 정화 + callingCooldown=3 (다음 3밤 봉인). callingPending 은 발동
+    // 여부와 무관하게 그 라운드에 소비된다(연달은 사망은 한 번에 묶임).
+    for (const hab of Object.values(newState.players)) {
+      if (!hab.alive || hab.currentRole !== "habreterus") continue;
+      const pending = hab.counters?.callingPending ?? 0;
+      if (pending <= 0) continue;
+      hab.counters.callingPending = 0;
+      if ((hab.counters.callingCooldown ?? 0) === 0) {
+        hab.counters.voteValueMod = (hab.counters.voteValueMod ?? 0) - 1;
+        hab.counters.countBonus = (hab.counters.countBonus ?? 0) + 1;
+        for (const k of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias"]) {
+          if (hab.counters[k]) hab.counters[k] = 0;
+        }
+        hab.counters.callingCooldown = 3;
+        events.push({ type: "habreterus_calling", payload: { user_id: hab.userId } });
+      }
     }
   }
 
@@ -996,9 +1029,21 @@ function applyEffect(
       break;
     }
     case "Deduce": {
-      // 상호추리(하브레터스 삶이 있는 곳으로): 대상이 악마팀 처치자면 '적중' — 시전자의 그 밤
-      // 부정 효과를 정화(악마 효과 면역 근사). 빗나가면 통지만. 악마측 역추리(하브 탈락)는 후속.
-      if (isDemonKillerRole(target.currentRole)) {
+      // 상호추리(하브레터스 삶이 있는 곳으로) — 양방향, source 진영 기준 분기.
+      //  - source angel(하브): 대상이 악마팀 처치자면 '적중' — 시전자의 그 밤 부정 효과 정화
+      //    (악마 효과 면역 근사). 빗나가면 통지만.
+      //  - source demon(대악마 역추리): 대상이 하브레터스면 '적중' — 대상 Annihilate(markedForDeath +
+      //    annihilated=1, 1단 단발). engine death loop 의 PROTECTED 게이트를 annihilated 가 우회 →
+      //    치료(Protect) 효과를 무시하고 처치(canon "치료 무시"). 빗나가면 통지만.
+      if (_source.actualFaction === "demon") {
+        if (target.currentRole === "habreterus") {
+          target.markedForDeath = true;
+          target.counters.annihilated = 1;
+          events.push({ type: "deduce_demon_hit", payload: { user_id: _source.userId, target: target.userId } });
+        } else {
+          events.push({ type: "deduce_miss", payload: { user_id: _source.userId, target: target.userId } });
+        }
+      } else if (isDemonKillerRole(target.currentRole)) {
         for (const k of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"]) {
           if (_source.counters[k]) _source.counters[k] = 0;
         }

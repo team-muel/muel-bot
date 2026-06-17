@@ -1561,4 +1561,86 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 임종 선언(하브): 그 라운드 누군가 탈락 → 소명 발동(쿨다운 0 일 때만) ---
+{
+  const hab: PlayerState = player("hab", "habreterus", "angel");
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const victim: PlayerState = player("victim", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { hab, demon, victim },
+    actionStack: [{ sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.victim.alive, false, "악마 처치 — 피해자 탈락");
+  // 사탄의 마 -1 (demon_kill AllOthers) + 임종 선언 -1 (자기 처벌) = -2.
+  assert.equal(r.newState.players.hab.counters.voteValueMod, -2, "임종 선언 — 사탄의 마(-1) + 자기 처벌(-1)");
+  assert.equal(r.newState.players.hab.counters.countBonus, 1, "임종 선언 — 천사팀 카운트 +1");
+  assert.equal(r.newState.players.hab.counters.callingCooldown, 3, "임종 선언 — 쿨다운 3 세팅");
+  assert.ok(r.events.some((e: any) => e.type === "habreterus_calling"), "habreterus_calling 이벤트");
+  // 다음 라운드 — 쿨다운 카운트다운 -1.
+  const next = resolveNightActions({ ...r.newState, actionStack: [] });
+  assert.equal(next.newState.players.hab.counters.callingCooldown, 2, "다음 밤 — 쿨다운 -1 (3→2)");
+}
+
+// --- 생명의 언약 성공 시 callingCooldown -1일 (canon) ---
+{
+  const hab: PlayerState = { ...player("hab", "habreterus", "angel"), counters: { callingCooldown: 3 } };
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const t: PlayerState = player("t", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { hab, demon, t },
+    actionStack: [
+      { sourceUserId: "hab", targetUserId: "t", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "demon", targetUserId: "t", actionType: "demon_kill", priority: 4 },
+    ],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.t.alive, true, "치료 성공 — 대상 생존");
+  // 쿨다운 3 → 매 밤 -1 (=2) + 성공 추가 -1 (=1).
+  assert.equal(r.newState.players.hab.counters.callingCooldown, 1, "치료 성공 — 쿨다운 추가 -1 (3→2→1)");
+  // 사탄의 마 -1 (demon_kill AllOthers) + 소명 +3 (oath_fulfilled) = +2.
+  assert.equal(r.newState.players.hab.counters.voteValueMod, 2, "생명의 언약 — 시전자 voteValueMod (사탄의 마 -1 + 소명 +3 = 2)");
+  assert.ok(r.events.some((e: any) => e.type === "calling_cooldown_reduced"), "calling_cooldown_reduced 이벤트");
+}
+
+// --- 악마 측 역추리: demon_deduce 적중 시 하브 Annihilate + 치료 무시 ---
+{
+  const hab: PlayerState = player("hab", "habreterus", "angel");
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const doc: PlayerState = player("doc", "doctor", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { hab, demon, doc },
+    actionStack: [
+      { sourceUserId: "doc", targetUserId: "hab", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "demon", targetUserId: "hab", actionType: "demon_deduce", priority: 4 },
+    ],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.hab.alive, false, "역추리 적중 — 하브 탈락(치료 무시)");
+  assert.equal(r.newState.players.hab.counters.annihilated, 1, "역추리 적중 — annihilated 플래그");
+  assert.ok(r.events.some((e: any) => e.type === "deduce_demon_hit"), "deduce_demon_hit 이벤트");
+}
+{
+  const hab: PlayerState = player("hab", "habreterus", "angel");
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const inn: PlayerState = player("inn", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { hab, demon, inn },
+    actionStack: [{ sourceUserId: "demon", targetUserId: "inn", actionType: "demon_deduce", priority: 4 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.inn.alive, true, "역추리 빗나감 — 대상 무사");
+  assert.ok(r.events.some((e: any) => e.type === "deduce_miss"), "deduce_miss 이벤트");
+}
+
+// 하브레터스 v2 — 계약 정규식.
+assert.match(roles, /id: "habreterus"[\s\S]*?deathHook:[\s\S]*?counter: "callingPending"/, "하브 deathHook — callingPending");
+assert.match(roles, /id: "demon_deduce"[\s\S]*?type: "Deduce"/, "악마 역추리 — Deduce effect");
+const habMig = readFileSync("supabase/migrations/20260618140000_gomdori_habreterus_v2.sql", "utf8");
+assert.match(habMig, /'demon_deduce'/, "마이그레이션 — 악마 역추리");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/임종선언/소명쿨다운/역추리) checks passed");

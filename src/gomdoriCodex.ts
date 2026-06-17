@@ -85,8 +85,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "생명의 언약", text: "대상 치료. 성공 시 투표가치 +3, 소명 대기 -1일." },
       { kind: "능력2", name: "삶이 있는 곳으로", text: "게임 시작 시 악마에게 하브레터스 존재 통지. 매 밤 서로 추리 — 악마 성공→다음 아침 탈락(치료 무시), 하브레터스 성공→악마 효과 면역." },
     ],
-    v1: "구현됨. doctor_heal(1_NIGHT 보호) — 생명의 언약 + 소명(onSaveGrantSelf: 그 밤 실제 공격을 막으면 시전자 투표가치 +3). habreterus_deduce 는 악마 처치자 적중 시 하브레터스의 그 밤 부정효과를 정화하고 deduce_hit/deduce_miss 를 통지한다.",
-    v2: "치료 성공 보상과 하브레터스 측 상호추리 면역은 라이브. 소명 3일 쿨다운과 악마측 역추리 탈락은 별도 서브시스템 확장 대상.",
+    v1: "구현됨. doctor_heal(1_NIGHT 보호) — 생명의 언약 + 소명(onSaveGrantSelf: 그 밤 실제 공격을 막으면 시전자 투표가치 +3). habreterus_deduce(하브 측 상호추리) + demon_deduce(악마 측 역추리 v2, 대악마 전용): 대악마가 하브 정체 적중 시 Annihilate(annihilated=1) — engine death loop 의 PROTECTED 게이트를 우회해 치료(Protect) 효과 무시 처치. 임종 선언(v2 deathHook): 그 라운드 탈락자 1명당 callingPending +1 → engine 후처리가 cooldown==0 일 때만 소명 발동(voteValueMod -1 + countBonus +1 + 부정효과 정화 + callingCooldown=3). 생명의 언약 성공 시 saveRewards 분기에서 callingCooldown 추가 -1 (canon '성공 시 소명 대기 -1일').",
+    v2: "임종 선언 + 소명 3일 쿨다운 + 양방향 상호추리(악마 측 역추리 = 하브 Annihilate 치료 무시)까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/하브레터스.md",
   },
   {
