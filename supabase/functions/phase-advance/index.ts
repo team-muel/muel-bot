@@ -991,6 +991,16 @@ Deno.serve((req: Request) => {
         ) as DbAction[];
         const state = playerStateFromRows(matchId, "vote", phase.phase_number, players, engineState.modifiers);
         const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
+        // 루루 무투(악보 교체 무투): 그 라운드 적용 후 voteCountBonus 소비(canon "다음 아침" 1회 한정).
+        for (const p of players) {
+          const es = (p.engine_state ?? {}) as Record<string, unknown>;
+          const c = (es.counters ?? {}) as Record<string, number>;
+          if ((c.voteCountBonus ?? 0) > 0) {
+            const next = { ...es, counters: { ...c, voteCountBonus: 0 } };
+            requireNoError(await supabase.from("match_players").update({ engine_state: next }).eq("match_id", matchId).eq("user_id", p.user_id));
+            p.engine_state = next;
+          }
+        }
         const voteSummary = {
           candidateUserId: tally.candidateUserId,
           tallies: tally.tallies,

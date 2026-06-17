@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkWinCondition, resolveNightActions, resolveNightmares, tallyEliminationVotes, tallySuspicionVotes } from "../../supabase/functions/_shared/engine/engine.ts";
+import { checkWinCondition, resolveNightActions, resolveNightmares, tallyEliminationVotes, tallySuspicionVotes, tallyVerdictVotes } from "../../supabase/functions/_shared/engine/engine.ts";
 import { ANGEL_ROLES } from "../../supabase/functions/_shared/engine/roles.ts";
 import type { Faction, MatchState, PlayerState } from "../../supabase/functions/_shared/engine/types.ts";
 
@@ -1952,4 +1952,29 @@ const engineSrcMz = readFileSync("supabase/functions/_shared/engine/engine.ts", 
 assert.match(engineSrcMz, /dessert_received/, "engine — dessert_received 이벤트 발사");
 assert.match(engineSrcMz, /dessert_chat_open/, "engine — dessert_chat_open 이벤트 발사");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체/사탄의마전역/임종선언/소명쿨다운/역추리/헬렌추억/미즐렛회로) checks passed");
+// --- 루루 무투(악보 교체): voteCountBonus 적용 시 처형 투표 2배 ---
+{
+  const luru: PlayerState = { ...player("luru", "luru", "angel"), counters: { voteCountBonus: 1 } };
+  const t = player("t", "citizen", "angel");
+  const r = tallyEliminationVotes([{ actorUserId: "luru", targetUserId: "t" }], { luru, t });
+  assert.equal(r.tallies["t"], 2, "무투 — 처형 표 2배(base 1 * 2)");
+}
+{
+  const luru: PlayerState = { ...player("luru", "luru", "angel"), counters: { voteCountBonus: 1 } };
+  const t = player("t", "citizen", "angel");
+  const r = tallyVerdictVotes([{ actorUserId: "luru", targetUserId: "t", actionType: "verdict_approve" }], { luru, t });
+  assert.equal(r.approve, 2, "무투 — 찬반 표 2배");
+}
+{
+  const luru: PlayerState = player("luru", "luru", "angel");
+  const t = player("t", "citizen", "angel");
+  const r = tallyEliminationVotes([{ actorUserId: "luru", targetUserId: "t" }], { luru, t });
+  assert.equal(r.tallies["t"], 1, "voteCountBonus 0 — 평시 1배");
+}
+
+// 루루 v2 — 계약 정규식.
+assert.match(roles, /id: "luru_mute"[\s\S]*?tag: "voteCountBonus"/, "루루 무투 — voteCountBonus 세팅");
+const luruMig = readFileSync("supabase/migrations/20260618150000_gomdori_luru_mute.sql", "utf8");
+assert.match(luruMig, /'luru_mute'/, "마이그레이션 — 루루 무투");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체/사탄의마전역/임종선언/소명쿨다운/역추리/헬렌추억/미즐렛회로/루루무투) checks passed");
