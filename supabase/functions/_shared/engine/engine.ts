@@ -802,7 +802,7 @@ function applyEffect(
     case "Haunt":
       // 혼령 방출(말렌 다단계): 1회차 → 혼령 표식(haunted, 지속). 2회차(표식 보유) → 영에게
       // 잠식: 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
-      // (마비=다음 밤 행동 봉인은 후속 — silencedNights 는 그 밤 한정 리셋이라 별도 카운터 필요.)
+      // 마비는 silencePending 으로 다음 밤 봉인을 예약한다.
       if ((target.counters?.haunted ?? 0) > 0) {
         target.markedForDeath = true;
         target.counters.haunted = 0;
@@ -913,8 +913,8 @@ function applyEffect(
     case "DelayAction":
       // 약간의 위선(가인): 대상의 *다음* 능력 발동을 한 밤 연기(소멸이 아니라 미룸). delayPending
       // 예약 → 다음 밤 시작에 TAG_DELAYED 로 승격(resolveNightActions 리셋 루프). 지속 카운터라
-      // 라운드 리셋 대상이 아니다(예약은 다음 밤에 한 번 소비). canon '효과를 다음 밤으로 연기'.
-      // ※ canon 후속(미구현): 대상이 악마에 의해 탈락하면 연기 무효 + 다음 위선이 탈락 효과로 전환.
+      // 라운드 리셋 대상이 아니다(예약은 다음 밤에 한 번 소비). 대상이 밤에 탈락하면 아래
+      // death hook 이 가인의 다음 위선을 처치 효과로 전환한다.
       target.counters.delayPending = (target.counters.delayPending ?? 0) + 1;
       events.push({ type: "hypocrisy_delayed", payload: { user_id: target.userId } });
       break;

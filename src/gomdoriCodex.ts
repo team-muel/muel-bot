@@ -11,7 +11,7 @@
  * 'demon'으로 저장) 과 다르다. 도감은 사람이 읽는 분류를 따른다.
  *
  * 정본 출처: vault `Universes/BoW/Characters/*` + 2021 컨트롤 F 통합 시트(GDrive).
- * v1 필드 최신화: 2026-06-11 — 엔진 roles.ts(555b71a, M1 깊은 악마 마감) 기준 동기화.
+ * v1/v2 필드 최신화: 2026-06-17 — 전 로스터 v2 핵심 엔진/테스트 기준 동기화.
  */
 
 export type CodexFaction = "angel" | "demon" | "helper" | "neutral";
@@ -61,8 +61,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "백호", text: "백호 소환 시 천사팀 카운트 +3(생존 무관, 지속). 소환 이후 악마는 모든 천사 제거 외 승리 경로 없음." },
     ],
-    v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +1 / deadCountBonus +1 획득(초기 미보유, canon +3 은 튜닝 후속). 배정 자동 주입 폐지.",
-    v2: "소환 자석 +3(canon) 튜닝 + 거친 포효 등 후속.",
+    v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +3 / deadCountBonus +3 획득. 배정 자동 주입이 아니라 능동 소환으로 처리하며 maxUses 1로 재사용을 차단한다.",
+    v2: "백호 소환의 canon +3 생존/사후 카운트가 라이브. 거친 포효 등 추가 시트 능력은 별도 확장 대상.",
     vault: "Universes/BoW/Characters/라이너.md",
   },
   {
@@ -73,8 +73,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "단서 수집 / 사건의 전말", text: "대상의 능력 발동 확인 + 단서. 단서 (5-탈락자)개 → '사건의 전말'로 변경(악마면 전원 통지+아침 생략+판결)." },
       { kind: "능력2", name: "잠입 수사", text: "대상을 밤 동안 관찰. 탈락/탈락시키면 '불심검문' 발동, 그 밤 도르단은 모든 부정 효과 무시." },
     ],
-    v1: "구현됨. police_investigate(악마/천사 판정) + 침착한 탐정 단서(death-hook: 탈락자 1명당 단서 +1). 단서 3개부터 정밀 조사(정확한 직업 통지) + 사건의 전말(정밀 조사로 악마 처치자 식별 시 matches.engine_state.caseClosed → phase-advance 가 아침 생략·그 악마 강제 판결). 잠입 수사는 후속.",
-    v2: "단서 카운터(탈락자 수 연동) + '사건의 전말' 단계 전환(전원 통지·아침 생략·판결 강제). 잠입 수사(관찰→불심검문→부정효과 무시).",
+    v1: "구현됨. police_investigate(악마/천사 판정) + 침착한 탐정 단서(death-hook: 탈락자 1명당 단서 +1). 단서 3개부터 정밀 조사(정확한 직업 통지) + 사건의 전말(정밀 조사로 악마 처치자 식별 시 matches.engine_state.caseClosed → phase-advance 가 아침 생략·그 악마 강제 판결). dordan_infiltrate 는 관찰 대상이 그 밤 탈락하면 stakeout_triggered 로 도르단 부정효과를 정화한다.",
+    v2: "단서 카운터(탈락자 수 연동), 사건의 전말(전원 통지·아침 생략·판결 강제), 잠입 수사(관찰→불심검문→부정효과 무시)까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/도르단.md",
   },
   {
@@ -85,8 +85,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "생명의 언약", text: "대상 치료. 성공 시 투표가치 +3, 소명 대기 -1일." },
       { kind: "능력2", name: "삶이 있는 곳으로", text: "게임 시작 시 악마에게 하브레터스 존재 통지. 매 밤 서로 추리 — 악마 성공→다음 아침 탈락(치료 무시), 하브레터스 성공→악마 효과 면역." },
     ],
-    v1: "구현됨. doctor_heal(1_NIGHT 보호) — 생명의 언약 + 소명(onSaveGrantSelf: 그 밤 실제 공격을 막으면 시전자 투표가치 +3). 소명 3일 쿨다운·악마 상호추리 서브게임은 후속(서브시스템 필요).",
-    v2: "소명 카운트다운(3일 쿨다운) + 치료 성공 투표가치 보너스. 악마-하브레터스 상호 추리 서브게임(승패에 따라 탈락/면역).",
+    v1: "구현됨. doctor_heal(1_NIGHT 보호) — 생명의 언약 + 소명(onSaveGrantSelf: 그 밤 실제 공격을 막으면 시전자 투표가치 +3). habreterus_deduce 는 악마 처치자 적중 시 하브레터스의 그 밤 부정효과를 정화하고 deduce_hit/deduce_miss 를 통지한다.",
+    v2: "치료 성공 보상과 하브레터스 측 상호추리 면역은 라이브. 소명 3일 쿨다운과 악마측 역추리 탈락은 별도 서브시스템 확장 대상.",
     vault: "Universes/BoW/Characters/하브레터스.md",
   },
   {
@@ -97,8 +97,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "디저트 선물", text: "쿠키(탈락해도 그 밤 능력 발동)/푸딩(무시불가 버프, 탈락 시점 밤으로 조정)." },
       { kind: "능력2", name: "고급 와인", text: "디저트 받은 대상은 부정효과 제거+미즐렛과 대화. 미제공 대상은 자기 부정효과 사라지고 투표가치 -1." },
     ],
-    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(디저트 선물: 생존자 보호+디저트 태그, Protect+AddTag) + 다수복귀 패시브(행복을 파는 가게: 탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). 고급 와인은 후속.",
-    v2: "부활(탈락자 대상 Heal) + 디저트 버프(쿠키/푸딩 태그) + 다수 복귀 패시브(탈락>생존 트리거). 새 이펙트: Revive(SINGLE_DEAD).",
+    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(생존자 보호+디저트 태그) + 다수복귀 패시브(탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). mizlet_wine 은 전원 정화 + 디저트 미제공자 voteValueMod -1로 라이브.",
+    v2: "부활, 디저트 버프, 다수 복귀 패시브, 고급 와인 정화/페널티까지 핵심 라이브. 미즐렛과 디저트 대상 대화 연결은 별도 확장 대상.",
     vault: "Universes/BoW/Characters/미즐렛.md",
   },
   {
@@ -109,8 +109,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "황금빛 수면", text: "대상 수면(부정효과 무효+행동 불가). 깨어나면 지정대상·투표가치 +1. 연속 같은 대상 불가." },
       { kind: "능력2", name: "자유로운 새", text: "다음 아침 탈락자들이 생존 행동 가능. 처형/탈락자에게 수면 부여. 지속 '추억을 간직하는 법'(수면으로 깨면 복귀)." },
     ],
-    v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(생존자 황금빛 수면 — Sleep: 죽음보호+행동봉인+부정효과 무효). 새 이펙트 Sleep 도입.",
-    v2: "수면으로 깨어난 탈락자 복귀 연계 + 추억을 간직하는 법 후속.",
+    v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(생존자 황금빛 수면 — Sleep: 죽음보호+행동봉인+부정효과 무효) + helen_freebird(탈락자 추가 복귀, 1회).",
+    v2: "수면 보호/봉인/정화, 부활, 자유로운 새 추가 복귀까지 핵심 라이브. 추억 기반 지속 복귀 연계는 별도 확장 대상.",
     vault: "Universes/BoW/Characters/헬렌.md",
   },
   {
@@ -121,8 +121,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1 + '군인의 사명' 부여. 발동/생존 시 우노 '명예'(천사팀 카운트·투표가치 +10)." },
       { kind: "능력2", name: "용맹함", text: "전원 투쟁 발동. 우노 투표 대상은 사망 기록+소속 공개. 천사면 '명예 실추'(밤 행동 불가). 1회." },
     ],
-    v1: "구현됨. 명예 countBonus +1 + 투표가치 +10(배정 — 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁, GrantCount) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁). 소속 공개·명예 실추는 후속.",
-    v2: "투쟁(대상 카운트 +1 + 악마효과 제거 충전) 능동화 + 용맹함(전원 효과·소속 공개·명예 실추) 1회.",
+    v1: "구현됨. 명예 countBonus +1 + 투표가치 +10(배정 — 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁, GrantCount) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁 + 투표대상 소속 공개/처형 + 천사 살해 시 우노 다음 밤 봉인).",
+    v2: "투쟁, 용맹함 전원 효과, 소속 공개, 명예 실추까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/우노.md",
   },
   {
@@ -146,7 +146,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력2", name: "자신만 아플 거야", text: "전원 부여 효과를 세이카에게. 악마팀 효과 3개+ 받으면 소멸, 이틀 후 악마팀 공개. 1회." },
     ],
     v1: "구현됨. seika_supernova — 초신성(Cleanse 부정효과 제거 + Silence 봉인, priority 1; seikaMark 재적용 시 silencedPermanent 영구 봉인) + 별이 떠오른 밤(onFireSetCounter starlitNext → phase-advance 가 다음 밤 의심 투표 생략). 새 이펙트 Cleanse 도입.",
-    v2: "자신만 아플 거야 핵심(seika_absorb: 전원 정화 Cleanse All, 1회) 라이브. 악마팀 효과 3개+ 소멸·이틀 후 악마팀 공개 downside 는 후속.",
+    v2: "자신만 아플 거야(seika_absorb)는 전원 정화, 악마팀 출처 효과 3개+ 흡수 시 세이카 소멸, 이틀 후 악마팀 공개 카운트다운까지 라이브.",
     vault: "Universes/BoW/Characters/세이카.md",
   },
   {
@@ -157,8 +157,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "영혼을 만지는 음색", text: "대상 매료 — 투표 권한이 루루에게 양도. 능력 발동으로 해제." },
       { kind: "능력2", name: "악보 교체", text: "투표를 몇 명에게든 행사. 무투(다음 아침 투표 2회)/자투(투표가치 +(1+매료), 반론 다인 등판) 등 악보 변경." },
     ],
-    v1: "구현됨. luru_charm(매료 + charmCount 게이지) + luru_sonata(매료 3 누적 시: 전원 Cleanse + 자기 무적, requiresCounter·소비). 악보 교체(투표 재설계)는 후속.",
-    v2: "매료(투표 권한 양도) + 소나타(매료 3명→전원 버프·무적) + 악보 교체. 새 이펙트: VoteDelegate + 매료 카운트.",
+    v1: "구현됨. luru_charm(매료 + charmCount 게이지 + 투표권 양도 voteWeightBonus) + luru_sonata(매료 3 누적 시: 전원 Cleanse + 자기 무적, requiresCounter·소비) + luru_score(악보 교체 자투: 자기 투표가치 +1, 1회).",
+    v2: "매료, 소나타, 악보 교체 자투 코어까지 라이브. 무투/다중 투표/반론 등판형 악보 재설계는 별도 확장 대상.",
     vault: "Universes/BoW/Characters/루루.md",
   },
 
@@ -185,8 +185,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "악몽", text: "대상은 밤이 오면 '악몽', 연속이면 '영면'. 악몽→아침 탈락. 영면→즉시 처리 가능. 5회 제한." },
       { kind: "능력2", name: "일식", text: "다음 아침을 밤으로 변경, 대신 아침이 오면 팬텀 소멸. 1회." },
     ],
-    v1: "구현됨. phantom_nightmare(악몽: 아침 탈락; 누적 2 = 영면 즉시 처리) + phantom_seal(봉인) + phantom_eclipse(일식, 1회). N명 동시봉인은 후속.",
-    v2: "어둠이 내린 도시(매 밤 N명 능력 봉인) + 악몽(지연 탈락: 악몽→영면→탈락) + 일식(아침→밤 전환, 자기 소멸). 새 이펙트: Silence/DelayedKill/PhaseSwap.",
+    v1: "구현됨. phantom_nightmare(지정 밤→다음 밤 악몽→다음 아침 탈락, 5회 제한), 재지정 영면(deepsleep) + phantom_reap 일괄 처치, phantom_seal(동적 다중 봉인: 2+sealCap, 아침마다 성장, 무지목 시 악몽 +2), phantom_silentnight(밤 연장+천사 카운트 보상), phantom_eclipse(아침→밤 전환+자기 소멸).",
+    v2: "어둠이 내린 도시, 악몽/영면/영면 발동, 침묵의 밤, 일식까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/팬텀.md",
   },
   {
@@ -198,8 +198,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "혼령 방출", text: "지목 대상 무차별 공격. 1회→'혼령' 표식+마비, 2회→영에게 잠식(생존 미취급, 투표가치 조공)." },
       { kind: "능력2", name: "신출귀몰", text: "혼령 표식 수거→다음 밤 시체 소환. 1회 제한." },
     ],
-    v1: "구현됨. malen_release(혼령 방출 다단계 Haunt: 1회차 혼령 표식, 2회차 잠식=탈락+투표가치 조공[말렌 voteWeightBonus +1]) + malen_possess(빙의) + SoulCounter death-hook(밤 탈락자 1명당 혼 +1, 혼 2개→시체 1구 = 악마팀 deadCountBonus +1). 마비(다음 밤 봉인)·신출귀몰은 후속.",
-    v2: "빙의(대상 행동봉인+악마팀 카운트 전환) + 혼/시체 카운터(탈락자→혼→시체→공격 대상 증가) + 혼령 방출 다단계. 새 이펙트: Possess/SoulCounter.",
+    v1: "구현됨. malen_release(혼령 방출 다단계 Haunt: 1회차 혼령 표식, 2회차 잠식=탈락+투표가치 조공[말렌 voteWeightBonus +1]) + malen_possess(그 밤 행동봉인+악마팀 카운트 전환+다음 밤 마비 예약) + SoulCounter death-hook(밤 탈락자 1명당 혼 +1, 혼 2개→시체 1구 = 악마팀 deadCountBonus +1). 신출귀몰은 별도 확장 대상.",
+    v2: "빙의, 마비, 혼/시체 카운터, 혼령 방출 다단계까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/말렌.md",
   },
   {
@@ -225,8 +225,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "약간의 위선", text: "대상 직업 통지 + 적용 효과를 다음 밤으로 연기. 대상이 악마에 탈락하면 연기 무효+다음 위선이 탈락 효과로 변경. 조사." },
       { kind: "능력2", name: "급습", text: "대상의 통지 삭제 + 급습 1회 충전. 다음 아침까지 악마와 대화. 1회 제한." },
     ],
-    v1: "구현됨. 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(약간의 위선: 대상 진영 통지 = 악마팀 정찰, match-action 즉시 결과). 효과 연기(다음 밤)·급습은 후속(지속 카운터 필요).",
-    v2: "약간의 위선(대상 직업 통지 + 효과 연기·전환) + 급습(통지 삭제) + 2일 후 패시브 만료. 현 보호막은 '진실을 가리는 암흑'의 축약.",
+    v1: "구현됨. 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(대상 진영 통지, 효과 다음 밤 연기, 위선 대상이 밤에 탈락하면 다음 위선이 처치로 전환).",
+    v2: "약간의 위선의 정찰·연기·처치 전환 코어와 보호막은 라이브. 급습(통지 삭제)과 2일 후 패시브 만료는 별도 확장 대상.",
     vault: "Universes/BoW/Characters/가인.md",
   },
   {
@@ -237,8 +237,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "고요한 적막", text: "달빛 대상 1명당 달의 힘 +10%(악마 +30%). 100% 시 해가 저문다(토론 생략·증가 투표가치 마이너스 판정) / 달이 차오른다 선택." },
       { kind: "능력2", name: "공포 속에 밀어 넣다", text: "대상에게 '달빛 저주'. 달의 힘 가득 차면 대상은 직업 잃고 악마팀. 1회 제한." },
     ],
-    v1: "구현됨. luna_moonlight(고요한 적막 — 달 게이지 +1 + 투표/의심 대상에 달빛, substrate VoteTarget/SuspectTarget) + luna_corrupt(공포 — 달의 힘 2+ 시 발동·소비, requiresCounter 게이트). 새 토대: 투표/의심 대상 substrate + requiresCounter 프리미티브.",
-    v2: "달빛 1명당 +10%/악마 +30% 비례 충전 튜닝 + 해가 저문다/달이 차오른다 분기 후속. canon 충전원(투표·의심)은 substrate 로 정합.",
+    v1: "구현됨. luna_moonlight(고요한 적막 — 투표/의심 대상에 달빛 태그, 천사/중립 +1, 악마 +3 비례 충전) + luna_corrupt(공포 — moonGauge 10 이상 시 천사→악마팀 타락, 발동 후 게이지 소비).",
+    v2: "달빛 1명당 +10%/악마 +30%, 100% 임계, 투표·의심 substrate 충전, 공포 타락까지 핵심 라이브. 해가 저문다/달이 차오른다 선택 분기는 별도 확장 대상.",
     vault: "Universes/BoW/Characters/루나.md",
   },
   {
@@ -248,8 +248,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "패시브", name: "부서진 펜던트", text: "시작 시 악마 접선. 악마팀에 '부서진 펜던트'(지워지지 않음). 셋 이상 적용 시 로건 지정 대상 +2, 횟수 제한 사라짐." },
       { kind: "능력", name: "네 안에 없는 것", text: "대상에게 '가장 가까운 밤에 발동시키는 능력 효과가 소멸한다' 통지 + '펜던트' 적용. 이미 적용 대상이면 펜던트를 부숨." },
     ],
-    v1: "구현됨. logen_nullify — 네 안에 없는 것(대상의 *다음* 능력 효과 소멸, 신규 Nullify·지속·발동 시 소비). 펜던트 영구 스택은 후속.",
-    v2: "네 안에 없는 것(대상의 다음 능력 효과 소멸) + 부서진 펜던트(악마팀 영구 버프 스택). 새 이펙트: NullifyNextAbility.",
+    v1: "구현됨. logen_nullify — 네 안에 없는 것(대상의 *다음* 능력 효과 소멸, 지속·발동 시 소비). 부서진 펜던트는 악마 처치자에게 영구 태그를 부여하고 3명 이상이면 로건 지정 대상 +2(pendantTargetBonus).",
+    v2: "네 안에 없는 것과 부서진 펜던트 지정 대상 보너스까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/로건.md",
   },
   {
@@ -259,8 +259,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "패시브", name: "박해자 / 해체된 퍼즐", text: "홀수날 투표 대상은 투표가 진행될 때마다 투표가치 +1. 자아 망가진 동안 투표·의심·능력 가치 상실. 자아 되찾으면 박해자 효과 변경(얻은 투표가치만큼 그날 아침 자신을 투표한 것으로)." },
       { kind: "능력", name: "비치지 않는 자아", text: "(시트 후속 다단계 — v2 정리 대상)." },
     ],
-    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). 표적을 처형대로 민다 — 자기 투표를 따라감. 투표마다 누진은 후속.",
-    v2: "투표마다 누진(ProgressiveReceivedVote) + 해체된 퍼즐 상태 전환 후속.",
+    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). persecuteBias 가 지속 누적되어 같은 대상 재박해 시 +3/+6/+9로 tally에 반영된다.",
+    v2: "박해 누진 코어는 라이브. 해체된 퍼즐 상태 전환은 별도 확장 대상.",
     vault: "Universes/BoW/Characters/엘런.md",
   },
 
@@ -274,7 +274,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력2", name: "신앙", text: "대상 탈락(악마는 탈락 안 함)." },
     ],
     v1: "구현됨. pasua_convert → 천사·가인 전향(currentRole=converted, 중립). 누적 3명+파스아 생존 시 checkWinCondition 우선 중립 승리. pasua_faith(신앙) → 대상 탈락(Kill, 악마 면역 immuneFactions). 연속 포교 제한(convertCooldown).",
-    v2: "승리 임계 라이브 튜닝(후속). 신앙·연속 포교 제한은 v2 반영 완료.",
+    v2: "승리 임계는 생존 교세 기준 max(3, ceil(인원/3))로 라이브 튜닝 완료. 신앙·연속 포교 제한도 v2 반영 완료.",
     vault: "Universes/BoW/Characters/파스아.md",
   },
 ];
