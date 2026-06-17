@@ -61,8 +61,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "백호", text: "백호 소환 시 천사팀 카운트 +3(생존 무관, 지속). 소환 이후 악마는 모든 천사 제거 외 승리 경로 없음." },
     ],
-    v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +3 / deadCountBonus +3 획득. 배정 자동 주입이 아니라 능동 소환으로 처리하며 maxUses 1로 재사용을 차단한다.",
-    v2: "백호 소환의 canon +3 생존/사후 카운트가 라이브. 거친 포효 등 추가 시트 능력은 별도 확장 대상.",
+    v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +3 / deadCountBonus +3 획득. rainer_resolve(강한 의지 v2): SINGLE_ALIVE, noConsecutiveTarget(같은 대상 연속 지목 불가). AddTag observedByRainer + self willCount +1. 관찰 대상이 그 밤 탈락하면 engine 후처리가 라이너 willCount +2 (canon '대상 탈락 시 강한 의지 +2') + rainer_will_surge 이벤트, 표식 1회 소비. rainer_resistance(그날의 저항 v2, 1회): SELF — deadCountBonus +1 + willCount +1 (백호 한 마리 추가 소환 근사 + 강한 의지 +1).",
+    v2: "백호 소환·강한 의지(관찰+사망 +2)·그날의 저항(1회) 코어 라이브. 거친 포효(willCount 2 자동 발동 → 멀티타깃 markedForDeath + voteValueMod 3 게이트 소멸)·그날의 저항의 카운트 -1 / 정확한 백호 1밤 임시 메커닉은 후속.",
     vault: "Universes/BoW/Characters/라이너.md",
   },
   {

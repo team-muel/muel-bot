@@ -104,6 +104,36 @@ export const CORE_ROLES: RoleDefinition[] = [
             { type: "GrantCount", target: "self", amount: 3, tag: "deadCountBonus" },
           ],
         },
+        // 강한 의지(v2, canon): 대상 관찰 + 시전자 willCount +1. 같은 대상 연속 지목 불가
+        // (noConsecutiveTarget). 관찰 대상이 그 밤 탈락하면 라이너 deathHook 이 willCount +2
+        // 추가(observedByRainer 표식 → engine 후처리). willCount 2 누적이 거친 포효 발동 트리거
+        // 의 토대(거친 포효 자체는 후속 — 멀티타깃 markedForDeath + voteValueMod 게이트 복합).
+        {
+          id: "rainer_resolve",
+          name: "강한 의지",
+          targetType: "SINGLE_ALIVE",
+          priority: 5,
+          excludeSelf: true,
+          noConsecutiveTarget: true,
+          effects: [
+            { type: "AddTag", target: "Target", tag: "observedByRainer" },
+            { type: "GrantCount", target: "self", tag: "willCount", amount: 1 },
+          ],
+        },
+        // 그날의 저항(v2, 1회, 첫 밤 불가): 백호 한 마리 추가 소환 — 즉시 deadCountBonus +1
+        // (백호 추가 한 마리). 효과 종료 시 -1 + 강한 의지 +1 의 canon 단계는 후속 — 본 PR 은
+        // 단순 1회 즉시 보너스로 근사. 첫 밤 차단은 gomdori-rules.firstNight.skipsAbilities 가 처리.
+        {
+          id: "rainer_resistance",
+          name: "그날의 저항",
+          targetType: "SELF",
+          priority: 5,
+          maxUses: 1,
+          effects: [
+            { type: "GrantCount", target: "self", amount: 1, tag: "deadCountBonus" },
+            { type: "GrantCount", target: "self", amount: 1, tag: "willCount" },
+          ],
+        },
       ],
     },
   },

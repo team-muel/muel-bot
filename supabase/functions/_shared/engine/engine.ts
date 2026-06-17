@@ -484,6 +484,29 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       });
     }
 
+    // 강한 의지(라이너 canon "대상 탈락 시 강한 의지 +2"): observedByRainer 표식 보유 대상이
+    // 그 밤 탈락하면 라이너 willCount += 2*N(N=관찰 사망자 수). 표식은 1회 소비.
+    const observedDeaths: string[] = [];
+    for (const ev of events) {
+      const e = ev as { type?: string; payload?: { user_id?: string } };
+      if (e.type === "player_died" && e.payload?.user_id) {
+        const dp = newState.players[e.payload.user_id];
+        if (dp && dp.tags.includes("observedByRainer")) observedDeaths.push(dp.userId);
+      }
+    }
+    if (observedDeaths.length > 0) {
+      for (const r of Object.values(newState.players)) {
+        if (r.alive && r.currentRole === "rainer") {
+          r.counters.willCount = (r.counters.willCount ?? 0) + observedDeaths.length * 2;
+          events.push({ type: "rainer_will_surge", payload: { user_id: r.userId, deaths: observedDeaths, willCount: r.counters.willCount } });
+        }
+      }
+      for (const uid of observedDeaths) {
+        const dp = newState.players[uid];
+        if (dp) dp.tags = dp.tags.filter((t) => t !== "observedByRainer");
+      }
+    }
+
     // 침착한 탐정(도르단): 누군가 탈락한 밤, 도르단이 직전 투표로 '범인'이라 지목한 대상이
     // 그 밤 지정한 대상을 도르단에게 알려준다. VoteTarget substrate 를 재사용한다.
     for (const dordan of Object.values(newState.players)) {
