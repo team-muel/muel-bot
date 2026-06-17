@@ -221,16 +221,16 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, targetCount: 1, targetCountCounter: "deepsleepCount", requiresCounter: { key: "nightmareUses", min: 1, consumeAmount: 1 }, effects: [{ type: "Nightmare", target: "Target" }] },
         // 영면 발동: 누적한 영면(deepsleep) 대상 전원을 일괄 처치. 기존 프리미티브 재사용 —
         // Kill(All) + onlyIfTargetCounter(deepsleep) 게이트로 영면자만 markedForDeath. 발동 후
-        // deepsleepCount 0 리셋. (밤 버전. 낮 처형 시 동시 발동은 후속 증분.)
+        // deepsleepCount 0 리셋. 낮 처형 시간 즉시 발동은 match-action-core usableInDay 경로에서 처리.
         { id: "phantom_reap", name: "영면 발동", targetType: "NONE", priority: 4, usableInDay: true, effects: [{ type: "Kill", target: "All", onlyIfTargetCounter: { key: "deepsleep", min: 1 } }], onFireSetCounter: { key: "deepsleepCount", value: 0 } },
         // 침묵의 밤(패시브 능동화): 밤 종료 시 밤을 한 번 더 연다(악마팀 재행동). 대가 = 생존 천사팀
         // 소속 카운트 +1(GrantCount, onlyFactions angel — 천사팀 대응 여지) + 토론 +1분. extendNight
         // 표식을 phase-advance 가 읽어 다음 아침을 밤으로 전환 + 토론 가산(eclipse 유사, 소멸 없음).
         { id: "phantom_silentnight", name: "침묵의 밤", targetType: "NONE", priority: 5, effects: [{ type: "GrantCount", target: "All", amount: 1, onlyFactions: ["angel"] }], onFireSetCounter: { key: "extendNight", value: 1 } },
         // 어둠이 내린 도시(특수 패시브): 매 밤 천사팀 직업을 봉인(그 밤 한정 Silence). 지목 가능 수
-        // = 2 + counters.sealCap. sealCap 은 매 아침 phase-advance 가 +1(후속 증분 — 그 전엔 0이라
-        // 안전하게 상한 2). priority 1 — 대상 행동보다 먼저 봉인. '같은 대상 연속 지목 금지'·'0명
-        // 지목 시 악몽 +2' 도 후속 증분(match-action/phase-advance).
+        // = 2 + counters.sealCap. sealCap 은 밤 해소마다 +1 되어 다음 밤 봉인 상한을 키운다.
+        // priority 1 — 대상 행동보다 먼저 봉인. '같은 대상 연속 지목 금지'와 '0명 지목 시
+        // 악몽 +2' 도 match-action/engine 경로에서 검증·반영한다.
         { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, targetCount: 2, targetCountCounter: "sealCap", noConsecutiveTarget: true, effects: [{ type: "Silence", target: "Target" }] },
         { id: "phantom_eclipse", name: "일식", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Eclipse", target: "self" }] },
       ],
@@ -429,7 +429,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     id: "arthur",
     name: "아서",
     faction: "angel",
-    passives: [], // 여명의 기사(결백 천사 3명+ 탈락 시 동반)·위용은 후속.
+    passives: [], // 여명의 기사·위용은 engine.ts 의 applyDawnbreakerPassive/prowessVoteBonus 경로에서 처리.
     actions: {
       night: [
         // 잔불이 꺼지기 전에(3명 지정): 3명 각각에 '해오름' 표식(silent, 통지 X) + 조사(Verdict

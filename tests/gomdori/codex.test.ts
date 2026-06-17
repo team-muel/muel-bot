@@ -36,4 +36,31 @@ for (const id of ["demon", "phantom", "malen", "besto", "gain", "luna", "logen",
   assert.ok(codexById(id), `도감에 ${id} 존재`);
 }
 
+// 최근 v2 코어 구현이 도감에서 다시 "후속"으로 후퇴하지 않게 고정한다.
+const implementedCore: Array<[string, RegExp[]]> = [
+  ["rainer", [/countBonus \+3/, /deadCountBonus \+3/]],
+  ["dordan", [/dordan_infiltrate/, /stakeout_triggered/]],
+  ["mizlet", [/mizlet_wine/, /voteValueMod -1/]],
+  ["helen", [/helen_freebird/]],
+  ["uno", [/소속 공개\/처형/, /다음 밤 봉인/]],
+  ["seika", [/악마팀 출처 효과 3개\+/, /이틀 후 악마팀 공개/]],
+  ["luru", [/luru_score/, /자기 투표가치 \+1/]],
+  ["phantom", [/phantom_reap/, /phantom_silentnight/, /2\+sealCap/]],
+  ["malen", [/다음 밤 마비 예약/]],
+  ["gain", [/효과 다음 밤 연기/, /다음 위선이 처치로 전환/]],
+  ["luna", [/moonGauge 10/, /악마 \+3/]],
+  ["logen", [/pendantTargetBonus/]],
+  ["ellen", [/persecuteBias/, /\+3\/\+6\/\+9/]],
+  ["pasua", [/max\(3, ceil\(인원\/3\)\)/]],
+];
+
+for (const [id, patterns] of implementedCore) {
+  const entry = codexById(id);
+  assert.ok(entry, `도감에 ${id} 존재`);
+  const spec = `${entry.v1}\n${entry.v2}`;
+  for (const pattern of patterns) {
+    assert.match(spec, pattern, `${id}: 구현된 v2 코어 설명 포함`);
+  }
+}
+
 console.log("Gomdori 도감 데이터 checks passed");
