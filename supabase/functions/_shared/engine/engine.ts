@@ -125,6 +125,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         counters.silencedNights = (counters.silencedNights ?? 0) + counters.silencePending;
         counters.silencePending = 0;
       }
+      // 신출귀몰(말렌): 이전 밤에 수거한 혼령 표식을 다음 밤 시체로 소환한다. 시체는 현재
+      // 악마팀 deadCountBonus 로 표현된다.
+      if (counters.corpsePending && counters.corpsePending > 0) {
+        counters.deadCountBonus = (counters.deadCountBonus ?? 0) + counters.corpsePending;
+        events.push({ type: "corpse_summoned", payload: { user_id: userId, amount: counters.corpsePending } });
+        counters.corpsePending = 0;
+      }
       // 세이카 '자신만 아플 거야' 악마팀 공개 카운트다운: 흡수 소멸(demonRevealIn=2) 후 매 밤
       // 시작에 1 씩 감소, 0 이 되는 밤(=소멸 이틀 후)에 악마팀 전원 공개 이벤트를 방출한다.
       if (counters.demonRevealIn && counters.demonRevealIn > 0) {
@@ -976,6 +983,17 @@ function applyEffect(
         events.push({ type: "deduce_hit", payload: { user_id: _source.userId, target: target.userId } });
       } else {
         events.push({ type: "deduce_miss", payload: { user_id: _source.userId, target: target.userId } });
+      }
+      break;
+    }
+    case "SummonCorpse": {
+      // 신출귀몰(말렌): 혼령 방출 1회차가 남긴 haunted 표식을 수거한다. 실제 시체 소환은
+      // 다음 밤 시작에 corpsePending → deadCountBonus 로 승격되어 "다음 밤 시체 소환" 타이밍을 지킨다.
+      const haunted = target.counters?.haunted ?? 0;
+      if (haunted > 0) {
+        target.counters.haunted = 0;
+        _source.counters.corpsePending = (_source.counters.corpsePending ?? 0) + haunted;
+        events.push({ type: "corpse_gathered", payload: { user_id: target.userId, by: _source.userId, amount: haunted } });
       }
       break;
     }
