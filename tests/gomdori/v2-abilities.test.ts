@@ -338,7 +338,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.equal(newState.players.demon.counters.used_daeakma_dominion, 1, "압도적 존재감 1회 소진");
 }
 
-// --- 6d. 우노 용맹함: 자기 정화 + 명예 + 소속 공개 + (천사 투표대상) 명예 실추 ---
+// --- 6d. 우노 용맹함: 자기 정화 + 명예 + 투표대상 처형/소속공개 + (천사 살해) 우노 명예 실추 ---
 {
   const uno = { ...player("uno", "uno", "angel"), lastVoteTarget: "ally", counters: { voteBias: 3 } };
   const clean = emptyState(
@@ -349,20 +349,17 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.equal(newState.players.uno.counters.voteBias ?? 0, 0, "용맹함 — 자기 부정효과 제거");
   assert.equal(newState.players.uno.counters.countBonus, 1, "용맹함 — 명예 +1");
   assert.ok(events.some((e: any) => e.type === "role_revealed" && e.payload?.user_id === "ally"), "용맹함 — 투표 대상 소속 공개");
-  assert.equal(newState.players.ally.counters.silencePending, 1, "용맹함 — 천사 투표대상 명예 실추(다음 밤 봉인 예약)");
-  // 다음 밤 — 예약이 silencedNights 로 승격되어 ally(의사) 행동 차단 → 피해자 사망.
+  assert.equal(newState.players.ally.alive, false, "용맹함 — 투표 대상 처형(사망자로 기록)");
+  assert.equal(newState.players.uno.counters.silencePending, 1, "동료(천사) 살해 → 우노 자신 명예 실추(다음 밤 봉인 예약)");
+  // 다음 밤 — 예약이 silencedNights 로 승격되어 우노 자신의 행동이 봉인된다.
   const next = emptyState(
-    { ally: newState.players.ally, victim: player("victim", "citizen", "angel"), demon: player("demon", "demon", "demon") },
-    [
-      { sourceUserId: "ally", targetUserId: "victim", actionType: "doctor_heal", priority: 3 },
-      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
-    ],
+    { uno: newState.players.uno, x: player("x", "citizen", "angel") },
+    [{ sourceUserId: "uno", targetUserId: "x", actionType: "uno_struggle", priority: 5 }],
   );
-  const { newState: after, events: ev2 } = resolveNightActions(next);
-  assert.ok(ev2.some((e: any) => e.type === "action_blocked_silenced" && e.userId === "ally"), "명예 실추 — 다음 밤 행동 봉인");
-  assert.equal(after.players.victim.alive, false, "봉인된 의사 치료 불발 → 피해자 사망");
+  const { events: ev2 } = resolveNightActions(next);
+  assert.ok(ev2.some((e: any) => e.type === "action_blocked_silenced" && e.userId === "uno"), "명예 실추 — 다음 밤 우노 행동 봉인");
 }
-// --- 6d-2. 우노 용맹함: 악마 투표대상은 명예 실추 없음(소속 공개만) ---
+// --- 6d-2. 우노 용맹함: 악마 투표대상은 처형/공개만, 우노 명예 실추 없음 ---
 {
   const uno = { ...player("uno", "uno", "angel"), lastVoteTarget: "dem" };
   const state = emptyState(
@@ -371,27 +368,61 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   const { newState, events } = resolveNightActions(state);
   assert.ok(events.some((e: any) => e.type === "role_revealed" && e.payload?.user_id === "dem"), "악마 투표대상도 소속 공개");
-  assert.equal(newState.players.dem.counters.silencePending ?? 0, 0, "악마 투표대상은 명예 실추(봉인) 없음");
+  assert.equal(newState.players.dem.alive, false, "악마 투표대상 처형");
+  assert.equal(newState.players.uno.counters.silencePending ?? 0, 0, "악마 살해는 명예 실추 없음(우노 봉인 X)");
 }
-// --- 6d-3. 세이카 자신만 아플 거야: 흡수 3+ → 세이카 소멸 + 악마팀 공개 카운트다운 ---
+// --- 6d-2b. 흡수 출처 추적(provenance): 악마팀 디버프만 demonDebuffs 로 집계 ---
 {
-  // 지속 디버프(nightmare/persecuteBias/haunted)는 라운드 시작 리셋을 타지 않아 흡수 대상으로
-  // 남는다(voteBias/charmed 등 라운드성은 리셋 루프가 먼저 0 으로 지움 — 그 밤 신규분만 흡수).
+  // 악마(말렌 빙의)가 가한 부정효과 → 대상 demonDebuffs +1. 천사(세이카 봉인)가 가한 건 미집계.
+  const state = emptyState(
+    {
+      malen: player("malen", "malen", "demon"),
+      seika: player("seika", "seika", "angel"),
+      t1: player("t1", "citizen", "angel"),
+      t2: player("t2", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "malen", targetUserId: "t1", actionType: "malen_possess", priority: 1 },
+      { sourceUserId: "seika", targetUserId: "t2", actionType: "seika_supernova", priority: 1 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.t1.counters.demonDebuffs, 1, "악마팀 가해 → demonDebuffs +1");
+  assert.equal(newState.players.t2.counters.demonDebuffs ?? 0, 0, "천사 가해는 악마팀 효과 아님(demonDebuffs 0)");
+}
+// --- 6d-3. 세이카 자신만 아플 거야: 악마팀 효과(demonDebuffs) 3+ → 소멸 + 악마팀 공개 카운트다운 ---
+{
+  // demonDebuffs(악마팀 출처, 지속)만 소멸 임계에 누적. 천사·중립 디버프(아래 nightmare)는 정화는
+  // 되지만 임계엔 안 들어간다 — provenance 정밀.
   const state = emptyState(
     {
       seika: player("seika", "seika", "angel"),
-      a: { ...player("a", "citizen", "angel"), counters: { nightmare: 1, persecuteBias: 1 } },
-      b: { ...player("b", "citizen", "angel"), counters: { haunted: 1 } },
+      a: { ...player("a", "citizen", "angel"), counters: { demonDebuffs: 2, nightmare: 1 } },
+      b: { ...player("b", "citizen", "angel"), counters: { demonDebuffs: 1 } },
     },
     [{ sourceUserId: "seika", targetUserId: null, actionType: "seika_absorb", priority: 5 }],
   );
   const { newState, events } = resolveNightActions(state);
-  assert.equal(newState.players.seika.counters.absorbedDebuffs, 3, "흡수 누적 3");
-  assert.equal(newState.players.a.counters.nightmare ?? 0, 0, "흡수로 대상 정화");
+  assert.equal(newState.players.seika.counters.absorbedDebuffs, 3, "악마팀 효과 흡수 누적 3");
+  assert.equal(newState.players.a.counters.nightmare ?? 0, 0, "흡수로 대상 정화(출처 무관 디버프도 제거)");
+  assert.equal(newState.players.a.counters.demonDebuffs ?? 0, 0, "흡수 후 demonDebuffs 소비");
   assert.equal(newState.players.seika.alive, false, "악마팀 효과 3+ 흡수 → 세이카 소멸");
   assert.equal(newState.players.seika.counters.annihilated, 1, "소멸 = 부활 불가");
   assert.equal(newState.players.seika.counters.demonRevealIn, 2, "악마팀 공개 카운트다운 세팅");
   assert.ok(events.some((e: any) => e.type === "seika_overload"), "세이카 과부하 이벤트");
+}
+// --- 6d-3b. 세이카 흡수: 악마팀 효과 3 미만이면 소멸 안 함 ---
+{
+  const state = emptyState(
+    {
+      seika: player("seika", "seika", "angel"),
+      a: { ...player("a", "citizen", "angel"), counters: { demonDebuffs: 1, nightmare: 1, voteBias: 5 } },
+    },
+    [{ sourceUserId: "seika", targetUserId: null, actionType: "seika_absorb", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.seika.alive, true, "악마팀 효과 2 이하 → 세이카 생존");
+  assert.equal(newState.players.a.counters.nightmare ?? 0, 0, "디버프는 그래도 정화");
 }
 // --- 6d-4. 세이카 악마팀 공개 카운트다운: 2→1→0(공개) ---
 {

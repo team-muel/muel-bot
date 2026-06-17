@@ -98,6 +98,10 @@ export interface Effect {
   skipIfTargetCounter?: { key: string; min: number };
   // 홀수날 한정(엘런 박해자: 홀수날에만 발동). state.dayCount 가 홀수일 때만 적용한다.
   oddDayOnly?: boolean;
+  // 자기 처벌(우노 명예 실추): 게이트(onlyFactions 등)는 *대상*으로 평가하되 효과는 *시전자*에게
+  // 적용. "천사 투표 대상을 처형하면(=동료 살해) 우노 자신이 명예 실추(다음 밤 행동 불가)" 처럼
+  // 대상의 속성에 따라 시전자가 벌받는 패턴. 현재 DelaySilence 에서 지원.
+  selfPenalty?: boolean;
 }
 
 export interface PassiveAbility {
