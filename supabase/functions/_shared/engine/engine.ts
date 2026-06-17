@@ -276,7 +276,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         for (const tid of ids) {
           const t = newState.players[tid];
           if (!t) continue;
-          if (!t.alive && ability.targetType !== "SINGLE_DEAD") continue;
+          // 'remembered' 탈락자(헬렌 황금빛 수면) 우회: allowRememberedDead 이면 탈락 + remembered 보유 시 통과.
+          const allowDead = ability.allowRememberedDead && t.tags.includes("remembered");
+          if (!t.alive && ability.targetType !== "SINGLE_DEAD" && !allowDead) continue;
           applyEffect(newState, sourcePlayer, t, effect, events);
         }
         continue;
@@ -1008,6 +1010,12 @@ function applyEffect(
     case "Sleep":
       // 황금빛 수면(헬렌): 대상을 수면 — 죽음 보호(밤 살해 무효) + 그 밤 행동 봉인 +
       // 받은 부정효과 무효(Cleanse 복합). 깨어나면 평소대로. 보호는 1밤(TAG_PROTECTED).
+      // '추억을 간직하는 법' canon: 대상이 사망 상태(remembered 보유)면 수면이 깨어남과 동시에
+      // 부활(alive=true) — '수면으로 깨면 복귀' 회로. annihilated 는 부활 불가 게이트.
+      if (!target.alive && !(target.counters?.annihilated)) {
+        target.alive = true;
+        events.push({ type: "player_revived", payload: { user_id: target.userId, source: "remembered_sleep" } });
+      }
       target.tags.push(TAG_PROTECTED);
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "nightmare"]) {

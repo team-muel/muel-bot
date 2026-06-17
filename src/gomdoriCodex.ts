@@ -109,8 +109,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "황금빛 수면", text: "대상 수면(부정효과 무효+행동 불가). 깨어나면 지정대상·투표가치 +1. 연속 같은 대상 불가." },
       { kind: "능력2", name: "자유로운 새", text: "다음 아침 탈락자들이 생존 행동 가능. 처형/탈락자에게 수면 부여. 지속 '추억을 간직하는 법'(수면으로 깨면 복귀)." },
     ],
-    v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(생존자 황금빛 수면 — Sleep: 죽음보호+행동봉인+부정효과 무효) + helen_freebird(탈락자 추가 복귀, 1회).",
-    v2: "수면 보호/봉인/정화, 부활, 자유로운 새 추가 복귀까지 핵심 라이브. 추억 기반 지속 복귀 연계는 별도 확장 대상.",
+    v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(v2: 생존자 황금빛 수면 — Sleep + AddTag remembered). allowRememberedDead 플래그로 탈락+remembered 대상도 helen_sleep 으로 재지정 가능. Sleep case 가 dead+remembered 면 부활(alive=true) 후 평소 수면 적용 — 추억을 간직하는 법(canon 수면으로 깨면 복귀). annihilated 는 부활 불가 게이트. helen_freebird(탈락자 추가 복귀, 1회).",
+    v2: "수면 보호/봉인/정화, 부활, 자유로운 새 추가 복귀, 추억(remembered) 기반 탈락 후 재수면+자동 부활까지 핵심 라이브. 투표가치 모두 소모의 동적 매핑은 후속(현재는 표식만).",
     vault: "Universes/BoW/Characters/헬렌.md",
   },
   {

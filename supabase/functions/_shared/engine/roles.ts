@@ -432,7 +432,13 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "helen_revive", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
-        { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Sleep", target: "Target" }] },
+        // 황금빛 수면(v2): 대상 수면 + 'remembered' 표식(영혼 기억). allowRememberedDead 로 탈락 후에도
+        // 같은 대상 지정 가능(canon "기억된 플레이어는 탈락 후에도 수면 발동 가능"). 사망 상태로 대상이
+        // 들어오면 Sleep case 가 부활(alive=true) + 일반 수면을 모두 적용 — "수면으로 깨면 복귀" 회로.
+        { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, allowRememberedDead: true, effects: [
+          { type: "Sleep", target: "Target" },
+          { type: "AddTag", target: "Target", tag: "remembered" },
+        ] },
         // 자유로운 새(v2, 1회): 탈락자 한 명을 추가로 복귀시킨다(Heal dead). canon '다음 아침 탈락자
         // 생존 행동 + 수면-기억 복귀'의 바운디드 코어 — 수면으로 깨면 복귀하는 지속 메커니즘은 후속.
         { id: "helen_freebird", name: "자유로운 새", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
