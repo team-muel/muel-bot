@@ -982,8 +982,8 @@ Deno.serve((req: Request) => {
             .eq("phase_id", phase.id)
             .eq("action_type", "vote"),
         ) as DbAction[];
-        const state = playerStateFromRows(matchId, "vote", phase.phase_number, players);
-        const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players);
+        const state = playerStateFromRows(matchId, "vote", phase.phase_number, players, engineState.modifiers);
+        const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
         const voteSummary = {
           candidateUserId: tally.candidateUserId,
           tallies: tally.tallies,
@@ -1041,8 +1041,8 @@ Deno.serve((req: Request) => {
             .eq("phase_id", phase.id)
             .in("action_type", ["verdict_approve", "verdict_reject"]),
         ) as DbAction[];
-        const state = playerStateFromRows(matchId, "verdict", phase.phase_number, players);
-        const verdict = tallyVerdictVotes(actionRowsToInputs(actions), state.players);
+        const state = playerStateFromRows(matchId, "verdict", phase.phase_number, players, engineState.modifiers);
+        const verdict = tallyVerdictVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
         const candidateUserId = engineState.verdict?.candidateUserId || null;
         const candidate = candidateUserId ? players.find((player) => player.user_id === candidateUserId) : null;
         let executed = false;
@@ -1136,11 +1136,17 @@ Deno.serve((req: Request) => {
             }),
         );
 
-        const { verdict: _verdict, ...restEngineState } = engineState;
+        // 해가 저문다(루나): 1일 한정 — 처형 투표·찬반 투표가 끝나면 dawnRule 을 소비(0). 같은
+        // 라운드에 처형 투표/찬반 양쪽이 같은 dawnRule 을 보고, 찬반 종료 시점에 만료된다.
+        const { verdict: _verdict, modifiers: prevMods, ...restEngineState } = engineState;
+        const nextModifiers = { ...(prevMods ?? {}) };
+        if ((nextModifiers.dawnRule ?? 0) > 0) {
+          nextModifiers.dawnRule = 0;
+        }
         requireNoError(
           await supabase
             .from("matches")
-            .update({ engine_state: restEngineState })
+            .update({ engine_state: { ...restEngineState, modifiers: nextModifiers } })
             .eq("id", matchId),
         );
 

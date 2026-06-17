@@ -287,9 +287,20 @@ export const CORE_ROLES: RoleDefinition[] = [
           { type: "AddTag", target: "VoteTarget", tag: "moonlit" },
           { type: "AddTag", target: "SuspectTarget", tag: "moonlit" },
         ] },
-        // 공포 속에 밀어 넣다: 달의 힘 100%(moonGauge 10) 이상일 때만 발동(소비) — 천사→악마팀 타락.
-        // 해가 저문다/달이 차오른다 분기(플레이어 선택)는 후속(UI 필요).
-        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], excludeRoles: ["pasua", "converted", "corrupted"], message: "천사만 타락시킬 수 있습니다." }, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
+        // 공포 속에 밀어 넣다(v2, 1회): 달의 힘 100%(moonGauge 10) 이상일 때만 발동(소비) — 천사→악마팀 타락.
+        // canon "1회 제한" — maxUses:1. 100% 충전을 dawn/moonrise 와 분기로 소비(셋 중 하나).
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, maxUses: 1, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], excludeRoles: ["pasua", "converted", "corrupted"], message: "천사만 타락시킬 수 있습니다." }, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
+        // 해가 저문다(v2, 1회): 100% 충전 분기 ① — 다음 아침 토론을 생략하고, 그 처형 투표에서
+        // *능력으로 증가한 투표가치(voteValueMod>0)를 마이너스 판정*(canon "패시브 제외 능력으로
+        // 증가한 투표가치를 마이너스로 판정"). engine 이 state.modifiers.dawnRule=1 을 세팅 → tally
+        // 가 그 라운드 voteValueMod 의 양수 부호를 반전(우노 명예 +10 → -10 처럼 표 경로 역전).
+        { id: "luna_dawn", name: "해가 저문다", targetType: "NONE", priority: 5, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
+        // 달이 차오른다(v2, 1회): 100% 충전 분기 ② — 그 밤 한정으로 악마(actualFaction='demon')의
+        // 처치(Kill)가 달빛(moonlit 태그) 보유자 누구에게든 발동하면 *모든 달빛 대상*에 같은 효과
+        // (canon "악마가 달빛 부여 대상 지목 시 달빛 부여 모두에게 같은 효과"). engine 이
+        // state.modifiers.moonriseRule=1 → applyEffect Kill case 가 달빛 cascade. 그 밤 종료 시 자동 해제.
+        // priority 2 — Silence(1) 후 처리(봉인된 루나는 발동 차단), Kill(4) 전 처리(cascade 활성 보장).
+        { id: "luna_moonrise", name: "달이 차오른다", targetType: "NONE", priority: 2, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
       ],
     },
   },
