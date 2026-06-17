@@ -39,7 +39,7 @@ for (const id of ["demon", "phantom", "malen", "besto", "gain", "luna", "logen",
 // 최근 v2 코어 구현이 도감에서 다시 "후속"으로 후퇴하지 않게 고정한다.
 const implementedCore: Array<[string, RegExp[]]> = [
   ["rainer", [/countBonus \+3/, /deadCountBonus \+3/]],
-  ["dordan", [/dordan_infiltrate/, /stakeout_triggered/]],
+  ["dordan", [/culprit_target_revealed/, /dordan_infiltrate/, /stakeout_triggered/]],
   ["mizlet", [/mizlet_wine/, /voteValueMod -1/]],
   ["helen", [/helen_freebird/]],
   ["uno", [/missionCharge/, /악마 효과 1회 제거/, /소속 공개\/처형/, /다음 밤 봉인/]],

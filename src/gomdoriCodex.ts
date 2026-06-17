@@ -73,8 +73,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "단서 수집 / 사건의 전말", text: "대상의 능력 발동 확인 + 단서. 단서 (5-탈락자)개 → '사건의 전말'로 변경(악마면 전원 통지+아침 생략+판결)." },
       { kind: "능력2", name: "잠입 수사", text: "대상을 밤 동안 관찰. 탈락/탈락시키면 '불심검문' 발동, 그 밤 도르단은 모든 부정 효과 무시." },
     ],
-    v1: "구현됨. police_investigate(악마/천사 판정) + 침착한 탐정 단서(death-hook: 탈락자 1명당 단서 +1). 단서 3개부터 정밀 조사(정확한 직업 통지) + 사건의 전말(정밀 조사로 악마 처치자 식별 시 matches.engine_state.caseClosed → phase-advance 가 아침 생략·그 악마 강제 판결). dordan_infiltrate 는 관찰 대상이 그 밤 탈락하면 stakeout_triggered 로 도르단 부정효과를 정화한다.",
-    v2: "단서 카운터(탈락자 수 연동), 사건의 전말(전원 통지·아침 생략·판결 강제), 잠입 수사(관찰→불심검문→부정효과 무시)까지 핵심 라이브.",
+    v1: "구현됨. police_investigate(악마/천사 판정) + 침착한 탐정 단서(death-hook: 탈락자 1명당 단서 +1) + culprit_target_revealed(탈락 발생 밤, 도르단의 투표 대상이 지정한 대상 private 통지). 단서 3개부터 정밀 조사(정확한 직업 통지) + 사건의 전말(정밀 조사로 악마 처치자 식별 시 matches.engine_state.caseClosed → phase-advance 가 아침 생략·그 악마 강제 판결). dordan_infiltrate 는 관찰 대상이 그 밤 탈락하면 stakeout_triggered 로 도르단 부정효과를 정화한다.",
+    v2: "단서 카운터(탈락자 수 연동), 범인 지정 대상 통지, 사건의 전말(전원 통지·아침 생략·판결 강제), 잠입 수사(관찰→불심검문→부정효과 무시)까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/도르단.md",
   },
   {

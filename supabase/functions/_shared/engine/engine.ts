@@ -390,6 +390,22 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         payload: { user_id: p.userId, counter: hook.perDeath.counter, value: p.counters[hook.perDeath.counter] },
       });
     }
+
+    // 침착한 탐정(도르단): 누군가 탈락한 밤, 도르단이 직전 투표로 '범인'이라 지목한 대상이
+    // 그 밤 지정한 대상을 도르단에게 알려준다. VoteTarget substrate 를 재사용한다.
+    for (const dordan of Object.values(newState.players)) {
+      if (!dordan.alive || dordan.currentRole !== "dordan" || !dordan.lastVoteTarget) continue;
+      const culpritActions = sortedActions.filter((a) => a.sourceUserId === dordan.lastVoteTarget);
+      const targetIds = Array.from(new Set(culpritActions.flatMap((a) => {
+        if (a.targetUserIds?.length) return a.targetUserIds;
+        return a.targetUserId ? [a.targetUserId] : [];
+      })));
+      if (targetIds.length === 0) continue;
+      events.push({
+        type: "culprit_target_revealed",
+        payload: { user_id: dordan.userId, culprit_user_id: dordan.lastVoteTarget, target_user_ids: targetIds },
+      });
+    }
   }
 
   return { newState, events };
