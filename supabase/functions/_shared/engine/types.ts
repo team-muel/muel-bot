@@ -79,7 +79,9 @@ export interface Effect {
   //   대상은 충전의 '기준'일 뿐 변경 대상이 아니다 — VoteTarget/SuspectTarget substrate 와 함께 쓴다.
   // Deduce(하브레터스 상호추리): 대상이 악마(처치자 풀)면 '적중' — 시전자 부정효과 정화(그 밤 악마
   //   효과 면역 근사) + deduce_hit. 빗나가면 deduce_miss. 악마측 역추리(하브 탈락)는 후속(양방향 서브게임).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce";
+  // SummonCorpse(말렌 신출귀몰): 혼령 표식(haunted)을 수거해 다음 밤 corpsePending → deadCountBonus
+  //   로 시체를 소환한다. 시체는 현재 악마팀 사망 무관 카운트 보너스로 표현된다.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse";
   // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
   demonAmount?: number;
   // 태그 게이트(미즐렛 고급 와인): 대상에게 tag 가 있으면(onlyIfTargetTag) / 없으면(skipIfTargetTag 는

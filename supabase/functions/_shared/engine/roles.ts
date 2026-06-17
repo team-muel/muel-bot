@@ -237,8 +237,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 말렌(악마-7): 혼령 방출(처치) + 빙의(그 밤 행동 봉인 + 악마팀 카운트 전환, priority 1).
-    // 말렌의 처치 능력은 canon '혼령 방출'. 혼/시체 누적 다단계는 후속.
+    // 말렌(악마-7): 혼령 방출(처치) + 빙의(그 밤 행동 봉인 + 악마팀 카운트 전환, priority 1)
+    // + 신출귀몰(혼령 표식 수거→다음 밤 시체 소환).
     id: "malen",
     name: "말렌",
     faction: "demon",
@@ -248,6 +248,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 혼령 방출(canon 다단계): 1회차 혼령 표식, 2회차(표식 보유)에 잠식=탈락+투표가치 조공(Haunt).
         { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Haunt", target: "Target" }] },
         { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
+        // 신출귀몰(v2, 1회): 무대의 혼령 표식을 수거해 다음 밤 시체를 소환한다. 시체는 현재
+        // deadCountBonus(사망 무관 악마팀 카운트)로 표현한다.
+        { id: "malen_elusive", name: "신출귀몰", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "SummonCorpse", target: "All" }] },
       ],
     },
     // 악담: 밤 탈락 1명당 혼 +1. 혼 2개 → 시체 1구(악마팀 카운트 deadCountBonus +1).

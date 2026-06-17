@@ -966,6 +966,7 @@ for (const a of ["besto_hidden", "besto_shift", "daeakma_brand", "phantom_eclips
 }
 
 assert.match(roles, /id: "malen_possess"[\s\S]*?type: "Possess"/, "말렌 빙의");
+assert.match(roles, /id: "malen_elusive"[\s\S]*?type: "SummonCorpse"/, "말렌 신출귀몰");
 assert.match(roles, /id: "phantom_nightmare"[\s\S]*?type: "Nightmare"/, "팬텀 악몽");
 assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Protect"/, "아서 잔불 대검");
 assert.match(roles, /id: "luru_charm"[\s\S]*?type: "Charm"/, "루루 매료");
@@ -974,6 +975,8 @@ assert.match(roles, /id: "luru_sonata"/, "루루 소나타 능력 정의(단일 
 assert.match(matchAction, /clue >= 3 && !disguised/, "도르단 단서 3 — 정밀 조사");
 const batch2cMig = readFileSync("supabase/migrations/20260614160000_gomdori_batch_tier2c.sql", "utf8");
 assert.match(batch2cMig, /'luru_sonata'/, "마이그레이션 — 소나타");
+const malenElusiveMig = readFileSync("supabase/migrations/20260617190000_gomdori_malen_elusive.sql", "utf8");
+assert.match(malenElusiveMig, /'malen_elusive'/, "마이그레이션 — 말렌 신출귀몰");
 assert.match(roles, /id: "uno_struggle"[\s\S]*?type: "GrantCount"/, "우노 투쟁");
 assert.match(roles, /id: "ellen_persecute"[\s\S]*?type: "ModifyReceivedVote"/, "엘런 박해");
 assert.match(roles, /id: "luna_corrupt"[\s\S]*?type: "Corrupt"/, "루나 변환");
@@ -1484,5 +1487,26 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   const r2 = resolveNightActions(r1.newState);
   assert.equal(r2.newState.players.v.counters.silencePending ?? 0, 0, "마비 — 다음 밤에 소비됨");
 }
+// --- 말렌 신출귀몰: 혼령 표식 수거 → 다음 밤 시체 소환(deadCountBonus) ---
+{
+  const a = { ...player("a", "citizen", "angel"), counters: { haunted: 1 } };
+  const b = { ...player("b", "doctor", "angel"), counters: { haunted: 1 } };
+  const c = player("c", "citizen", "angel");
+  const r1 = resolveNightActions(emptyState(
+    { malen: player("malen", "malen", "demon"), a, b, c },
+    [{ sourceUserId: "malen", targetUserId: null, actionType: "malen_elusive", priority: 5 }],
+  ));
+  assert.equal(r1.newState.players.a.counters.haunted ?? 0, 0, "신출귀몰 — a 혼령 표식 수거");
+  assert.equal(r1.newState.players.b.counters.haunted ?? 0, 0, "신출귀몰 — b 혼령 표식 수거");
+  assert.equal(r1.newState.players.c.counters.haunted ?? 0, 0, "신출귀몰 — 표식 없는 대상은 영향 없음");
+  assert.equal(r1.newState.players.malen.counters.corpsePending, 2, "신출귀몰 — 수거한 표식 2개를 다음 밤 시체로 예약");
+  assert.equal(r1.newState.players.malen.counters.deadCountBonus ?? 0, 0, "신출귀몰 — 같은 밤에는 아직 시체 카운트 없음");
+  assert.ok(r1.events.some((e: any) => e.type === "corpse_gathered" && e.payload?.user_id === "a"), "신출귀몰 — 수거 이벤트");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비) checks passed");
+  const r2 = resolveNightActions(r1.newState);
+  assert.equal(r2.newState.players.malen.counters.corpsePending ?? 0, 0, "신출귀몰 — 다음 밤 예약 소비");
+  assert.equal(r2.newState.players.malen.counters.deadCountBonus, 2, "신출귀몰 — 다음 밤 시체 2구 소환");
+  assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");

@@ -46,7 +46,7 @@ const implementedCore: Array<[string, RegExp[]]> = [
   ["seika", [/악마팀 출처 효과 3개\+/, /이틀 후 악마팀 공개/]],
   ["luru", [/luru_score/, /자기 투표가치 \+1/]],
   ["phantom", [/phantom_reap/, /phantom_silentnight/, /2\+sealCap/]],
-  ["malen", [/다음 밤 마비 예약/]],
+  ["malen", [/다음 밤 마비 예약/, /malen_elusive/, /corpsePending/]],
   ["gain", [/효과 다음 밤 연기/, /다음 위선이 처치로 전환/]],
   ["luna", [/moonGauge 10/, /악마 \+3/]],
   ["logen", [/pendantTargetBonus/]],
