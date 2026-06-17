@@ -66,6 +66,12 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
         // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인.
         { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }] },
+        // 삶이 있는 곳으로(하브레터스, 악마 측 역추리): 대악마가 의심 가는 하브레터스를 지목.
+        // 적중(target.currentRole==='habreterus')이면 하브 Annihilate(다음 처치, 치료 무시).
+        // 빗나가면 통지만(deduce_miss). Deduce effect 가 source.actualFaction='demon' 분기로 동작.
+        // priority 4 — 동일 라운드 doctor_heal(3) 후 처리되어 치료가 먼저 들어가지만 Annihilate 가
+        // PROTECTED 를 우회(engine death loop 의 annihilated 게이트).
+        { id: "demon_deduce", name: "역추리", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
       ],
     },
   },
@@ -374,7 +380,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     deathHook: { perDeath: { counter: "clue", amount: 1 } },
   },
   {
-    // 하브레터스(천사-4): 생명의 언약 = 치료. v1 = 치료(doctor_heal 재사용). vault [[하브레터스]].
+    // 하브레터스(천사-4): 치료자 v2 — 생명의 언약 + 삶이 있는 곳으로(양방향 상호추리). vault [[하브레터스]].
     id: "habreterus",
     name: "하브레터스",
     faction: "angel",
@@ -382,12 +388,17 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         // 생명의 언약(하브레터스): 치료 + 소명 — 그 밤 실제 공격을 막으면 시전자 투표가치 +3.
+        // 추가로 callingCooldown 1일 단축은 engine 의 saveRewards 분기에서 하브 한정으로 처리(canon "성공 시 소명 대기 -1일").
         { id: "doctor_heal", name: "치료", targetType: "SINGLE_ALIVE", priority: 3, onSaveGrantSelf: { counter: "voteValueMod", amount: 3 }, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
-        // 삶이 있는 곳으로(v2, 상호추리): 의심 가는 악마를 지목 — 적중(처치자)이면 그 밤 악마 효과
-        // 면역(자기 부정효과 정화, Deduce). 빗나가면 통지만. 악마측 역추리(하브 탈락)는 후속(양방향).
+        // 삶이 있는 곳으로(v2, 양방향 상호추리): 하브 측 — 의심 가는 악마를 지목, 적중(처치자)이면
+        // 자기 부정효과 정화(Deduce). 악마 측 — demon_deduce 액션(대악마 전용)이 하브를 지목·적중 시
+        // 하브 다음 처치(Annihilate, 치료 무시). 새 effect 없음 — Deduce 가 source.actualFaction 으로 분기.
         { id: "habreterus_deduce", name: "삶이 있는 곳으로", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
       ],
     },
+    // 임종 선언(canon): 그 라운드 누군가 탈락하면 callingPending +1. engine 이 hab 한정 후처리로
+    // cooldown==0 인 밤에만 소명 발동(voteValueMod -1 + countBonus +1 + cleanse + cooldown=3).
+    deathHook: { perDeath: { counter: "callingPending", amount: 1 } },
   },
   {
     // 미즐렛(천사-15): 디저트 선물 = 탈락자 부활(v2). 탈락한 대상을 되살린다.
