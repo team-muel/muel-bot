@@ -349,16 +349,88 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.equal(newState.players.uno.counters.countBonus, 1, "용맹함 — 명예 +1");
 }
 
-// --- 6e. 팬텀 영면: 악몽 2회 누적 → 즉시 처리 ---
+// --- 6e. 팬텀 영면: 이미 악몽인 대상 재지정 = 즉시 죽이지 않고 풀(deepsleep) 누적 + 악몽 지정 +1 ---
 {
   const victim = { ...player("victim", "citizen", "angel"), counters: { nightmare: 1 } };
   const state = emptyState(
-    { phantom: player("phantom", "phantom", "demon"), victim },
+    { phantom: { ...player("phantom", "phantom", "demon"), counters: { nightmareUses: 5 } }, victim },
     [{ sourceUserId: "phantom", targetUserId: "victim", actionType: "phantom_nightmare", priority: 4 }],
   );
   const { newState, events } = resolveNightActions(state);
-  assert.equal(newState.players.victim.alive, false, "악몽 2회 누적 — 영면 즉시 처리");
-  assert.ok(events.some((e: any) => e.type === "deep_sleep"), "영면 이벤트");
+  assert.equal(newState.players.victim.alive, true, "영면 — 즉시 죽지 않음(풀 누적)");
+  assert.equal(newState.players.victim.counters.deepsleep, 1, "영면 표식");
+  assert.equal(newState.players.phantom.counters.deepsleepCount, 1, "살아있는 영면 1명 → 팬텀 악몽 지정 +1");
+  assert.ok(events.some((e: any) => e.type === "deepsleep_marked"), "영면 이벤트");
+}
+// --- 6f. 팬텀 영면 발동(phantom_reap): 누적 영면 전원 일괄 처치 ---
+{
+  const state = emptyState(
+    {
+      phantom: { ...player("phantom", "phantom", "demon"), counters: { deepsleepCount: 2 } },
+      d1: { ...player("d1", "citizen", "angel"), counters: { deepsleep: 1 } },
+      d2: { ...player("d2", "citizen", "angel"), counters: { deepsleep: 1 } },
+      safe: player("safe", "citizen", "angel"),
+    },
+    [{ sourceUserId: "phantom", targetUserId: null, actionType: "phantom_reap", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.d1.alive, false, "영면 발동 — d1 처치");
+  assert.equal(newState.players.d2.alive, false, "영면 발동 — d2 처치(다수 일괄)");
+  assert.equal(newState.players.safe.alive, true, "영면 아닌 대상은 안전");
+  assert.equal(newState.players.phantom.counters.deepsleepCount, 0, "발동 후 영면 카운트 리셋");
+}
+// --- 6g. 동적 악몽: 영면 1명 살아있으면 악몽 2명 동시 지정 ---
+{
+  const state = emptyState(
+    {
+      phantom: { ...player("phantom", "phantom", "demon"), counters: { deepsleepCount: 1, nightmareUses: 5 } },
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+    },
+    [{ sourceUserId: "phantom", targetUserId: null, targetUserIds: ["a", "b"], actionType: "phantom_nightmare", priority: 4 }],
+  );
+  const { events } = resolveNightActions(state);
+  for (const id of ["a", "b"]) {
+    assert.ok(events.some((e: any) => e.type === "nightmare_marked" && e.payload?.user_id === id), `동적 악몽 — ${id} 지정(상한 1+1=2)`);
+  }
+}
+// --- 팬텀 악몽 사용 횟수: 발동 1회당 1 소비(봉인하면 충전 없음), 0명 봉인 밤엔 +2 충전(상한 5) ---
+{
+  // 같은 밤에 봉인+악몽 → 봉인했으므로 충전 없음. 악몽 1 소비: 5→4.
+  const state = emptyState(
+    {
+      phantom: { ...player("phantom", "phantom", "demon"), counters: { nightmareUses: 5 } },
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "phantom", targetUserId: null, targetUserIds: ["a"], actionType: "phantom_seal", priority: 1 },
+      { sourceUserId: "phantom", targetUserId: "b", actionType: "phantom_nightmare", priority: 4 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.phantom.counters.nightmareUses, 4, "봉인한 밤 + 악몽 1회 → 5→4(충전 없음)");
+}
+{
+  // 아무것도 봉인 안 한 밤 → 악몽 +2 충전(상한 5). 시작 1 → 3.
+  const state = emptyState(
+    { phantom: { ...player("phantom", "phantom", "demon"), counters: { nightmareUses: 1 } } },
+    [],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.phantom.counters.nightmareUses, 3, "0명 봉인 밤 → 악몽 +2 충전(1→3)");
+}
+{
+  // 사용 횟수 0이면 악몽 발동 차단.
+  const state = emptyState(
+    { phantom: { ...player("phantom", "phantom", "demon"), counters: { nightmareUses: 0 } }, v: player("v", "citizen", "angel") },
+    [
+      { sourceUserId: "phantom", targetUserId: null, targetUserIds: ["v"], actionType: "phantom_seal", priority: 1 }, // 봉인해서 충전 막음
+      { sourceUserId: "phantom", targetUserId: "v", actionType: "phantom_nightmare", priority: 4 },
+    ],
+  );
+  const { events } = resolveNightActions(state);
+  assert.ok(events.some((e: any) => e.type === "action_blocked_no_charge"), "사용 횟수 0 → 악몽 차단");
 }
 
 // --- 7. 잔불 대검(아서): 결백자(tainted 없음) 하루 무적 → 처치 무효. 충전(emberCharge) 소비. ---
@@ -531,7 +603,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   // 캐스트 밤(N)
   const state = emptyState(
     {
-      phantom: player("phantom", "phantom", "demon"),
+      phantom: { ...player("phantom", "phantom", "demon"), counters: { nightmareUses: 5 } },
       doctor: player("doctor", "habreterus", "angel"),
       victim: player("victim", "citizen", "angel"),
     },
@@ -1087,4 +1159,64 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(newState.players.hab.counters.voteValueMod ?? 0, 0, "소명 — 막은 공격이 없으면 보상 없음");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명) checks passed");
+// --- 팬텀 어둠이 내린 도시: 동적 다중 봉인(상한 = 2 + counters.sealCap). 지목 전원 그 밤 봉인 ---
+{
+  // 기본(sealCap 미설정) → 상한 2. 3명 지목해도 앞 2명만 봉인(초과분 슬라이스).
+  const state = emptyState(
+    {
+      phantom: player("phantom", "phantom", "demon"),
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+      c: player("c", "citizen", "angel"),
+    },
+    [{ sourceUserId: "phantom", targetUserId: null, targetUserIds: ["a", "b", "c"], actionType: "phantom_seal", priority: 1 }],
+  );
+  const { events } = resolveNightActions(state);
+  const sealed = ["a", "b", "c"].filter((id) => events.some((e: any) => e.type === "silenced" && e.payload?.user_id === id));
+  assert.equal(sealed.length, 2, "기본 상한 2: 3명 지목해도 2명만 봉인");
+}
+{
+  // sealCap 1(아침 1회 경과) → 상한 3. 3명 전원 봉인.
+  const state = emptyState(
+    {
+      phantom: { ...player("phantom", "phantom", "demon"), counters: { sealCap: 1 } },
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+      c: player("c", "citizen", "angel"),
+    },
+    [{ sourceUserId: "phantom", targetUserId: null, targetUserIds: ["a", "b", "c"], actionType: "phantom_seal", priority: 1 }],
+  );
+  const { events } = resolveNightActions(state);
+  for (const id of ["a", "b", "c"]) {
+    assert.ok(events.some((e: any) => e.type === "silenced" && e.payload?.user_id === id), `sealCap 1 → 상한 3 — ${id} 봉인`);
+  }
+}
+
+// --- 팬텀 어둠이 내린 도시: 밤 해소(아침)마다 sealCap +1 → 봉인 가능 수 성장 ---
+{
+  const state = emptyState({ phantom: player("phantom", "phantom", "demon"), x: player("x", "citizen", "angel") }, []);
+  const r1 = resolveNightActions(state);
+  assert.equal(r1.newState.players.phantom.counters.sealCap, 1, "1번째 밤 해소 → sealCap 1(다음 밤 상한 3)");
+  const r2 = resolveNightActions(r1.newState);
+  assert.equal(r2.newState.players.phantom.counters.sealCap, 2, "2번째 밤 해소 → sealCap 2(다음 밤 상한 4)");
+}
+
+// --- 팬텀 침묵의 밤: 밤 연장 표식 + 생존 천사팀 카운트 +1(연장의 대가, 천사만) ---
+{
+  const state = emptyState(
+    {
+      phantom: player("phantom", "phantom", "demon"),
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+      d: player("d", "demon", "demon"),
+    },
+    [{ sourceUserId: "phantom", targetUserId: null, actionType: "phantom_silentnight", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.a.counters.countBonus, 1, "침묵의 밤 — 생존 천사 a 소속 카운트 +1");
+  assert.equal(newState.players.b.counters.countBonus, 1, "침묵의 밤 — 생존 천사 b 소속 카운트 +1");
+  assert.equal(newState.players.d.counters.countBonus ?? 0, 0, "악마는 카운트 안 오름(천사만)");
+  assert.equal(newState.players.phantom.counters.extendNight, 1, "밤 연장 표식(phase-advance 가 읽음)");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤) checks passed");

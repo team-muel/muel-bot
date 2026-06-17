@@ -111,6 +111,17 @@ export interface ActiveAbility {
   // 멀티타깃 지정 수(아서 잔불이 꺼지기 전에=3). 미지정/1 이면 단일 대상. "Target" 효과를
   // ActionPayload.targetUserIds 의 각 대상에 적용한다. match-action 이 최대 개수를 검증한다.
   targetCount?: number;
+  // 동적 멀티타깃 상한(팬텀 어둠이 내린 도시 = 매 아침 +1). 유효 상한 = targetCount(미지정 시 1)
+  //   + targetCountPerDay*(dayCount-1) + (targetCountCounter ? source.counters[그 키] : 0).
+  //   engine·match-action 둘 다 effectiveTargetCount() 로 계산해 일관 적용(직업 하드코딩 없음).
+  targetCountPerDay?: number;
+  targetCountCounter?: string;
+  // 같은 대상 연속(직전 같은 능력 사용) 지목 금지(팬텀 어둠이 내린 도시). match-action 이 직전
+  // 같은 action_type 제출의 대상과 겹치면 거부한다(직업 하드코딩 없이 플래그로).
+  noConsecutiveTarget?: boolean;
+  // 낮(day/vote/verdict)에도 발동 가능(팬텀 영면 발동 — 처형 시간에 쌓아둔 영면 일괄 처치).
+  // match-action 이 낮 제출을 허용하고 즉시 처리한다(밤 제출은 기존 엔진 경로).
+  usableInDay?: boolean;
   // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
   // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
   // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).
