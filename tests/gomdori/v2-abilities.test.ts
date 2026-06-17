@@ -1775,4 +1775,32 @@ assert.match(roles, /id: "ellen_persecute"[\s\S]*?onlyIfSourceCounter: \{ key: "
 const ellenV2Mig = readFileSync("supabase/migrations/20260618130000_gomdori_ellen_v2.sql", "utf8");
 assert.match(ellenV2Mig, /'ellen_shatter'/, "마이그레이션 — 해체된 퍼즐");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체) checks passed");
+// --- 사탄의 마 전역 취급: 살아있는 대악마 + 천사팀 전원 vote 0 → 천사 transient 악마 카운트 ---
+{
+  // 우노 voteValueMod=-11 → vote=1-11=-10 ≤ 0. 대악마 생존. countTeams 가 transient 로 천사를 악마 합산.
+  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: -11 } };
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const r = resolveNightActions(emptyState({ uno, demon }, []));
+  assert.ok(r.events.some((e: any) => e.type === "satanic_realm_treated" && e.payload?.user_id === "uno"), "satanic_realm_treated 이벤트");
+  const win = checkWinCondition(r.newState.players);
+  assert.equal(win.winner, "demons", "전역 취급 — 우노가 악마 카운트로 합산되어 악마 승");
+  // 대악마 사망 시 영역 해제 → 우노는 다시 천사 카운트.
+  r.newState.players.demon.alive = false;
+  const win2 = checkWinCondition(r.newState.players);
+  assert.equal(win2.winner, "angels", "대악마 사망 → 영역 해제 → 천사 카운트 복귀(통상 천사 승)");
+}
+{
+  // 천사가 양수 voteValueMod 보유면 영역 X.
+  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } };
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const r = resolveNightActions(emptyState({ uno, demon }, []));
+  assert.ok(!r.events.some((e: any) => e.type === "satanic_realm_treated"), "양수 vote — 영역 발동 X");
+}
+
+// 대악마 전역 취급 — 계약 정규식.
+assert.match(roles, /id: "demon_kill"[\s\S]*?ModifyVoteValue/, "대악마 사탄의 마 — 처치 시 전원 -1");
+const engineSrc = readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8");
+assert.match(engineSrc, /isSatanicRealmActive/, "engine.isSatanicRealmActive 헬퍼 존재");
+assert.match(engineSrc, /satanicTreated/, "countTeams — 사탄 영역 transient flip");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체/사탄의마전역) checks passed");

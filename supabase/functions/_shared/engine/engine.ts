@@ -406,6 +406,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 셋 이상 적용되면 로건의 지정 대상 +2(pendantTargetBonus). 매 밤 해소 시 갱신한다.
   applyLogenPendant(newState.players, events);
 
+  // 사탄의 마 전역 취급(canon 대악마 §사탄의 마): 생존 천사팀(actualFaction='angel') 전원의 행사
+  // 투표가치가 0 이하로 꺼지면 *모든 조사·취급 효과가 악마로 판정* — treatedAsFaction='demon' 플립.
+  // countTeams 가 treatedAsFaction 우선 참조라 자동으로 악마 카운트로 합산되며 승리 판정에도 반영.
+  // 조사 결과는 match-action-core.isAngelTeamVoteFullySuppressed 가 이미 강제(canon 일치).
+  // 일방향 — 한번 꺼지면 회복 X(누적 voteValueMod 가 영속).
+  applySatanicRealm(newState.players, events);
+
   // 팬텀 아침 처리: ① 어둠이 내린 도시 봉인 가능 수 '매 아침 +1'(sealCap, 지속). ② 그 밤 아무도
   // 봉인하지 않았으면(어둠이 내린 도시 미발동) 악몽 사용 횟수 +2 충전(상한 5) — 봉인 대신 악몽을
   // 비축하는 템포 선택. sortedActions 로 이 밤 phantom_seal 제출 여부 판정(직업 하드코딩 최소).
@@ -709,10 +716,16 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     if (player.currentRole === "converted" && player.alive) pasuaFlock += 1;
   }
 
+  // 사탄의 마 전역 취급(대악마): 살아있는 대악마 + 천사팀 전원 vote 0 이면 transient 로 천사를
+  // 악마 카운트로 합산. 대악마 사망 시 자동 해제(영속 X — 카운트가 일관 유지된다).
+  const realmActive = isSatanicRealmActive(players);
+
   for (const player of Object.values(players)) {
     // 빙의(말렌): 그 라운드 악마팀으로 카운트.
     const possessed = (player.counters?.possessed ?? 0) > 0;
-    const faction = possessed ? "demon" : (player.treatedAsFaction || player.actualFaction);
+    // 사탄의 마 전역 취급: 영역 활성 + 천사 → demon 으로 transient flip.
+    const satanicTreated = realmActive && player.actualFaction === "angel";
+    const faction = possessed || satanicTreated ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
       faction === "demon" || faction === "helper"
         ? "demon"
@@ -803,6 +816,32 @@ export function applyDawnbreakerPassive(players: Record<string, PlayerState>, ev
     arthur.alive = false;
     arthur.markedForDeath = false;
     events.push({ type: "dawnbreaker_fallen", payload: { user_id: arthur.userId, dead_innocent_angels: deadInnocentAngels } });
+  }
+}
+
+// 사탄의 마 전역 취급(대악마 §사탄의 마 canon "천사팀 전체가 0이 되면 *대신 모든 조사·취급 효과
+// 가 악마로 판정*"): 살아있는 대악마(currentRole='demon')가 사탄의 영역을 유지하는 동안, 생존
+// 천사팀(actualFaction='angel') 전원의 행사 투표가치 = 1 + bonus + voteWeightBonus + voteValueMod
+// 가 모두 0 이하이면 발동. countTeams 가 같은 식으로 transient 평가해 천사를 악마 카운트로 합산
+// 한다(영속화 X — 대악마 사망 시 영역 해제). 알림 목적 이벤트만 한 번 emit.
+export function isSatanicRealmActive(players: Record<string, PlayerState>): boolean {
+  const aliveAngels = Object.values(players).filter((p) => p.alive && p.actualFaction === "angel");
+  if (aliveAngels.length === 0) return false;
+  const demonAlive = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
+  if (!demonAlive) return false;
+  return aliveAngels.every((p) => {
+    const v = 1 + (p.bonusVoteValue ?? 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0);
+    return v <= 0;
+  });
+}
+
+export function applySatanicRealm(players: Record<string, PlayerState>, events: unknown[]): void {
+  if (!isSatanicRealmActive(players)) return;
+  for (const p of Object.values(players)) {
+    if (p.alive && p.actualFaction === "angel" && (p.counters?.satanicRealmNotified ?? 0) === 0) {
+      p.counters.satanicRealmNotified = 1;
+      events.push({ type: "satanic_realm_treated", payload: { user_id: p.userId } });
+    }
   }
 }
 
