@@ -300,6 +300,28 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.ok(!events.some((e: any) => e.type === "stakeout_triggered"), "대상 생존 — 불심검문 미발동");
   assert.equal(newState.players.dordan.counters.persecuteBias, 1, "미발동 — 도르단 부정효과 유지");
 }
+// --- 4d-2. 도르단 침착한 탐정: 탈락 밤에 투표로 지목한 범인의 지정 대상 통지 ---
+{
+  const dordan = { ...player("dordan", "dordan", "angel"), lastVoteTarget: "demon" };
+  const state = emptyState(
+    {
+      dordan,
+      demon: player("demon", "demon", "demon"),
+      victim: player("victim", "citizen", "angel"),
+    },
+    [{ sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 }],
+  );
+  const { events } = resolveNightActions(state);
+  assert.ok(
+    events.some((e: any) =>
+      e.type === "culprit_target_revealed" &&
+      e.payload?.user_id === "dordan" &&
+      e.payload?.culprit_user_id === "demon" &&
+      e.payload?.target_user_ids?.includes("victim")
+    ),
+    "침착한 탐정 — 범인의 밤 지정 대상 통지",
+  );
+}
 // --- 4e. 미즐렛 고급 와인: 전원 정화 + 디저트 미제공자만 투표가치 -1 ---
 {
   const fed = { ...player("fed", "citizen", "angel"), tags: ["dessert"], counters: { nightmare: 1 } };
