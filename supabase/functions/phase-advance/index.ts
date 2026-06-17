@@ -50,6 +50,8 @@ type DbAction = {
   actor_user_id: string;
   target_user_id: string | null;
   action_type: string;
+  // 멀티타깃(아서 잔불이 꺼지기 전에): match-action 이 result.targetUserIds 에 전체 대상을 담는다.
+  result?: { targetUserIds?: string[] } | null;
 };
 
 function requireNoError<T>(result: { data: T; error: unknown }): T {
@@ -117,6 +119,9 @@ function actionRowsToInputs(actions: DbAction[]) {
     actorUserId: action.actor_user_id,
     targetUserId: action.target_user_id,
     actionType: action.action_type,
+    // 멀티타깃 복원: 저장된 result.targetUserIds 를 그대로 전달. 엔진이 ability.targetCount>1 일
+    // 때만 사용하므로 단일 능력에선 무해(제네릭 — 직업 분기 없음).
+    targetUserIds: action.result?.targetUserIds,
   }));
 }
 
@@ -520,7 +525,7 @@ Deno.serve((req: Request) => {
           const actions = requireNoError(
             await supabase
               .from("match_actions")
-              .select("actor_user_id, target_user_id, action_type")
+              .select("actor_user_id, target_user_id, action_type, result")
               .eq("phase_id", phase.id),
           ) as DbAction[];
 
@@ -536,6 +541,7 @@ Deno.serve((req: Request) => {
           state.actionStack = actionRowsToInputs(actions).map((action) => ({
             sourceUserId: action.actorUserId,
             targetUserId: action.targetUserId,
+            targetUserIds: action.targetUserIds,
             actionType: action.actionType || "",
             // 봉인(세이카/팬텀)·변신(베스토 self)은 가장 먼저(1) — 대상 능력보다 앞서 처리.
             // 부활/치료=3, 처치=4, 조사·색출·포교·낙인·일식=5.

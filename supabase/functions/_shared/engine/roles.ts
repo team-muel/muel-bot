@@ -366,23 +366,35 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 아서(천사-14): 여명의 기사(배정 시 자기 보호막 1) + 잔불 대검 = 대상에게 하루 무적(v2).
+    // 아서(천사-14): 여명의 기사. 결백/타락 판정은 *진영이 아니라 행위 이력*(counters.tainted —
+    // 부정 효과를 한 번이라도 적용했는가)으로 가린다(vault 아서 §해오름). 잔불 대검은 본래
+    // 캐논상 *하나의 무기* — 결백자엔 무적(Protect), 타락자엔 폭열→재적용 소멸(Annihilate 2단).
+    // (구버전이 진영 onlyFactions 로 arthur_emberblade/arthur_judge 두 액션으로 쪼갠 것은 오류.)
     id: "arthur",
     name: "아서",
     faction: "angel",
-    passives: [],
+    passives: [], // 여명의 기사(결백 천사 3명+ 탈락 시 동반)·위용은 후속.
     actions: {
       night: [
-        { id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 3, excludeSelf: true, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
-        // 단죄(v2 canon 결백/타락 판정): 대상이 타락(악마팀)이면 폭열→소멸(branded→annihilated,
-        // 부활 불가), 결백(천사·중립)이면 무적(Protect). onlyFactions 진영 게이트로 분기 —
-        // 친화적 무오사살(결백자를 단죄해도 보호만, 죽지 않음). 식별→야간 악마 제거 천사 경로.
-        // 처치(4)와 같은 우선도로 그 밤 처리. 2회 제한(폭열+소멸에 같은 대상 2밤 필요).
+        // 잔불이 꺼지기 전에(3명 지정): 3명 각각에 '해오름' 표식(silent, 통지 X) + 조사(Verdict
+        // 결백/타락 통지) 부여 + '잔불 대검' 1충전(발동당 총 +1). 해오름은 위용(투표가치)의 토대.
+        // id 는 마이그레이션 호환 위해 arthur_judge 유지.
         {
-          id: "arthur_judge", name: "단죄", targetType: "SINGLE_ALIVE", priority: 4, maxUses: 2, excludeSelf: true,
+          id: "arthur_judge", name: "잔불이 꺼지기 전에", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetCount: 3,
           effects: [
-            { type: "Annihilate", target: "Target", onlyFactions: ["demon"] },
-            { type: "Protect", target: "Target", duration: "1_NIGHT", onlyFactions: ["angel", "neutral"] },
+            { type: "AddTag", target: "Target", tag: "dawnrise", duration: "1_DAY" },
+            { type: "Verdict", target: "Target" },
+            { type: "GrantCount", target: "self", tag: "emberCharge", amount: 1 },
+          ],
+        },
+        // 잔불 대검: 충전(emberCharge) 1 소비. 결백(tainted 없음)=하루 무적, 타락(tainted)=폭열,
+        // 폭열된 타락자 재적용 시 소멸(Annihilate 가 branded→annihilated 2단을 자체 처리).
+        {
+          id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true,
+          requiresCounter: { key: "emberCharge", min: 1, consumeAmount: 1 },
+          effects: [
+            { type: "Protect", target: "Target", duration: "1_NIGHT", skipIfTargetCounter: { key: "tainted", min: 1 } },
+            { type: "Annihilate", target: "Target", onlyIfTargetCounter: { key: "tainted", min: 1 } },
           ],
         },
       ],

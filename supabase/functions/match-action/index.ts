@@ -37,6 +37,11 @@ Deno.serve((req: Request) => {
     const matchId = readRequiredString(body, "matchId");
     const actionType = readRequiredString(body, "actionType");
     const targetUserId = readOptionalString(body, "targetUserId");
+    // 멀티타깃(아서 잔불이 꺼지기 전에=3명): 문자열 배열만 통과시킨다. 단일 능력은 생략 가능.
+    const rawIds = (body as Record<string, unknown>).targetUserIds;
+    const targetUserIds = Array.isArray(rawIds)
+      ? rawIds.filter((x): x is string => typeof x === "string")
+      : undefined;
 
     const supabase = getSupabaseAdmin();
     const { investigationResult } = await submitMatchAction(supabase, {
@@ -44,6 +49,7 @@ Deno.serve((req: Request) => {
       actorUserId: claims.sub,
       actionType,
       targetUserId,
+      targetUserIds,
     });
 
     return jsonResponse({ success: true, investigationResult }, { origin });

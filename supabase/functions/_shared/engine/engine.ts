@@ -5,6 +5,32 @@ const TAG_PROTECTED = "protected";
 const TAG_DELAYED = "delayed";
 export const TAG_SUSPECTED = "suspected"; // 의심 투표 최다 득표 → 그 밤 능력 사용 불가 (canon §3)
 
+// 부정 효과(아서 해오름 판정의 토대): 이 타입의 효과를 *적용한* 시전자는 counters.tainted=1.
+// 결백/타락 판정은 진영이 아니라 '부정 효과를 한 번이라도 적용한 적 있는가'로 가린다(vault 아서
+// §해오름). 사용자 확정(2026-06-17):
+//  - 루루 매료(Charm=투표 양도)는 가해가 아니라 양도 → 부정 효과 X(제외).
+//  - 세이카 봉인(Silence)은 부정 효과 O(포함). '경우에 따라 타락'은 '봉인을 실제로 쓴 경우에만'
+//    tainted 가 되는 자연스러운 조건부로 성립(안 쓰면 결백).
+// Annihilate(아서 잔불 대검의 소멸)는 *의로운 심판*이라 시전자를 tainted 시키지 않는다 — 목록에서
+// 제외(아서가 타락자를 소멸시켜도 아서 자신은 타락 판정 안 됨). Annihilate 는 잔불 대검 전용이라
+// 제외해도 다른 직업에 영향 없음. 미확정 edge(현재 제외): ChangeFaction(파스아 강제전향).
+const NEGATIVE_EFFECT_TYPES = new Set<Effect["type"]>([
+  "Kill", "Corrupt", "Silence", "Nightmare", "Possess", "Haunt", "Nullify", "Rebrand", "Eclipse",
+]);
+
+// 부정 효과 적용 여부 판정(아서 해오름의 토대). 타입 집합 + 부호 의존 분류 — 직업 하드코딩 없음.
+// 사용자 확정(2026-06-17): 투표/의심 '행위' 자체는 부정효과 아님(이건 applyEffect 가 아니라 tally
+// 경로라 애초에 여기 안 옴). 단 투표/의심을 *통해 가해*하는 효과는 부정효과 — 받는 표 증가
+// (ModifyReceivedVote>0)·받는 의심 증가(ModifyReceivedSuspicion>0)·행사 투표가치 감소
+// (ModifyVoteValue<0). 반대 부호(이득 방향)는 가해 아님.
+function isNegativeApplication(effect: Effect): boolean {
+  if (NEGATIVE_EFFECT_TYPES.has(effect.type)) return true;
+  if (effect.type === "ModifyReceivedVote") return (effect.amount ?? 0) > 0;
+  if (effect.type === "ModifyReceivedSuspicion") return (effect.amount ?? 0) > 0;
+  if (effect.type === "ModifyVoteValue") return (effect.amount ?? 0) < 0;
+  return false;
+}
+
 export type VoteActionInput = {
   actorUserId: string;
   targetUserId: string | null;
@@ -77,6 +103,10 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         counters.nightmarePending = 0;
       }
     }
+    // 해오름(dawnrise) 만료: 1_DAY 태그 — 적용된 밤(N) → 다음 낮(N) 투표(위용)까지 유지되고,
+    // 다음 밤(N+1) 시작인 여기에서 만료된다. 그 밤 재지정 시 아래 action 루프가 다시 부여.
+    const pl = newState.players[userId];
+    if (pl.tags.includes("dawnrise")) pl.tags = pl.tags.filter((t) => t !== "dawnrise");
   }
 
   for (const action of sortedActions) {
@@ -132,12 +162,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
 
     // 카운터 게이트(루나 달 게이지): 충전이 임계 미만이면 발동 차단. consume 면 발동 후 소비.
     if (ability.requiresCounter) {
-      const { key, min, consume } = ability.requiresCounter;
+      const { key, min, consume, consumeAmount } = ability.requiresCounter;
       if ((sourcePlayer.counters[key] ?? 0) < min) {
         events.push({ type: "action_blocked_no_charge", userId: sourcePlayer.userId, key });
         continue;
       }
-      if (consume) sourcePlayer.counters[key] = 0;
+      // consumeAmount: 누적 충전을 그만큼만 차감(아서 잔불 대검). 없으면 기존 consume=전량 소비.
+      if (consumeAmount != null) {
+        sourcePlayer.counters[key] = Math.max(0, (sourcePlayer.counters[key] ?? 0) - consumeAmount);
+      } else if (consume) {
+        sourcePlayer.counters[key] = 0;
+      }
     }
 
     for (const effect of ability.effects) {
@@ -159,9 +194,23 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         continue;
       }
 
+      // "Target" 효과: 멀티타깃(아서 잔불이 꺼지기 전에=3명)이면 targetUserIds 의 각 대상에,
+      // 아니면 단일 targetUserId 에 적용. 단일/멀티를 한 경로로 통일(하위호환).
+      if (effect.target === "Target") {
+        const ids = (ability.targetCount && ability.targetCount > 1 && action.targetUserIds && action.targetUserIds.length)
+          ? action.targetUserIds
+          : (action.targetUserId ? [action.targetUserId] : []);
+        for (const tid of ids) {
+          const t = newState.players[tid];
+          if (!t) continue;
+          if (!t.alive && ability.targetType !== "SINGLE_DEAD") continue;
+          applyEffect(newState, sourcePlayer, t, effect, events);
+        }
+        continue;
+      }
+
       let target: PlayerState | null = null;
       if (effect.target === "self") target = sourcePlayer;
-      if (effect.target === "Target" && targetPlayer) target = targetPlayer;
       // substrate: "내가 투표/의심한 대상"으로 해소(루나 달빛·엘런 박해 등 단일 토대).
       if (effect.target === "VoteTarget" && sourcePlayer.lastVoteTarget) target = newState.players[sourcePlayer.lastVoteTarget] ?? null;
       if (effect.target === "SuspectTarget" && sourcePlayer.lastSuspectTarget) target = newState.players[sourcePlayer.lastSuspectTarget] ?? null;
@@ -188,7 +237,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     const player = newState.players[userId];
 
     if (player.markedForDeath) {
-      if (player.tags.includes(TAG_PROTECTED)) {
+      if (player.currentRole === "arthur") {
+        // 여명의 기사(패시브): 아서는 어떤 효과로도 밤에 탈락하지 않는다(소멸 annihilate 포함).
+        // 단 '결백한 천사팀 3명+ 탈락 시 동반 탈락'은 아침(phase-advance)에서 별도 처리.
+        // 타락(currentRole='corrupted')하면 더 이상 아서가 아니므로 면역 상실.
+        player.markedForDeath = false;
+        if (player.counters?.annihilated) player.counters.annihilated = 0;
+        player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
+        events.push({ type: "arthur_immune", payload: { user_id: player.userId } });
+      } else if (player.tags.includes(TAG_PROTECTED)) {
         player.markedForDeath = false;
         player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED);
         events.push({ type: "attack_prevented", userId: player.userId });
@@ -214,6 +271,11 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 봉인은 같은 밤 한정 — 종료 시 해제.
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
+
+  // 여명의 기사(패시브): 결백한(tainted 0) 천사팀의 누적 탈락을 반영. 탈락 1명당 아서 '잔불 대검'
+  // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
+  // 가 같은 헬퍼를 호출해 반영한다(아래 applyDawnbreakerPassive).
+  applyDawnbreakerPassive(newState.players, events);
 
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
@@ -244,6 +306,18 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   return { newState, events };
 }
 
+// 위용(아서 패시브): '셋 이상 벨 수 있게 되면'(잔불 대검 충전 emberCharge ≥ 3) 발동 — 해오름
+// (dawnrise) 적용된 결백한(tainted 0) 살아있는 천사팀 1명당 아서의 행사 투표가치 +3(누적).
+function prowessVoteBonus(actor: PlayerState, players: Record<string, PlayerState>): number {
+  if (actor.currentRole !== "arthur") return 0;
+  if ((actor.counters?.emberCharge ?? 0) < 3) return 0;
+  let n = 0;
+  for (const p of Object.values(players)) {
+    if (p.alive && p.actualFaction === "angel" && (p.counters?.tainted ?? 0) === 0 && p.tags.includes("dawnrise")) n++;
+  }
+  return n * 3;
+}
+
 export function tallyEliminationVotes(
   actions: VoteActionInput[],
   players: Record<string, PlayerState>,
@@ -272,8 +346,8 @@ export function tallyEliminationVotes(
       continue;
     }
 
-    // 루루 매료 양도분(voteWeightBonus) + 사탄의 마 감소분(voteValueMod)을 행사 가치에 합산.
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0));
+    // 루루 매료 양도분(voteWeightBonus) + 사탄의 마 감소분(voteValueMod) + 아서 위용(+3/해오름결백)을 합산.
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -382,7 +456,7 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const actor = players[action.actorUserId];
     if (!actor?.alive) continue;
 
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0));
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -523,6 +597,31 @@ export function checkTimeoutWinner(players: Record<string, PlayerState>): {
   };
 }
 
+// 여명의 기사(아서 패시브): 결백한(tainted 0) 천사팀의 누적 탈락 수에 따라 — 탈락 1명당 아서
+// '잔불 대검' 충전 +1(델타만 가산, 중복 방지) + 누적 3명 이상이면 아서 동반 탈락. 밤(엔진)·낮
+// 투표(phase-advance) 양쪽 탈락 모두에서 같은 헬퍼를 호출해 일관 반영한다. 아서가 타락
+// (currentRole='corrupted')하면 패시브 상실(arthur 미발견 → no-op).
+export function applyDawnbreakerPassive(players: Record<string, PlayerState>, events: unknown[]): void {
+  const arthur = Object.values(players).find((p) => p.currentRole === "arthur");
+  if (!arthur) return;
+  arthur.counters = arthur.counters ?? {};
+  let deadInnocentAngels = 0;
+  for (const p of Object.values(players)) {
+    if (p.currentRole === "arthur") continue; // 아서 자신은 제외.
+    if (!p.alive && p.actualFaction === "angel" && (p.counters?.tainted ?? 0) === 0) deadInnocentAngels++;
+  }
+  const credited = arthur.counters.dawnDeathsCredited ?? 0;
+  if (deadInnocentAngels > credited) {
+    arthur.counters.emberCharge = (arthur.counters.emberCharge ?? 0) + (deadInnocentAngels - credited);
+    arthur.counters.dawnDeathsCredited = deadInnocentAngels;
+  }
+  if (arthur.alive && deadInnocentAngels >= 3) {
+    arthur.alive = false;
+    arthur.markedForDeath = false;
+    events.push({ type: "dawnbreaker_fallen", payload: { user_id: arthur.userId, dead_innocent_angels: deadInnocentAngels } });
+  }
+}
+
 function applyEffect(
   _state: MatchState,
   _source: PlayerState,
@@ -530,14 +629,26 @@ function applyEffect(
   effect: Effect,
   events: unknown[],
 ) {
-  // 진영 게이트(아서 단죄): 대상 진영이 onlyFactions 에 없으면 이 효과를 건너뛴다.
-  // 한 능력에 진영별 분기 효과를 붙여 결백(천사·중립)/타락(악마팀)을 다르게 처리한다.
+  // 진영 게이트(레거시): 대상 진영이 onlyFactions 에 없으면 이 효과를 건너뛴다.
   if (effect.onlyFactions && !effect.onlyFactions.includes(target.actualFaction)) {
+    return;
+  }
+  // 행위-기반 게이트(아서 잔불 대검 결백/타락): 대상의 누적 카운터로 분기. 진영이 아니라
+  // 행위 이력(tainted)으로 결백(skipIfTargetCounter)/타락(onlyIfTargetCounter)을 가른다.
+  if (effect.onlyIfTargetCounter && (target.counters?.[effect.onlyIfTargetCounter.key] ?? 0) < effect.onlyIfTargetCounter.min) {
+    return;
+  }
+  if (effect.skipIfTargetCounter && (target.counters?.[effect.skipIfTargetCounter.key] ?? 0) >= effect.skipIfTargetCounter.min) {
     return;
   }
   // 홀수날 게이트(엘런 박해자): 짝수날이면 이 효과를 건너뛴다(canon 홀수날 한정).
   if (effect.oddDayOnly && (_state.dayCount % 2 === 0)) {
     return;
+  }
+  // 해오름 판정 토대: 게이트를 통과해 실제로 부정 효과를 적용하는 시전자를 '타락'으로 표식한다.
+  // (진영 무관 — 부정 효과를 쓴 천사도 tainted 가 된다. vault 아서 §해오름.)
+  if (isNegativeApplication(effect)) {
+    _source.counters.tainted = 1;
   }
   switch (effect.type) {
     case "Kill":
@@ -740,5 +851,12 @@ function applyEffect(
         events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "demon" } });
       }
       break;
+    case "Verdict": {
+      // 해오름 판정(아서 잔불이 꺼지기 전에): 대상이 부정 효과를 한 번이라도 적용한 적 있으면
+      // '타락', 아니면 '결백'으로 시전자(아서)에게 통지. 진영 무관 — counters.tainted 로만 가린다.
+      const verdict = (target.counters?.tainted ?? 0) > 0 ? "tainted" : "innocent";
+      events.push({ type: "verdict_revealed", payload: { user_id: target.userId, by: _source.userId, verdict } });
+      break;
+    }
   }
 }
