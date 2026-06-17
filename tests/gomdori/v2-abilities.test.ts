@@ -1561,4 +1561,32 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 미즐렛 디저트 회로: mizlet_dessert → dessert_received, mizlet_wine → dessert_chat_open ---
+{
+  const mizlet: PlayerState = player("mizlet", "mizlet", "angel");
+  const a: PlayerState = player("a", "citizen", "angel");
+  const r = resolveNightActions(emptyState(
+    { mizlet, a },
+    [{ sourceUserId: "mizlet", targetUserId: "a", actionType: "mizlet_dessert", priority: 3 }],
+  ));
+  assert.ok(r.events.some((e: any) => e.type === "dessert_received" && e.payload?.user_id === "a" && e.payload?.by === "mizlet"), "dessert_received 이벤트 — 미즐렛 → 대상");
+  assert.ok(r.newState.players.a.tags.includes("dessert"), "디저트 태그 적용");
+}
+{
+  const mizlet: PlayerState = player("mizlet", "mizlet", "angel");
+  const a: PlayerState = { ...player("a", "citizen", "angel"), tags: ["dessert"] };
+  const b: PlayerState = player("b", "doctor", "angel");
+  const r = resolveNightActions(emptyState(
+    { mizlet, a, b },
+    [{ sourceUserId: "mizlet", targetUserId: null, actionType: "mizlet_wine", priority: 5 }],
+  ));
+  assert.ok(r.events.some((e: any) => e.type === "dessert_chat_open" && e.payload?.user_id === "a" && e.payload?.mizlet === "mizlet"), "dessert_chat_open — 디저트 보유 a");
+  assert.ok(!r.events.some((e: any) => e.type === "dessert_chat_open" && e.payload?.user_id === "b"), "dessert 없는 b — chat open X");
+}
+
+// 미즐렛 v2 — 계약 정규식.
+const engineSrcMz = readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8");
+assert.match(engineSrcMz, /dessert_received/, "engine — dessert_received 이벤트 발사");
+assert.match(engineSrcMz, /dessert_chat_open/, "engine — dessert_chat_open 이벤트 발사");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/미즐렛회로) checks passed");

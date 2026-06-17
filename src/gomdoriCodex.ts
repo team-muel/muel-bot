@@ -97,8 +97,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "디저트 선물", text: "쿠키(탈락해도 그 밤 능력 발동)/푸딩(무시불가 버프, 탈락 시점 밤으로 조정)." },
       { kind: "능력2", name: "고급 와인", text: "디저트 받은 대상은 부정효과 제거+미즐렛과 대화. 미제공 대상은 자기 부정효과 사라지고 투표가치 -1." },
     ],
-    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(생존자 보호+디저트 태그) + 다수복귀 패시브(탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). mizlet_wine 은 전원 정화 + 디저트 미제공자 voteValueMod -1로 라이브.",
-    v2: "부활, 디저트 버프, 다수 복귀 패시브, 고급 와인 정화/페널티까지 핵심 라이브. 미즐렛과 디저트 대상 대화 연결은 별도 확장 대상.",
+    v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + mizlet_dessert(생존자 보호+디저트 태그 + dessert_received 이벤트 = 미즐렛-대상 채팅 회로 신호) + 다수복귀 패시브(탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). mizlet_wine 은 전원 정화 + 디저트 미제공자 voteValueMod -1 + 디저트 보유 생존자 전원에 dessert_chat_open 이벤트(와인 회식 일괄 채팅 hook).",
+    v2: "부활, 디저트 버프, 다수 복귀 패시브, 고급 와인 정화/페널티, 디저트/와인 채팅 회로 이벤트 hook 까지 핵심 라이브. 실제 채팅 회로 plumbing 은 Discord 인프라 후속.",
     vault: "Universes/BoW/Characters/미즐렛.md",
   },
   {
