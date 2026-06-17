@@ -18,6 +18,13 @@ const NEGATIVE_EFFECT_TYPES = new Set<Effect["type"]>([
   "Kill", "Corrupt", "Silence", "Nightmare", "Possess", "Haunt", "Nullify", "Rebrand", "Eclipse",
 ]);
 
+// 세이카 흡수 출처 추적: '흡수 가능한 부여 효과'(대상에 디버프 카운터/태그를 남기는 부정 효과)
+// 만 demonDebuffs 로 집계한다. Kill/Annihilate/Rebrand/Eclipse 같은 종결·변환계는 '받은 부여
+// 효과'가 아니라 흡수 대상이 아니므로 제외. Absorb 가 이 집합이 만든 카운터를 모두 정화한다.
+const ABSORBABLE_DEBUFF_TYPES = new Set<Effect["type"]>([
+  "Silence", "Possess", "Nightmare", "Haunt", "Charm", "ModifyReceivedVote", "ModifyReceivedSuspicion",
+]);
+
 // 부정 효과 적용 여부 판정(아서 해오름의 토대). 타입 집합 + 부호 의존 분류 — 직업 하드코딩 없음.
 // 사용자 확정(2026-06-17): 투표/의심 '행위' 자체는 부정효과 아님(이건 applyEffect 가 아니라 tally
 // 경로라 애초에 여기 안 옴). 단 투표/의심을 *통해 가해*하는 효과는 부정효과 — 받는 표 증가
@@ -718,6 +725,12 @@ function applyEffect(
   // (진영 무관 — 부정 효과를 쓴 천사도 tainted 가 된다. vault 아서 §해오름.)
   if (isNegativeApplication(effect)) {
     _source.counters.tainted = 1;
+    // 세이카 흡수 출처 추적(provenance): 악마팀(actualFaction='demon', 처치자+악마측 조력자
+    // 포함)이 가한 '흡수 가능한 부여 효과'를 대상의 demonDebuffs 로 누적한다(지속 — 라운드
+    // 리셋 X). 세이카 Absorb 가 이 카운터로 '악마팀 효과 3개+' 를 출처 정확히 판정한다.
+    if (_source.actualFaction === "demon" && ABSORBABLE_DEBUFF_TYPES.has(effect.type)) {
+      target.counters.demonDebuffs = (target.counters.demonDebuffs ?? 0) + 1;
+    }
   }
   switch (effect.type) {
     case "Kill":
@@ -849,13 +862,16 @@ function applyEffect(
       events.push({ type: "cleansed", payload: { user_id: target.userId } });
       break;
     }
-    case "DelaySilence":
-      // 명예 실추(우노 용맹함): 대상을 *다음* 밤 봉인. silencePending 예약 경로(말렌 마비와 공유)
-      // 로 미루므로 priority 1 이 아니어도 안전 — 용맹함은 priority 5 라 같은 밤 봉인이 불가능.
-      // 우노는 자기가 투표한 대상(VoteTarget)이 천사(onlyFactions)일 때만 이 효과를 건다.
-      target.counters.silencePending = (target.counters.silencePending ?? 0) + 1;
-      events.push({ type: "honor_disgraced", payload: { user_id: target.userId } });
+    case "DelaySilence": {
+      // 명예 실추(우노 용맹함): *다음* 밤 봉인을 예약(silencePending, 말렌 마비와 경로 공유 →
+      // priority 1 아니어도 안전). selfPenalty 면 게이트(onlyFactions)는 대상(VoteTarget)으로
+      // 평가하되 봉인은 *시전자*(우노)에게 — "천사 투표 대상을 처형하면(동료 살해) 우노 자신이
+      // 명예 실추" 의 자기 처벌. selfPenalty 없으면 대상에 건다(범용).
+      const ds = effect.selfPenalty ? _source : target;
+      ds.counters.silencePending = (ds.counters.silencePending ?? 0) + 1;
+      events.push({ type: "honor_disgraced", payload: { user_id: ds.userId } });
       break;
+    }
     case "DelayAction":
       // 약간의 위선(가인): 대상의 *다음* 능력 발동을 한 밤 연기(소멸이 아니라 미룸). delayPending
       // 예약 → 다음 밤 시작에 TAG_DELAYED 로 승격(resolveNightActions 리셋 루프). 지속 카운터라
@@ -872,21 +888,19 @@ function applyEffect(
       break;
     case "Absorb": {
       // 자신만 아플 거야(세이카, target:"All"): 대상의 받은 부여 효과를 세이카(source)가 대신
-      // 받아낸다 — 대상은 정화(Cleanse 동일 키)되고, 흡수한 부정 효과 수를 source.absorbedDebuffs
-      // 에 누적. 자기 자신은 흡수 대상 제외. ※ canon '악마팀 효과 3개+' 의 *악마팀* 출처 판별은
-      // 효과 provenance 가 없어 '받은 부정 효과 수'로 근사(후속에서 정밀화). 누적 3+ 이면 세이카
-      // 소멸(markedForDeath + annihilated, 부활 불가) + 악마팀 공개 카운트다운(demonRevealIn=2).
+      // 받아낸다 — 대상은 모든 디버프를 정화(Cleanse 동일 키)한다. 단 소멸 임계(악마팀 효과 3+)
+      // 는 출처가 악마팀인 효과만(demonDebuffs, provenance 추적) 누적해 정확히 판정한다 — 천사·
+      // 중립이 가한 디버프는 정화하되 소멸 카운트엔 넣지 않는다. 자기 자신은 흡수 대상 제외.
+      // 누적 3+ → 세이카 소멸(markedForDeath + annihilated 부활 불가) + 악마팀 공개(demonRevealIn=2).
       if (target.userId === _source.userId) break;
-      const ABSORB_KEYS = ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"];
-      let absorbed = 0;
-      for (const key of ABSORB_KEYS) {
-        if (target.counters[key]) { absorbed += 1; target.counters[key] = 0; }
+      const demonOrigin = target.counters.demonDebuffs ?? 0;
+      for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted", "demonDebuffs"]) {
+        if (target.counters[key]) target.counters[key] = 0;
       }
-      if (target.tags.includes(TAG_SUSPECTED)) absorbed += 1;
       target.tags = target.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
-      if (absorbed > 0) {
-        _source.counters.absorbedDebuffs = (_source.counters.absorbedDebuffs ?? 0) + absorbed;
-        events.push({ type: "absorbed", payload: { user_id: target.userId, by: _source.userId, amount: absorbed } });
+      if (demonOrigin > 0) {
+        _source.counters.absorbedDebuffs = (_source.counters.absorbedDebuffs ?? 0) + demonOrigin;
+        events.push({ type: "absorbed", payload: { user_id: target.userId, by: _source.userId, amount: demonOrigin } });
       }
       if ((_source.counters.absorbedDebuffs ?? 0) >= 3 && !_source.counters.demonRevealIn) {
         _source.markedForDeath = true;

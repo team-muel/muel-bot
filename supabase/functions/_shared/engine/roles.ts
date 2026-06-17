@@ -381,16 +381,17 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
         // 용맹함(v2 완성, 1회): ① 전원에게 투쟁(GrantCount All) ② 자기 부정효과 제거(Cleanse self)
-        // ③ 우노가 직전에 투표한 대상(VoteTarget)의 소속 공개(RevealRole) ④ 그 대상이 천사면
-        // (onlyFactions:["angel"]) '명예 실추' = 다음 밤 행동 불가(DelaySilence). canon "우노의 투표
-        // 대상은 ... 소속 공개. 천사 소속이면 명예 실추(밤 동안 행동 불가)" — 주어 연속이라 명예
-        // 실추는 *투표 대상*에 적용. canon "사망자로 기록"은 반복 오토킬을 피해 RevealRole(정보)로
-        // 해석(결정 기록). VoteTarget 미투표 시 ③④ 자동 생략(substrate 가 null 이면 건너뜀).
+        // ③ 우노가 직전에 투표한 대상(VoteTarget)을 처형(Kill, canon "사망자로 기록" = 실제 처형,
+        // 사용자 확정 2026-06-17) + 소속 공개(RevealRole, public) ④ 그 대상이 천사면(동료 살해)
+        // 우노 자신이 '명예 실추' = 다음 밤 행동 불가(DelaySilence selfPenalty — 게이트는 대상 진영,
+        // 봉인은 시전자). canon "천사 소속이면 명예 실추" 를 동료 살해 자기 처벌로 해석(처형 확정에
+        // 따른 정합 — 죽은 대상 봉인은 무의미). VoteTarget 미투표 시 ③④ 자동 생략.
         { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [
           { type: "Cleanse", target: "self" },
           { type: "GrantCount", target: "All", amount: 1 },
           { type: "RevealRole", target: "VoteTarget" },
-          { type: "DelaySilence", target: "VoteTarget", onlyFactions: ["angel"] },
+          { type: "Kill", target: "VoteTarget" },
+          { type: "DelaySilence", target: "VoteTarget", onlyFactions: ["angel"], selfPenalty: true },
         ] },
       ],
     },
