@@ -42,7 +42,7 @@ const implementedCore: Array<[string, RegExp[]]> = [
   ["dordan", [/dordan_infiltrate/, /stakeout_triggered/]],
   ["mizlet", [/mizlet_wine/, /voteValueMod -1/]],
   ["helen", [/helen_freebird/]],
-  ["uno", [/소속 공개\/처형/, /다음 밤 봉인/]],
+  ["uno", [/missionCharge/, /악마 효과 1회 제거/, /소속 공개\/처형/, /다음 밤 봉인/]],
   ["seika", [/악마팀 출처 효과 3개\+/, /이틀 후 악마팀 공개/]],
   ["luru", [/luru_score/, /자기 투표가치 \+1/]],
   ["phantom", [/phantom_reap/, /phantom_silentnight/, /2\+sealCap/]],

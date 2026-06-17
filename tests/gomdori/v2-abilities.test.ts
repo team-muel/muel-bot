@@ -365,7 +365,36 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   const { newState, events } = resolveNightActions(state);
   assert.equal(newState.players.ally.counters.countBonus, 1, "투쟁 대상 카운트 +1");
+  assert.equal(newState.players.ally.counters.missionCharge, 1, "투쟁 대상 군인의 사명 +1");
   assert.ok(events.some((e: any) => e.type === "count_granted" && e.payload?.user_id === "ally"), "투쟁 이벤트");
+}
+// --- 5b. 군인의 사명(우노): 투쟁 2회 충전 → 악마 효과 1회 제거 ---
+{
+  let state = emptyState(
+    {
+      uno: player("uno", "uno", "angel"),
+      ally: player("ally", "citizen", "angel"),
+    },
+    [{ sourceUserId: "uno", targetUserId: "ally", actionType: "uno_struggle", priority: 5 }],
+  );
+  let r = resolveNightActions(state);
+  state = emptyState(
+    {
+      uno: r.newState.players.uno,
+      ally: r.newState.players.ally,
+    },
+    [{ sourceUserId: "uno", targetUserId: "ally", actionType: "uno_struggle", priority: 5 }],
+  );
+  r = resolveNightActions(state);
+  assert.equal(r.newState.players.ally.counters.missionCharge, 2, "군인의 사명 — 투쟁 2회로 충전");
+
+  const hit = resolveNightActions(emptyState(
+    { demon: player("demon", "demon", "demon"), ally: r.newState.players.ally },
+    [{ sourceUserId: "demon", targetUserId: "ally", actionType: "demon_kill", priority: 4 }],
+  ));
+  assert.equal(hit.newState.players.ally.alive, true, "군인의 사명 — 악마 처치 효과 제거");
+  assert.equal(hit.newState.players.ally.counters.missionCharge, 0, "군인의 사명 — 2스택 소비");
+  assert.ok(hit.events.some((e: any) => e.type === "mission_blocked" && e.payload?.effect === "Kill"), "군인의 사명 차단 이벤트");
 }
 
 // --- 6. 박해(엘런): substrate — 내가 투표한 대상이 받는-투표가치 +3 ---
@@ -442,6 +471,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   const { newState, events } = resolveNightActions(clean);
   assert.equal(newState.players.uno.counters.voteBias ?? 0, 0, "용맹함 — 자기 부정효과 제거");
   assert.equal(newState.players.uno.counters.countBonus, 1, "용맹함 — 명예 +1");
+  assert.equal(newState.players.ally.counters.missionCharge, 1, "용맹함 — 전원 투쟁으로 사명 충전");
   assert.ok(events.some((e: any) => e.type === "role_revealed" && e.payload?.user_id === "ally"), "용맹함 — 투표 대상 소속 공개");
   assert.equal(newState.players.ally.alive, false, "용맹함 — 투표 대상 처형(사망자로 기록)");
   assert.equal(newState.players.uno.counters.silencePending, 1, "동료(천사) 살해 → 우노 자신 명예 실추(다음 밤 봉인 예약)");
@@ -1509,4 +1539,4 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");

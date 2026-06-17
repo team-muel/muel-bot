@@ -766,6 +766,12 @@ function applyEffect(
   if (effect.oddDayOnly && (_state.dayCount % 2 === 0)) {
     return;
   }
+  // 군인의 사명(우노): 투쟁 2회로 충전된 대상은 악마가 가하는 부정 효과 1회를 제거한다.
+  if (_source.actualFaction === "demon" && isNegativeApplication(effect) && (target.counters?.missionCharge ?? 0) >= 2) {
+    target.counters.missionCharge = Math.max(0, (target.counters.missionCharge ?? 0) - 2);
+    events.push({ type: "mission_blocked", payload: { user_id: target.userId, by: _source.userId, effect: effect.type } });
+    return;
+  }
   // 해오름 판정 토대: 게이트를 통과해 실제로 부정 효과를 적용하는 시전자를 '타락'으로 표식한다.
   // (진영 무관 — 부정 효과를 쓴 천사도 tainted 가 된다. vault 아서 §해오름.)
   if (isNegativeApplication(effect)) {

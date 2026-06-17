@@ -52,6 +52,7 @@ export interface Effect {
   // Corrupt(루나 공포 속에 밀어 넣다): 천사를 악마팀으로 타락(currentRole='corrupted',
   //   actualFaction='demon'). ChangeFaction 이 중립화(파스아)인 것과 대칭.
   // GrantCount(우노 투쟁): 대상의 소속 카운트(counters.countBonus)를 amount 만큼 더한다(지속).
+  //   tag="missionCharge" 는 우노 군인의 사명 충전으로, 2개가 쌓이면 악마 효과 1회를 제거한다.
   // Charm(루루 매료): 대상의 다음 처형 투표를 무력화(counters.charmed, 라운드 한정)하고,
   //   그 투표 권한을 루루에게 양도(루루 counters.voteWeightBonus +1, 지속).
   // Nightmare(팬텀 악몽): 지연 탈락 — counters.nightmare 누적. 밤 보호로 못 막고, 아침

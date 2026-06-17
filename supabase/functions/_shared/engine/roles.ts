@@ -407,8 +407,11 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
-        // 용맹함(v2 완성, 1회): ① 전원에게 투쟁(GrantCount All) ② 자기 부정효과 제거(Cleanse self)
+        { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [
+          { type: "GrantCount", target: "Target", amount: 1 },
+          { type: "GrantCount", target: "Target", tag: "missionCharge", amount: 1 },
+        ] },
+        // 용맹함(v2 완성, 1회): ① 전원에게 투쟁(GrantCount All + missionCharge) ② 자기 부정효과 제거(Cleanse self)
         // ③ 우노가 직전에 투표한 대상(VoteTarget)을 처형(Kill, canon "사망자로 기록" = 실제 처형,
         // 사용자 확정 2026-06-17) + 소속 공개(RevealRole, public) ④ 그 대상이 천사면(동료 살해)
         // 우노 자신이 '명예 실추' = 다음 밤 행동 불가(DelaySilence selfPenalty — 게이트는 대상 진영,
@@ -417,6 +420,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [
           { type: "Cleanse", target: "self" },
           { type: "GrantCount", target: "All", amount: 1 },
+          { type: "GrantCount", target: "All", tag: "missionCharge", amount: 1 },
           { type: "RevealRole", target: "VoteTarget" },
           { type: "Kill", target: "VoteTarget" },
           { type: "DelaySilence", target: "VoteTarget", onlyFactions: ["angel"], selfPenalty: true },
