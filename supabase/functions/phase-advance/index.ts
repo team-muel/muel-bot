@@ -566,6 +566,9 @@ Deno.serve((req: Request) => {
               // 포교로 바뀐 진영을 영속화(전향자 → neutral). 다음 리로드에서
               // playerStateFromRows 가 이 값을 actualFaction 으로 복원한다.
               currentFaction: playerState.actualFaction,
+              // 사탄의 마 전역 취급(대악마): 천사팀 전원 vote 0 시 treatedAsFaction='demon' 플립.
+              // playerStateFromRows 가 다음 리로드에서 복원해 countTeams·승리 판정에 자동 반영.
+              treatedAsFaction: playerState.treatedAsFaction,
             };
 
             const updatePayload: Record<string, unknown> = { engine_state: nextEngineState };
