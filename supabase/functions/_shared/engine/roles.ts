@@ -125,19 +125,25 @@ export const CORE_ROLES: RoleDefinition[] = [
   {
     // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입).
     // 약간의 위선(v2 완성): ① 대상 직업(진영) 통지 — 악마팀을 위한 정찰(match-action-core 가
-    // investigationResult 로 즉시 반환, 엔진 중복 통지 없음). ② 대상의 *다음* 능력 발동을 한 밤
-    // 연기(DelayAction → delayPending → 다음 밤 TAG_DELAYED). canon '효과를 다음 밤으로 연기'를
-    // 지연 예약(밤 종료 리셋 타이밍 우회).
-    // ※ canon 후속(미구현): 대상이 악마에 탈락하면 연기 무효 + 다음 위선이 탈락 효과로 전환(스테이트풀).
+    // investigationResult 로 즉시 반환). ② 대상에 '위선' 표식(AddTag) — 이 대상이 밤에 탈락하면
+    // (악마 살해) 가인의 hypocrisyKillReady 가 켜진다(engine death hook). ③ 평시엔 대상의 다음
+    // 능력을 한 밤 연기(DelayAction, skipIfSourceCounter=전환 안 됐을 때만). ④ 전환 상태
+    // (hypocrisyKillReady≥1)면 연기 대신 *처치*(Kill, onlyIfSourceCounter) — canon "대상이 악마에
+    // 탈락하면 다음 위선이 대상을 탈락시키는 효과로 변경". 발동 후 onFireSetCounter 로 전환 소비(0).
     id: "gain",
     name: "가인",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [
-          { type: "DelayAction", target: "Target" },
-        ] },
+        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true,
+          onFireSetCounter: { key: "hypocrisyKillReady", value: 0 },
+          effects: [
+            // 전환 안 됐을 때만 표식+연기. 전환 상태면 표식 없이 즉시 처치(재발동 루프 방지).
+            { type: "AddTag", target: "Target", tag: "hypocrisy", skipIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
+            { type: "DelayAction", target: "Target", skipIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
+            { type: "Kill", target: "Target", onlyIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
+          ] },
       ],
     },
   },

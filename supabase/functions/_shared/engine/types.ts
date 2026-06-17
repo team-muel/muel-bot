@@ -96,6 +96,10 @@ export interface Effect {
   // 분기한다. 한 능력에 두 효과를 붙여 결백(skipIfTargetCounter)/타락(onlyIfTargetCounter) 분기.
   onlyIfTargetCounter?: { key: string; min: number };
   skipIfTargetCounter?: { key: string; min: number };
+  // 시전자 카운터 게이트(가인 위선 전환): _source.counters[key] 로 분기. 한 능력에 두 효과를
+  // 붙여 시전자 상태에 따라 다른 효과(예: 위선 = 평시 연기 / 전환후 처치)를 고른다.
+  onlyIfSourceCounter?: { key: string; min: number };
+  skipIfSourceCounter?: { key: string; min: number };
   // 홀수날 한정(엘런 박해자: 홀수날에만 발동). state.dayCount 가 홀수일 때만 적용한다.
   oddDayOnly?: boolean;
   // 자기 처벌(우노 명예 실추): 게이트(onlyFactions 등)는 *대상*으로 평가하되 효과는 *시전자*에게

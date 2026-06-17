@@ -305,6 +305,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.alive = false;
         player.markedForDeath = false;
         events.push({ type: "player_died", payload: { user_id: player.userId } });
+        // 약간의 위선(가인) 전환: '위선' 표식이 걸린 대상이 밤에 탈락하면(악마 살해 경로) 가인의
+        // 다음 위선이 *탈락 효과*로 변한다(hypocrisyKillReady). canon "대상이 악마에 의해 탈락하면
+        // 다음 위선이 대상을 탈락시키는 효과로 변경". 출처 특정 없이 생존 가인에게 부여(보통 1명).
+        if (player.tags.includes("hypocrisy")) {
+          for (const g of Object.values(newState.players)) {
+            if (g.alive && g.currentRole === "gain") g.counters.hypocrisyKillReady = 1;
+          }
+          player.tags = player.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비(영구 재발동 방지)
+        }
       }
     }
 
@@ -715,6 +724,13 @@ function applyEffect(
     return;
   }
   if (effect.skipIfTargetCounter && (target.counters?.[effect.skipIfTargetCounter.key] ?? 0) >= effect.skipIfTargetCounter.min) {
+    return;
+  }
+  // 시전자 카운터 게이트(가인 위선 전환): 시전자 상태로 분기(평시 연기 / 전환후 처치).
+  if (effect.onlyIfSourceCounter && (_source.counters?.[effect.onlyIfSourceCounter.key] ?? 0) < effect.onlyIfSourceCounter.min) {
+    return;
+  }
+  if (effect.skipIfSourceCounter && (_source.counters?.[effect.skipIfSourceCounter.key] ?? 0) >= effect.skipIfSourceCounter.min) {
     return;
   }
   // 홀수날 게이트(엘런 박해자): 짝수날이면 이 효과를 건너뛴다(canon 홀수날 한정).

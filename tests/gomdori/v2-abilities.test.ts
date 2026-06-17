@@ -472,6 +472,29 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.ok(ev2.some((e: any) => e.type === "action_delayed" && e.userId === "doc"), "위선 — 다음 밤 능력 연기");
   assert.equal(after.players.victim.alive, false, "연기된 치료 불발 → 피해자 사망");
 }
+// --- 6d-6b. 가인 위선 전환: 위선 대상이 밤에 탈락 → 다음 위선이 처치로 변경 ---
+{
+  // 1밤: 가인이 t에 위선(표식+연기). 같은 밤 악마가 t 처치 → 가인 hypocrisyKillReady 점화.
+  const st1 = emptyState(
+    { gain: player("gain", "gain", "demon"), t: player("t", "citizen", "angel"), demon: player("demon", "demon", "demon") },
+    [
+      { sourceUserId: "gain", targetUserId: "t", actionType: "gain_hypocrisy", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "t", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState: s1 } = resolveNightActions(st1);
+  assert.equal(s1.players.t.alive, false, "위선 대상 악마에 탈락");
+  assert.equal(s1.players.gain.counters.hypocrisyKillReady, 1, "위선 전환 점화");
+  // 2밤: 가인이 새 대상 v에 위선 → 연기 대신 처치.
+  const st2 = emptyState(
+    { gain: s1.players.gain, v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "gain", targetUserId: "v", actionType: "gain_hypocrisy", priority: 5 }],
+  );
+  const { newState: s2 } = resolveNightActions(st2);
+  assert.equal(s2.players.v.alive, false, "전환된 위선 = 대상 처치");
+  assert.equal(s2.players.v.counters.delayPending ?? 0, 0, "전환 시 연기 미적용");
+  assert.equal(s2.players.gain.counters.hypocrisyKillReady ?? 0, 0, "전환 1회 소비");
+}
 
 // --- 6e. 팬텀 영면: 이미 악몽인 대상 재지정 = 즉시 죽이지 않고 풀(deepsleep) 누적 + 악몽 지정 +1 ---
 {
