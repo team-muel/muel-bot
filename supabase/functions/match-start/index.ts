@@ -95,6 +95,11 @@ function engineStateForAssignment(card: RoleCard): Record<string, unknown> | nul
     counters.shield = 1;
   }
 
+  if (card.role === "phantom") {
+    // 팬텀 악몽: 사용 횟수 5회 제한(canon). 발동 1회당 1 소비, 어둠이 내린 도시 0명 지목 밤마다 +2 충전.
+    counters.nightmareUses = 5;
+  }
+
   // 가인→악마 보호막은 변종 선택이 끝난 뒤(phase-advance role_assign 만료) 재계산한다.
   return Object.keys(counters).length > 0 ? { counters } : null;
 }

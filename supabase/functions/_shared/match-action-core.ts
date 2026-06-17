@@ -2,7 +2,7 @@ import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4
 import { conflict, badRequest, forbidden } from "./errors.ts";
 import { getMatch } from "./game.ts";
 import { CORE_ROLES, HELPER_ROLES, isDemonKillerRole } from "./engine/roles.ts";
-import { getRoleDefinition } from "./engine/engine.ts";
+import { effectiveTargetCount, getRoleDefinition } from "./engine/engine.ts";
 import { GOMDORI_RULES } from "./gomdori-rules.ts";
 
 // match-action 의 검증+기록 코어. 사람(match-action)과 AI(match-ai-act)가 같은 규칙을
@@ -135,13 +135,37 @@ export async function submitMatchAction(
     if (!requiresNoTarget) {
       // 멀티타깃(아서 잔불이 꺼지기 전에=3명): 능력 정의의 targetCount 로만 분기(직업 하드코딩 X).
       // 단일 능력은 targetUserId, 멀티는 targetUserIds. 둘 다 한 검증 루프로 처리한다.
-      const maxTargets = (ability.targetCount && ability.targetCount > 1) ? ability.targetCount : 1;
+      // 동적 멀티타깃(팬텀 어둠이 내린 도시 = 2 + sealCap). engine 과 같은 식으로 상한 계산.
+      const sourceCounters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters ?? {};
+      const maxTargets = effectiveTargetCount(ability, { counters: sourceCounters }, currentPhase.phase_number);
       const targets = (targetUserIds && targetUserIds.length)
         ? targetUserIds
         : (targetUserId ? [targetUserId] : []);
       if (targets.length === 0) throw badRequest("missing_target", "대상을 선택해야 합니다.");
       if (targets.length > maxTargets) throw badRequest("too_many_targets", `대상은 최대 ${maxTargets}명까지 지정할 수 있습니다.`);
       if (new Set(targets).size !== targets.length) throw badRequest("duplicate_target", "같은 대상을 중복으로 지정할 수 없습니다.");
+      // 연속 지목 금지(팬텀 어둠이 내린 도시): 직전 같은 능력 제출의 대상과 겹치면 거부.
+      if (ability.noConsecutiveTarget) {
+        const { data: prior } = await supabase
+          .from("match_actions")
+          .select("target_user_id, result, phase_id, submitted_at")
+          .eq("match_id", matchId)
+          .eq("actor_user_id", actorUserId)
+          .eq("action_type", actionType)
+          .neq("phase_id", currentPhase.id)
+          .order("submitted_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (prior) {
+          const priorTargets = new Set<string>();
+          if (prior.target_user_id) priorTargets.add(prior.target_user_id as string);
+          const pr = prior.result as { targetUserIds?: string[] } | null;
+          for (const t of pr?.targetUserIds ?? []) priorTargets.add(t);
+          if (targets.some((t) => priorTargets.has(t))) {
+            throw badRequest("consecutive_target", "같은 대상을 연속으로 지목할 수 없습니다. 다른 대상을 고르세요.");
+          }
+        }
+      }
       for (const tId of targets) {
         if (ability.excludeSelf && tId === actorUserId) {
           throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
@@ -184,6 +208,37 @@ export async function submitMatchAction(
         }
       }
     }
+  } else if (
+    (match.status === "day" || match.status === "vote" || match.status === "verdict") &&
+    getRoleDefinition(effectiveRole(player))?.actions.night?.find((a) => a.id === actionType)?.usableInDay
+  ) {
+    // 영면 낮 발동(팬텀): 쌓아둔 영면(deepsleep) 전원 즉시 처치 + 팬텀 deepsleepCount 리셋. 처형
+    // 시간에 다수를 한 번에 정리하는 canon. 밤 제출은 엔진 경로(여긴 낮 전용 즉시 처리, 조기 return).
+    const pooled = (await supabase
+      .from("match_players")
+      .select("user_id, engine_state")
+      .eq("match_id", matchId)
+      .eq("alive", true)).data ?? [];
+    const nowIso = new Date().toISOString();
+    let reaped = 0;
+    for (const pp of pooled as Array<{ user_id: string; engine_state: Record<string, unknown> | null }>) {
+      const dc = (pp.engine_state as { counters?: { deepsleep?: number } } | null)?.counters?.deepsleep ?? 0;
+      if (dc > 0) {
+        await supabase.from("match_players")
+          .update({ alive: false, eliminated_at: nowIso, eliminated_phase_number: currentPhase.phase_number, eliminated_cause: "deepsleep" })
+          .eq("match_id", matchId).eq("user_id", pp.user_id);
+        await supabase.from("match_events")
+          .insert({ match_id: matchId, phase_id: currentPhase.id, event_type: "player_died", visibility: "public", payload: { user_id: pp.user_id, source: "phantom_reap_day" } });
+        reaped++;
+      }
+    }
+    const pes = (player.engine_state ?? {}) as Record<string, unknown>;
+    await supabase.from("match_players")
+      .update({ engine_state: { ...pes, counters: { ...((pes.counters as Record<string, number>) ?? {}), deepsleepCount: 0 } } })
+      .eq("match_id", matchId).eq("user_id", actorUserId);
+    await supabase.from("match_events")
+      .insert({ match_id: matchId, phase_id: currentPhase.id, event_type: "deepsleep_reaped", visibility: "public", payload: { user_id: actorUserId, count: reaped } });
+    return { investigationResult: null };
   } else if (match.status === "vote") {
     if (actionType !== "vote") throw badRequest("invalid_phase", "현재는 투표 페이즈입니다.");
   } else if (match.status === "verdict") {

@@ -850,6 +850,32 @@ Deno.serve((req: Request) => {
         }
         if (eclipseActive || eclipseSoulOut) players = await loadPlayers(supabase, matchId);
 
+        // 침묵의 밤(팬텀): extendNight 표식이 있으면 아침을 건너뛰고 추가 밤을 삽입한다(eclipse 와
+        // 같은 전이, 단 소멸 없음). 밤 대화 +1분(아래 transition 에서 가산). 생존 천사팀 카운트 +1 은
+        // 엔진 effect 가 이미 적용. extendNight 는 소비(리셋)해 무한 연장을 막는다(밤마다 1회만).
+        let silentNightActive = false;
+        for (const p of players) {
+          if (!p.alive) continue;
+          const counters = (p.engine_state as { counters?: { extendNight?: number } } | null)?.counters;
+          if ((counters?.extendNight ?? 0) > 0) {
+            silentNightActive = true;
+            const nextCounters = { ...(counters as Record<string, number>), extendNight: 0 };
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...(p.engine_state || {}), counters: nextCounters } })
+                .eq("match_id", matchId)
+                .eq("user_id", p.user_id),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({ match_id: matchId, phase_id: phase.id, event_type: "silent_night_extended", visibility: "public", payload: { user_id: p.user_id } }),
+            );
+          }
+        }
+        if (silentNightActive) players = await loadPlayers(supabase, matchId);
+
         // 행복을 파는 가게(미즐렛 다수복귀, canon 패시브·1회): 탈락자가 생존자보다 많아지면
         // 미즐렛이 가장 최근 탈락 2명을 복귀(소멸·부활불가 무시)시키고 자신은 탈락한다.
         // used_mizlet_comeback 으로 1회 제한 — 천사 진영 역전 장치. 승패 영향이라 win 체크 전에.
@@ -927,11 +953,11 @@ Deno.serve((req: Request) => {
           );
           nextPhaseType = "verdict";
           nextDurationSec = durations.verdict;
-        } else if (eclipseActive) {
-          // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로.
+        } else if (eclipseActive || silentNightActive) {
+          // 아침을 건너뛰고 곧장 다음 밤(의심 투표)으로. 침묵의 밤이면 밤 대화 +1분(canon).
           const transition = nextNightSuspectTransition(phase.phase_number, durations);
           nextPhaseType = transition.phaseType;
-          nextDurationSec = transition.durationSec;
+          nextDurationSec = transition.durationSec + (silentNightActive ? 60 : 0);
           nextPhaseNumber = transition.phaseNumber;
         } else {
           // caseClosed 가 있었으나 악마가 이미 탈락했으면 표식만 정리.

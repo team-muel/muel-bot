@@ -1,4 +1,4 @@
-import type { Effect, MatchState, PlayerState } from "./types.ts";
+import type { ActiveAbility, Effect, MatchState, PlayerState } from "./types.ts";
 import { ANGEL_ROLES, CORE_ROLES, isDemonKillerRole } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
@@ -70,6 +70,15 @@ export function pasuaWinThreshold(totalPlayers: number): number {
 
 export function getRoleDefinition(roleId: string) {
   return CORE_ROLES.find((role) => role.id === roleId);
+}
+
+// 유효 멀티타깃 상한(정적 targetCount + 동적 성장). 팬텀 어둠이 내린 도시처럼 매 아침 +1 하는
+// 능력을 직업 하드코딩 없이 표현한다. engine·match-action 이 같은 식으로 계산해 일관 적용.
+export function effectiveTargetCount(ability: ActiveAbility, source: { counters?: Record<string, number> }, dayCount: number): number {
+  let n = ability.targetCount ?? 1;
+  if (ability.targetCountPerDay) n += ability.targetCountPerDay * Math.max(0, (dayCount ?? 1) - 1);
+  if (ability.targetCountCounter) n += (source.counters?.[ability.targetCountCounter] ?? 0);
+  return Math.max(1, n);
 }
 
 export function resolveNightActions(state: MatchState): { newState: MatchState; events: unknown[] } {
@@ -197,8 +206,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // "Target" 효과: 멀티타깃(아서 잔불이 꺼지기 전에=3명)이면 targetUserIds 의 각 대상에,
       // 아니면 단일 targetUserId 에 적용. 단일/멀티를 한 경로로 통일(하위호환).
       if (effect.target === "Target") {
-        const ids = (ability.targetCount && ability.targetCount > 1 && action.targetUserIds && action.targetUserIds.length)
-          ? action.targetUserIds
+        const maxN = effectiveTargetCount(ability, sourcePlayer, newState.dayCount);
+        const ids = (maxN > 1 && action.targetUserIds && action.targetUserIds.length)
+          ? action.targetUserIds.slice(0, maxN)
           : (action.targetUserId ? [action.targetUserId] : []);
         for (const tid of ids) {
           const t = newState.players[tid];
@@ -276,6 +286,19 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
   // 가 같은 헬퍼를 호출해 반영한다(아래 applyDawnbreakerPassive).
   applyDawnbreakerPassive(newState.players, events);
+
+  // 팬텀 아침 처리: ① 어둠이 내린 도시 봉인 가능 수 '매 아침 +1'(sealCap, 지속). ② 그 밤 아무도
+  // 봉인하지 않았으면(어둠이 내린 도시 미발동) 악몽 사용 횟수 +2 충전(상한 5) — 봉인 대신 악몽을
+  // 비축하는 템포 선택. sortedActions 로 이 밤 phantom_seal 제출 여부 판정(직업 하드코딩 최소).
+  const sealedBy = new Set(sortedActions.filter((a) => a.actionType === "phantom_seal").map((a) => a.sourceUserId));
+  for (const p of Object.values(newState.players)) {
+    if (p.alive && p.currentRole === "phantom") {
+      p.counters.sealCap = (p.counters.sealCap ?? 0) + 1;
+      if (!sealedBy.has(p.userId)) {
+        p.counters.nightmareUses = Math.min(5, (p.counters.nightmareUses ?? 0) + 2);
+      }
+    }
+  }
 
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
@@ -825,13 +848,18 @@ function applyEffect(
       break;
     case "Nightmare":
       // 악몽(팬텀, vault canon — 2단계 지연): 지정한 그 밤(N) 에 표식만 예약 → 다음 밤(N+1)
-      // 시작 시 nightmarePending → nightmare 로 이동 → 그 다음 아침(D N+2)에 탈락
-      // (resolveNightmares). 밤 보호는 그 밤만 막을 수 있고 다음다음 아침의 탈락은 막지 못한다.
-      // 같은 대상 연속 지정 시 nightmare 가 누적되면 '영면' — 즉시 처치(markedForDeath, 그 밤).
-      if ((target.counters.nightmare ?? 0) >= 1) {
-        // 이미 '악몽' 상태에서 재지정 = 영면. 밤 보호/수면이 막을 수 있으나 누적 무게를 반영.
-        target.markedForDeath = true;
-        events.push({ type: "deep_sleep", payload: { user_id: target.userId } });
+      // 시작 시 nightmarePending → nightmare 로 이동 → 그 다음 아침(D N+2)에 탈락(resolveNightmares).
+      // 이미 '악몽' 상태에서 재지정 = '영면': 즉시 죽이지 않고 풀(deepsleep)에 누적한다. 팬텀이
+      // phantom_reap 으로 원할 때(낮 포함) 일괄 처치. 영면이 살아있는 동안 팬텀의 악몽 지정 가능
+      // 수 +1(source.deepsleepCount — phantom_nightmare 의 targetCountCounter).
+      if ((target.counters.nightmare ?? 0) >= 1 || (target.counters.deepsleep ?? 0) >= 1) {
+        if ((target.counters.deepsleep ?? 0) === 0) {
+          target.counters.deepsleep = 1;
+          _source.counters.deepsleepCount = (_source.counters.deepsleepCount ?? 0) + 1;
+        }
+        target.counters.nightmare = 0;
+        target.counters.nightmarePending = 0;
+        events.push({ type: "deepsleep_marked", payload: { user_id: target.userId } });
       } else {
         target.counters.nightmarePending = (target.counters.nightmarePending ?? 0) + 1;
         events.push({ type: "nightmare_marked", payload: { user_id: target.userId, level: 1 } });
