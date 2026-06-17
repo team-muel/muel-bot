@@ -178,6 +178,8 @@ export async function submitMatchAction(
           .single();
         if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
         const targetRole = effectiveRole(targetState);
+        const targetTags = ((targetState.engine_state as { tags?: string[] } | null)?.tags ?? []);
+        const allowRememberedDead = ability.allowRememberedDead && targetTags.includes("remembered");
         if (ability.targetType === "SINGLE_DEAD") {
           if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
           // 부활 딜레이(canon 미즐렛 — 즉시 복귀가 아니라 예측 가능한 메커니즘): 탈락 직후
@@ -187,7 +189,7 @@ export async function submitMatchAction(
           if (deathPhase != null && currentPhase.phase_number - deathPhase < 2) {
             throw conflict("revive_too_soon", "최근에 탈락한 대상은 아직 되살릴 수 없습니다. 며칠 지나야 합니다.");
           }
-        } else if (!targetState.alive) {
+        } else if (!targetState.alive && !allowRememberedDead) {
           throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
         }
         // 대상 직업/진영 제한(ADR-006 S2): 능력 선언(targetFilter)에서 제네릭 평가.

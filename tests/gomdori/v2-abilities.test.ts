@@ -1561,4 +1561,43 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 헬렌 황금빛 수면 v2: 'remembered' 표식 + 탈락 후에도 재발동 가능 + 자동 부활 ---
+{
+  const helen: PlayerState = player("helen", "helen", "angel");
+  const a: PlayerState = player("a", "citizen", "angel");
+  const r1 = resolveNightActions(emptyState(
+    { helen, a },
+    [{ sourceUserId: "helen", targetUserId: "a", actionType: "helen_sleep", priority: 3 }],
+  ));
+  assert.ok(r1.newState.players.a.tags.includes("remembered"), "sleep 적용 — remembered 표식");
+  assert.ok(r1.events.some((e: any) => e.type === "slept"), "slept 이벤트");
+  // a 사망 후 재발동 → 부활 + 다시 수면.
+  const a2: PlayerState = { ...r1.newState.players.a, alive: false };
+  const helen2: PlayerState = { ...r1.newState.players.helen };
+  const r2 = resolveNightActions({
+    matchId: "v2", dayCount: 3, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { helen: helen2, a: a2 },
+    actionStack: [{ sourceUserId: "helen", targetUserId: "a", actionType: "helen_sleep", priority: 3 }],
+  });
+  assert.equal(r2.newState.players.a.alive, true, "추억된 탈락자 — sleep 으로 부활");
+  assert.ok(r2.events.some((e: any) => e.type === "player_revived" && (e as any).payload?.source === "remembered_sleep"), "remembered_sleep 부활 이벤트");
+}
+
+// --- annihilated 는 추억 부활 차단 ---
+{
+  const helen: PlayerState = player("helen", "helen", "angel");
+  const a: PlayerState = { ...player("a", "citizen", "angel"), alive: false, tags: ["remembered"], counters: { annihilated: 1 } };
+  const r = resolveNightActions(emptyState(
+    { helen, a },
+    [{ sourceUserId: "helen", targetUserId: "a", actionType: "helen_sleep", priority: 3 }],
+  ));
+  assert.equal(r.newState.players.a.alive, false, "annihilated — 부활 불가");
+}
+
+// 헬렌 v2 — 계약 정규식.
+assert.match(roles, /id: "helen_sleep"[\s\S]*?allowRememberedDead: true/, "헬렌 sleep — allowRememberedDead 플래그");
+assert.match(roles, /id: "helen_sleep"[\s\S]*?tag: "remembered"/, "헬렌 sleep — remembered 표식 부여");
+const engineSrcHelen = readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8");
+assert.match(engineSrcHelen, /remembered_sleep/, "engine Sleep — remembered 부활 분기");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/헬렌추억) checks passed");

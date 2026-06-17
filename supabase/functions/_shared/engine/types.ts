@@ -152,6 +152,10 @@ export interface ActiveAbility {
   // 낮(day/vote/verdict)에도 발동 가능(팬텀 영면 발동 — 처형 시간에 쌓아둔 영면 일괄 처치).
   // match-action 이 낮 제출을 허용하고 즉시 처리한다(밤 제출은 기존 엔진 경로).
   usableInDay?: boolean;
+  // '추억된' 탈락자 허용(헬렌 황금빛 수면, canon "영혼이 기억된 플레이어는 탈락 후에도 발동 가능").
+  // targetType SINGLE_ALIVE 이어도 target 이 사망 상태이면서 'remembered' 태그를 보유하면
+  // 대상 검증·엔진 적용 모두 통과. Sleep 적용 시 자동 부활(canon "수면으로 깨면 복귀").
+  allowRememberedDead?: boolean;
   // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
   // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
   // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).
