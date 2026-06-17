@@ -351,6 +351,9 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 생명의 언약(하브레터스): 치료 + 소명 — 그 밤 실제 공격을 막으면 시전자 투표가치 +3.
         { id: "doctor_heal", name: "치료", targetType: "SINGLE_ALIVE", priority: 3, onSaveGrantSelf: { counter: "voteValueMod", amount: 3 }, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }] },
+        // 삶이 있는 곳으로(v2, 상호추리): 의심 가는 악마를 지목 — 적중(처치자)이면 그 밤 악마 효과
+        // 면역(자기 부정효과 정화, Deduce). 빗나가면 통지만. 악마측 역추리(하브 탈락)는 후속(양방향).
+        { id: "habreterus_deduce", name: "삶이 있는 곳으로", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
       ],
     },
   },
@@ -367,6 +370,12 @@ export const CORE_ROLES: RoleDefinition[] = [
         { id: "mizlet_revive", name: "디저트 선물(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
         // 디저트 선물(v2, 생존자 버프): 쿠키/푸딩 — 그 밤 보호 + 디저트 태그. 다수복귀 패시브는 후속.
         { id: "mizlet_dessert", name: "디저트 선물", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }, { type: "AddTag", target: "Target", tag: "dessert" }] },
+        // 고급 와인(v2, 1회): 전원 부정효과 제거(Cleanse All). 디저트 미제공자(태그 없음)는 투표가치
+        // -1(skipIfTargetTag: dessert). 디저트 받은 자는 정화만(대화는 후속). 1회 — 누적 -1 남용 방지.
+        { id: "mizlet_wine", name: "고급 와인", targetType: "NONE", priority: 5, maxUses: 1, effects: [
+          { type: "Cleanse", target: "All" },
+          { type: "ModifyVoteValue", target: "All", amount: -1, skipIfTargetTag: "dessert" },
+        ] },
       ],
     },
   },
@@ -381,6 +390,9 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         { id: "helen_revive", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
         { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Sleep", target: "Target" }] },
+        // 자유로운 새(v2, 1회): 탈락자 한 명을 추가로 복귀시킨다(Heal dead). canon '다음 아침 탈락자
+        // 생존 행동 + 수면-기억 복귀'의 바운디드 코어 — 수면으로 깨면 복귀하는 지속 메커니즘은 후속.
+        { id: "helen_freebird", name: "자유로운 새", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
       ],
     },
   },
@@ -478,6 +490,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 소나타(v2): 매료 3명 누적(charmCount) 시 연주 — 전원 부정효과 제거(Cleanse All) +
         // 루루 자신 하루 무적(Protect). 발동 시 게이지 소비. 악보 교체(투표 재설계)는 후속.
         { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, effects: [{ type: "Cleanse", target: "All" }, { type: "Protect", target: "self", duration: "1_NIGHT" }] },
+        // 악보 교체(v2, 1회): 자투 악보 — 루루 자신의 투표가치 영구 +1(voteWeightBonus). canon 무투
+        // (다음 아침 2회 투표)·다중 대상 투표·반론 등판은 투표 시스템 재설계라 후속(바운디드: 자투만).
+        { id: "luru_score", name: "악보 교체", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },
       ],
     },
   },

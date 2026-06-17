@@ -748,6 +748,13 @@ function applyEffect(
   if (effect.skipIfSourceCounter && (_source.counters?.[effect.skipIfSourceCounter.key] ?? 0) >= effect.skipIfSourceCounter.min) {
     return;
   }
+  // 태그 게이트(미즐렛 고급 와인 디저트 유/무): 대상 태그로 분기.
+  if (effect.onlyIfTargetTag && !target.tags.includes(effect.onlyIfTargetTag)) {
+    return;
+  }
+  if (effect.skipIfTargetTag && target.tags.includes(effect.skipIfTargetTag)) {
+    return;
+  }
   // 홀수날 게이트(엘런 박해자): 짝수날이면 이 효과를 건너뛴다(canon 홀수날 한정).
   if (effect.oddDayOnly && (_state.dayCount % 2 === 0)) {
     return;
@@ -957,6 +964,19 @@ function applyEffect(
       const amt = target.actualFaction === "demon" ? (effect.demonAmount ?? effect.amount ?? 0) : (effect.amount ?? 0);
       _source.counters[chargeKey] = (_source.counters[chargeKey] ?? 0) + amt;
       events.push({ type: "charged", payload: { user_id: _source.userId, counter: chargeKey, amount: amt } });
+      break;
+    }
+    case "Deduce": {
+      // 상호추리(하브레터스 삶이 있는 곳으로): 대상이 악마팀 처치자면 '적중' — 시전자의 그 밤
+      // 부정 효과를 정화(악마 효과 면역 근사). 빗나가면 통지만. 악마측 역추리(하브 탈락)는 후속.
+      if (isDemonKillerRole(target.currentRole)) {
+        for (const k of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"]) {
+          if (_source.counters[k]) _source.counters[k] = 0;
+        }
+        events.push({ type: "deduce_hit", payload: { user_id: _source.userId, target: target.userId } });
+      } else {
+        events.push({ type: "deduce_miss", payload: { user_id: _source.userId, target: target.userId } });
+      }
       break;
     }
     case "Charm":
