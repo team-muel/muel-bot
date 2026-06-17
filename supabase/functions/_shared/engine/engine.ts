@@ -441,6 +441,24 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 미즐렛 디저트 회로(canon "디저트 제공받은 대상 ... 미즐렛과 밤 동안 대화"): 디저트 선물
+  // (mizlet_dessert) 발동 시 대상에게 dessert_received 이벤트 — UI/Discord 가 채팅 회로(미즐렛-대상)
+  // 를 연다. 고급 와인(mizlet_wine) 발동 시 그 밤 dessert 태그 보유한 생존자 전원에 dessert_chat_open
+  // 이벤트 — 와인 회식으로 일괄 채팅. 두 이벤트 모두 backend 신호만, 채팅 인프라는 별도.
+  for (const a of sortedActions) {
+    if (a.actionType === "mizlet_dessert" && a.targetUserId) {
+      events.push({ type: "dessert_received", payload: { user_id: a.targetUserId, by: a.sourceUserId } });
+    }
+  }
+  const wineFiredBy = sortedActions.filter((a) => a.actionType === "mizlet_wine").map((a) => a.sourceUserId);
+  for (const sourceId of wineFiredBy) {
+    for (const p of Object.values(newState.players)) {
+      if (p.alive && p.tags.includes("dessert")) {
+        events.push({ type: "dessert_chat_open", payload: { user_id: p.userId, mizlet: sourceId } });
+      }
+    }
+  }
+
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
   // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
