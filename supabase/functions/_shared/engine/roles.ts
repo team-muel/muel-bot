@@ -87,16 +87,15 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         {
-          // 백호 소환: 1회 self 액션 — 천사팀 카운트 +1(생존 가산) + +1(생존 무관 지속).
-          // v1 자동 주입과 동일 자석, 구조만 능동 소환으로(canon 은 +3, 튜닝은 후속).
+          // 백호 소환: 1회 self 액션 — 천사팀 카운트 +3(생존 가산) + +3(생존 무관 지속). canon 자석 +3.
           id: "rainer_summon",
           name: "백호 소환",
           targetType: "SELF",
           priority: 5,
           maxUses: 1,
           effects: [
-            { type: "GrantCount", target: "self", amount: 1 },
-            { type: "GrantCount", target: "self", amount: 1, tag: "deadCountBonus" },
+            { type: "GrantCount", target: "self", amount: 3 },
+            { type: "GrantCount", target: "self", amount: 3, tag: "deadCountBonus" },
           ],
         },
       ],
@@ -301,7 +300,9 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 박해자(v2): 직전에 *투표*한 대상이 다음 집계에서 받는-투표가치 +3(substrate VoteTarget).
         // 표적을 처형대로 민다 — 별도 지목 없이 자기 투표를 따라간다(canon 박해자).
-        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, oddDayOnly: true }] },
+        // 박해(v2 누진): 직전 투표 대상의 받는-투표가치가 *지속 누적*(persecuteBias). 같은 대상을
+        // 거듭 투표·박해하면 +3, +6, +9… 처형대로 점점 민다(canon 투표마다 누진). 홀수날 한정.
+        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [{ type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true }] },
       ],
     },
   },
