@@ -111,6 +111,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         counters.nightmare = (counters.nightmare ?? 0) + counters.nightmarePending;
         counters.nightmarePending = 0;
       }
+      // 마비 지연 봉인(말렌 빙의의 '다음 밤 봉인'): 지정 밤(N)에 silencePending 예약 → 다음 밤(N+1)
+      // 시작인 여기에서 silencedNights 로 옮겨 그 밤 행동을 막는다(악몽 지연과 같은 패턴, 재사용).
+      if (counters.silencePending && counters.silencePending > 0) {
+        counters.silencedNights = (counters.silencedNights ?? 0) + counters.silencePending;
+        counters.silencePending = 0;
+      }
     }
     // 해오름(dawnrise) 만료: 1_DAY 태그 — 적용된 밤(N) → 다음 낮(N) 투표(위용)까지 유지되고,
     // 다음 밤(N+1) 시작인 여기에서 만료된다. 그 밤 재지정 시 아래 action 루프가 다시 부여.
@@ -379,9 +385,9 @@ export function tallyEliminationVotes(
     tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue;
   }
 
-  // 받는-표 가산 (로마즈 용의자 +투표가치). counters.voteBias 보유 생존자에 가산.
+  // 받는-표 가산: 라운드성 voteBias(로마즈) + 지속 persecuteBias(엘런 박해 누진)를 합산.
   for (const p of Object.values(players)) {
-    const bias = p.counters?.voteBias ?? 0;
+    const bias = (p.counters?.voteBias ?? 0) + (p.counters?.persecuteBias ?? 0);
     if (p.alive && bias > 0) tallies[p.userId] = (tallies[p.userId] || 0) + bias;
   }
 
@@ -737,10 +743,14 @@ function applyEffect(
         target.tags = target.tags.filter((tag) => tag !== effect.tag);
       }
       break;
-    case "ModifyReceivedVote":
-      target.counters.voteBias = (target.counters.voteBias ?? 0) + (effect.amount ?? 0);
-      events.push({ type: "vote_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
+    case "ModifyReceivedVote": {
+      // tag 지정 시 그 카운터에 지속 누적(엘런 박해 누진 = persecuteBias, 라운드 리셋 X). 미지정 시
+      // voteBias(라운드성, 로마즈). tally 가 voteBias + persecuteBias 둘 다 받는-표에 합산.
+      const rvKey = effect.tag ?? "voteBias";
+      target.counters[rvKey] = (target.counters[rvKey] ?? 0) + (effect.amount ?? 0);
+      events.push({ type: "vote_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0, counter: rvKey } });
       break;
+    }
     case "ModifyReceivedSuspicion":
       target.counters.suspicionBias = (target.counters.suspicionBias ?? 0) + (effect.amount ?? 0);
       events.push({ type: "suspicion_bias_applied", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
@@ -792,7 +802,7 @@ function applyEffect(
       // 부정효과 제거(세이카 초신성·우노 사명·미즐렛 와인): 대상에게 걸린 라운드성/지연
       // 부정 효과를 모두 씻어낸다. 지속 자석(countBonus/deadCountBonus/shield/voteWeightBonus)
       // 과 세이카 마크는 건드리지 않는다 — '받은 부여 효과'만 대상.
-      for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent"]) {
+      for (const key of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias"]) {
         if (target.counters[key]) target.counters[key] = 0;
       }
       target.tags = target.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
@@ -822,9 +832,11 @@ function applyEffect(
       events.push({ type: "nullify_marked", payload: { user_id: target.userId } });
       break;
     case "Possess":
-      // 빙의(말렌): 대상 그 밤 행동 봉인 + 그 라운드 악마팀으로 카운트(possessed).
+      // 빙의(말렌): 대상 그 밤 행동 봉인 + 그 라운드 악마팀으로 카운트(possessed) + 마비(다음 밤도
+      // 봉인 = silencePending → 다음 밤 silencedNights). 2밤 봉쇄로 강령술사의 장악을 표현(canon 마비).
       target.counters.silencedNights = (target.counters.silencedNights ?? 0) + 1;
       target.counters.possessed = 1;
+      target.counters.silencePending = (target.counters.silencePending ?? 0) + 1;
       events.push({ type: "possessed", payload: { user_id: target.userId } });
       break;
     case "Disguise":

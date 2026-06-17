@@ -105,8 +105,8 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
     [{ sourceUserId: "rainer", targetUserId: null, actionType: "rainer_summon", priority: 5 }],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.rainer.counters.countBonus, 1, "백호 — 생존 가산 +1");
-  assert.equal(newState.players.rainer.counters.deadCountBonus, 1, "백호 — 생존 무관 지속 +1");
+  assert.equal(newState.players.rainer.counters.countBonus, 3, "백호 — 생존 가산 +3(canon)");
+  assert.equal(newState.players.rainer.counters.deadCountBonus, 3, "백호 — 생존 무관 지속 +3(canon)");
   assert.equal(newState.players.rainer.counters.used_rainer_summon, 1, "소환 1회 소진 기록");
   // 두 번째 소환은 maxUses 로 막힌다.
   const again = emptyState(
@@ -114,7 +114,7 @@ function emptyState(players: Record<string, PlayerState>, actionStack: MatchStat
     [{ sourceUserId: "rainer", targetUserId: null, actionType: "rainer_summon", priority: 5 }],
   );
   const { newState: after, events } = resolveNightActions(again);
-  assert.equal(after.players.rainer.counters.countBonus, 1, "2회차 소환 차단 — 카운트 불변");
+  assert.equal(after.players.rainer.counters.countBonus, 3, "2회차 소환 차단 — 카운트 불변(3 유지)");
   assert.ok(events.some((e: any) => e.type === "action_blocked_exhausted"), "소진 차단 이벤트");
 }
 
@@ -287,7 +287,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   state.dayCount = 1; // 홀수날 — 박해 발동.
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.target.counters.voteBias, 3, "박해(홀수날) — 투표 대상 받는-투표가치 +3");
+  assert.equal(newState.players.target.counters.persecuteBias, 3, "박해(홀수날) — 투표 대상 받는-투표가치 +3(지속 누진)");
   // 짝수날에는 박해가 발동하지 않는다(canon 홀수날 한정, oddDayOnly 게이트).
   const evenState = emptyState(
     { ellen: { ...player("ellen", "ellen", "demon"), lastVoteTarget: "target" }, target: player("target", "citizen", "angel") },
@@ -295,7 +295,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   evenState.dayCount = 2;
   const { newState: evenNew } = resolveNightActions(evenState);
-  assert.equal(evenNew.players.target.counters.voteBias ?? 0, 0, "박해 — 짝수날 미발동");
+  assert.equal(evenNew.players.target.counters.persecuteBias ?? 0, 0, "박해 — 짝수날 미발동");
 }
 
 // --- 6b. 로건 Nullify: 대상의 다음 능력 발동을 소멸(지속) ---
@@ -1219,4 +1219,29 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(newState.players.phantom.counters.extendNight, 1, "밤 연장 표식(phase-advance 가 읽음)");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤) checks passed");
+// --- 엘런 박해 누진: 같은 대상 거듭 박해 시 받는-투표가치 지속 누적(persecuteBias) ---
+{
+  const ellen1 = { ...player("ellen", "ellen", "demon"), lastVoteTarget: "v" };
+  const state1 = { ...emptyState({ ellen: ellen1, v: player("v", "citizen", "angel") }, [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }]), dayCount: 1 };
+  const r1 = resolveNightActions(state1);
+  assert.equal(r1.newState.players.v.counters.persecuteBias, 3, "박해 1회 — persecuteBias 3");
+  const ellen2 = { ...r1.newState.players.ellen, lastVoteTarget: "v" };
+  const state2 = { ...emptyState({ ellen: ellen2, v: { ...r1.newState.players.v } }, [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }]), dayCount: 1 };
+  const r2 = resolveNightActions(state2);
+  assert.equal(r2.newState.players.v.counters.persecuteBias, 6, "박해 누진 — 같은 대상 재박해 시 6(지속 누적)");
+  // tally 가 persecuteBias 를 받는-표에 합산.
+  const tally = tallyEliminationVotes([], r2.newState.players);
+  assert.equal(tally.tallies.v, 6, "tally — 박해 누진이 받는-투표에 합산");
+}
+// --- 말렌 빙의 = 그 밤 봉인 + 마비(다음 밤도 봉인, silencePending 예약) ---
+{
+  const state = emptyState({ malen: player("malen", "malen", "demon"), v: player("v", "citizen", "angel") }, [{ sourceUserId: "malen", targetUserId: "v", actionType: "malen_possess", priority: 1 }]);
+  const r1 = resolveNightActions(state);
+  assert.equal(r1.newState.players.v.counters.silencePending, 1, "빙의 — 다음 밤 마비 예약(silencePending)");
+  assert.ok(r1.events.some((e: any) => e.type === "possessed"), "빙의 이벤트");
+  // 다음 밤 해소 → silencePending 이 silencedNights 로 이동(소비).
+  const r2 = resolveNightActions(r1.newState);
+  assert.equal(r2.newState.players.v.counters.silencePending ?? 0, 0, "마비 — 다음 밤에 소비됨");
+}
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비) checks passed");
