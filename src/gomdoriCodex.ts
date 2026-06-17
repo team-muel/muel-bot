@@ -157,8 +157,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "영혼을 만지는 음색", text: "대상 매료 — 투표 권한이 루루에게 양도. 능력 발동으로 해제." },
       { kind: "능력2", name: "악보 교체", text: "투표를 몇 명에게든 행사. 무투(다음 아침 투표 2회)/자투(투표가치 +(1+매료), 반론 다인 등판) 등 악보 변경." },
     ],
-    v1: "구현됨. luru_charm(매료 + charmCount 게이지 + 투표권 양도 voteWeightBonus) + luru_sonata(매료 3 누적 시: 전원 Cleanse + 자기 무적, requiresCounter·소비) + luru_score(악보 교체 자투: 자기 투표가치 +1, 1회).",
-    v2: "매료, 소나타, 악보 교체 자투 코어까지 라이브. 무투/다중 투표/반론 등판형 악보 재설계는 별도 확장 대상.",
+    v1: "구현됨. luru_charm(매료 + charmCount 게이지 + 투표권 양도 voteWeightBonus) + luru_sonata(매료 3 누적 시: 전원 Cleanse + 자기 무적, requiresCounter·소비) + luru_score(악보 교체 자투, 1회: 자기 투표가치 +1) + luru_mute(악보 교체 무투 v2, 1회: 자기 voteCountBonus +1 → 다음 처형·찬반 투표 2배, phase-advance 가 vote 단계 종료 시 소비).",
+    v2: "매료, 소나타, 악보 자투(+1), 악보 무투(투표 2배)까지 핵심 라이브. 자투 매료 비례 강화·다중 대상 투표·반론 등판은 후속(투표 시스템 재설계 필요).",
     vault: "Universes/BoW/Characters/루루.md",
   },
 

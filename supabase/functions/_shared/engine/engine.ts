@@ -458,7 +458,10 @@ export function tallyEliminationVotes(
       continue;
     }
 
-    tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue;
+    // 루루 무투(악보 교체 무투): voteCountBonus 만큼 추가 행사(canon "다음 아침 투표 2회").
+    // voteCountBonus=1 → 총 2회 행사(곱연산이라 매료 양도·가치 효과 모두 적용).
+    const voteRepeats = 1 + Math.max(0, actor.counters?.voteCountBonus ?? 0);
+    tallies[action.targetUserId] = (tallies[action.targetUserId] || 0) + voteValue * voteRepeats;
   }
 
   // 받는-표 가산: 라운드성 voteBias(로마즈) + 지속 persecuteBias(엘런 박해 누진)를 합산.
@@ -567,10 +570,12 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
       continue;
     }
 
+    // 루루 무투: 찬반 투표에도 적용(canon "다음 아침 투표 2회" — 처형/찬반 모두).
+    const voteRepeats = 1 + Math.max(0, actor.counters?.voteCountBonus ?? 0);
     if (action.actionType === "verdict_approve") {
-      approve += voteValue;
+      approve += voteValue * voteRepeats;
     } else if (action.actionType === "verdict_reject") {
-      reject += voteValue;
+      reject += voteValue * voteRepeats;
     } else {
       skipped += 1;
     }

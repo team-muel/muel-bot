@@ -498,8 +498,12 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 루루 자신 하루 무적(Protect). 발동 시 게이지 소비. 악보 교체(투표 재설계)는 후속.
         { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, effects: [{ type: "Cleanse", target: "All" }, { type: "Protect", target: "self", duration: "1_NIGHT" }] },
         // 악보 교체(v2, 1회): 자투 악보 — 루루 자신의 투표가치 영구 +1(voteWeightBonus). canon 무투
-        // (다음 아침 2회 투표)·다중 대상 투표·반론 등판은 투표 시스템 재설계라 후속(바운디드: 자투만).
-        { id: "luru_score", name: "악보 교체", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },
+        // (다음 아침 2회 투표)는 별도 능력(luru_mute) 로 분리. 다중 대상 투표·반론 등판은 후속.
+        { id: "luru_score", name: "악보 교체(자투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },
+        // 악보 교체 — 무투(v2, 1회): 다음 아침 처형 투표를 2회 행사. canon "무투(다음 아침 투표 2회)".
+        // self voteCountBonus +1 — tally 가 voteValue * (1 + voteCountBonus) 로 가산(2배 효과).
+        // phase-advance 가 처형 투표 종료 후 voteCountBonus 를 0 으로 소비(1회 한정).
+        { id: "luru_mute", name: "악보 교체(무투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteCountBonus", amount: 1 }] },
       ],
     },
   },
