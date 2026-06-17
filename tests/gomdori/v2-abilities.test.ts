@@ -300,6 +300,59 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.ok(!events.some((e: any) => e.type === "stakeout_triggered"), "대상 생존 — 불심검문 미발동");
   assert.equal(newState.players.dordan.counters.persecuteBias, 1, "미발동 — 도르단 부정효과 유지");
 }
+// --- 4e. 미즐렛 고급 와인: 전원 정화 + 디저트 미제공자만 투표가치 -1 ---
+{
+  const fed = { ...player("fed", "citizen", "angel"), tags: ["dessert"], counters: { nightmare: 1 } };
+  const unfed = { ...player("unfed", "citizen", "angel"), counters: { nightmare: 1 } };
+  const state = emptyState(
+    { mizlet: player("mizlet", "mizlet", "angel"), fed, unfed },
+    [{ sourceUserId: "mizlet", targetUserId: null, actionType: "mizlet_wine", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.fed.counters.nightmare ?? 0, 0, "와인 — 디저트 대상 정화");
+  assert.equal(newState.players.unfed.counters.nightmare ?? 0, 0, "와인 — 미제공자도 정화");
+  assert.equal(newState.players.fed.counters.voteValueMod ?? 0, 0, "디저트 대상은 투표가치 페널티 없음");
+  assert.equal(newState.players.unfed.counters.voteValueMod ?? 0, -1, "미제공자는 투표가치 -1");
+}
+// --- 4f. 헬렌 자유로운 새: 탈락자 추가 복귀 ---
+{
+  const dead = player("dead", "citizen", "angel", false);
+  const state = emptyState(
+    { helen: player("helen", "helen", "angel"), dead },
+    [{ sourceUserId: "helen", targetUserId: "dead", actionType: "helen_freebird", priority: 3 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.dead.alive, true, "자유로운 새 — 탈락자 복귀");
+}
+// --- 4g. 하브레터스 상호추리: 악마 적중 시 자기 부정효과 면역(정화), 빗나가면 통지만 ---
+{
+  const hab = { ...player("hab", "habreterus", "angel"), counters: { nightmare: 1 } };
+  const hit = emptyState(
+    { hab, d: player("d", "demon", "demon") },
+    [{ sourceUserId: "hab", targetUserId: "d", actionType: "habreterus_deduce", priority: 5 }],
+  );
+  const r1 = resolveNightActions(hit);
+  assert.equal(r1.newState.players.hab.counters.nightmare ?? 0, 0, "추리 적중 — 하브 부정효과 면역(정화)");
+  assert.ok(r1.events.some((e: any) => e.type === "deduce_hit"), "적중 이벤트");
+
+  const hab2 = { ...player("hab", "habreterus", "angel"), counters: { nightmare: 1 } };
+  const miss = emptyState(
+    { hab: hab2, a: player("a", "citizen", "angel") },
+    [{ sourceUserId: "hab", targetUserId: "a", actionType: "habreterus_deduce", priority: 5 }],
+  );
+  const r2 = resolveNightActions(miss);
+  assert.equal(r2.newState.players.hab.counters.nightmare ?? 0, 1, "빗나감 — 정화 없음");
+  assert.ok(r2.events.some((e: any) => e.type === "deduce_miss"), "빗나감 이벤트");
+}
+// --- 4h. 루루 악보 교체(자투): 자기 투표가치 +1 ---
+{
+  const state = emptyState(
+    { luru: player("luru", "luru", "angel") },
+    [{ sourceUserId: "luru", targetUserId: null, actionType: "luru_score", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.luru.counters.voteWeightBonus, 1, "악보 교체 — 자투 투표가치 +1");
+}
 
 // --- 5. 투쟁(우노): 대상 소속 카운트 +1 ---
 {
