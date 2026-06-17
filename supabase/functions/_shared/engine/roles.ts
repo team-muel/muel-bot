@@ -276,14 +276,17 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        // 고요한 적막: 달의 힘 충전(+1) + 투표·의심한 대상에 달빛(substrate VoteTarget/SuspectTarget).
+        // 고요한 적막(v2 비례 충전): 투표·의심한 대상(substrate)에 달빛 + 달의 힘 비례 충전 —
+        // 대상 1명당 +1(천사/중립), 악마면 +3(canon 달빛 +10%/악마 +30%, 100% = moonGauge 10).
         { id: "luna_moonlight", name: "고요한 적막", targetType: "NONE", priority: 5, effects: [
-          { type: "GrantCount", target: "self", tag: "moonGauge", amount: 1 },
+          { type: "Charge", target: "VoteTarget", tag: "moonGauge", amount: 1, demonAmount: 3 },
+          { type: "Charge", target: "SuspectTarget", tag: "moonGauge", amount: 1, demonAmount: 3 },
           { type: "AddTag", target: "VoteTarget", tag: "moonlit" },
           { type: "AddTag", target: "SuspectTarget", tag: "moonlit" },
         ] },
-        // 공포 속에 밀어 넣다: 달의 힘 2 이상일 때만 발동(소비) — 천사→악마팀 타락.
-        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], excludeRoles: ["pasua", "converted", "corrupted"], message: "천사만 타락시킬 수 있습니다." }, requiresCounter: { key: "moonGauge", min: 2, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
+        // 공포 속에 밀어 넣다: 달의 힘 100%(moonGauge 10) 이상일 때만 발동(소비) — 천사→악마팀 타락.
+        // 해가 저문다/달이 차오른다 분기(플레이어 선택)는 후속(UI 필요).
+        { id: "luna_corrupt", name: "공포 속에 밀어 넣다", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], excludeRoles: ["pasua", "converted", "corrupted"], message: "천사만 타락시킬 수 있습니다." }, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [{ type: "Corrupt", target: "Target" }] },
       ],
     },
   },
@@ -329,6 +332,10 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "police_investigate", name: "조사", targetType: "SINGLE_ALIVE", priority: 5, effects: [] },
+        // 잠입 수사(v2): 대상에 '잠입' 표식. 그 대상이 그 밤 탈락하면(자/타살 무관) 불심검문 발동 —
+        // 도르단은 그 밤 받은 부정 효과(상태이상) 모두 무시(engine death hook 이 retroactive 정화).
+        // canon '대상 능력 발동 확인'(관찰 리포트)은 후속(정보 통지).
+        { id: "dordan_infiltrate", name: "잠입 수사", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "AddTag", target: "Target", tag: "infiltrated" }] },
       ],
     },
     // 침착한 탐정: 밤 탈락 1명당 단서 +1(3개부터 정밀 조사 — match-action).

@@ -206,7 +206,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
 {
   const state = emptyState(
     {
-      luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 2 } }, // 달 게이지 충전 상태
+      luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } }, // 달 게이지 100% 충전 상태
       angel: player("angel", "citizen", "angel"),
     },
     [{ sourceUserId: "luna", targetUserId: "angel", actionType: "luna_corrupt", priority: 5 }],
@@ -220,7 +220,7 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
 {
   const state = emptyState(
     {
-      luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 2 } },
+      luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } },
       demon: player("demon", "demon", "demon"),
     },
     [{ sourceUserId: "luna", targetUserId: "demon", actionType: "luna_corrupt", priority: 5 }],
@@ -238,26 +238,67 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
     [{ sourceUserId: "luna", targetUserId: null, actionType: "luna_moonlight", priority: 5 }],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.luna.counters.moonGauge, 1, "적막 — 달 게이지 +1");
+  assert.equal(newState.players.luna.counters.moonGauge, 1, "적막 — 천사 달빛 비례 충전 +1");
   assert.ok(newState.players.v.tags.includes("moonlit"), "달빛 — 투표 대상(substrate VoteTarget)에 태그");
 
-  // 게이지 1 이면 공포 차단(임계 2 미만).
+  // 악마 대상 달빛은 +3(canon +30%).
+  const dluna = { ...player("luna", "luna", "demon"), lastVoteTarget: "d" };
+  const dstate = emptyState(
+    { luna: dluna, d: player("d", "demon", "demon") },
+    [{ sourceUserId: "luna", targetUserId: null, actionType: "luna_moonlight", priority: 5 }],
+  );
+  assert.equal(resolveNightActions(dstate).newState.players.luna.counters.moonGauge, 3, "적막 — 악마 달빛 비례 충전 +3");
+
+  // 게이지 9 면 공포 차단(임계 10=100% 미만).
   const low = emptyState(
-    { luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 1 } }, a: player("a", "citizen", "angel") },
+    { luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 9 } }, a: player("a", "citizen", "angel") },
     [{ sourceUserId: "luna", targetUserId: "a", actionType: "luna_corrupt", priority: 5 }],
   );
   const r1 = resolveNightActions(low);
   assert.equal(r1.newState.players.a.currentRole, "citizen", "게이지 부족 — 공포 차단");
   assert.ok(r1.events.some((e: any) => e.type === "action_blocked_no_charge"), "충전 부족 차단 이벤트");
 
-  // 게이지 2 면 공포 발동 + 소비.
+  // 게이지 10(100%)이면 공포 발동 + 소비.
   const high = emptyState(
-    { luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 2 } }, a: player("a", "citizen", "angel") },
+    { luna: { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } }, a: player("a", "citizen", "angel") },
     [{ sourceUserId: "luna", targetUserId: "a", actionType: "luna_corrupt", priority: 5 }],
   );
   const r2 = resolveNightActions(high);
   assert.equal(r2.newState.players.a.actualFaction, "demon", "게이지 충족 — 공포 타락");
   assert.equal(r2.newState.players.luna.counters.moonGauge, 0, "공포 발동 — 게이지 소비");
+}
+// --- 4c. 도르단 잠입 수사: 관찰 대상이 그 밤 탈락 → 불심검문(도르단 부정효과 무시) ---
+{
+  // 지속 디버프(nightmare/persecuteBias)로 검증 — 라운드성(charmed 등)은 리셋루프가 먼저 0.
+  const dordan = { ...player("dordan", "dordan", "angel"), counters: { nightmare: 1, persecuteBias: 1 } };
+  const state = emptyState(
+    {
+      dordan,
+      mark: player("mark", "citizen", "angel"),
+      demon: player("demon", "demon", "demon"),
+    },
+    [
+      { sourceUserId: "dordan", targetUserId: "mark", actionType: "dordan_infiltrate", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "mark", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.mark.alive, false, "잠입 대상이 그 밤 탈락");
+  assert.ok(events.some((e: any) => e.type === "stakeout_triggered" && e.payload?.user_id === "dordan"), "불심검문 발동");
+  assert.equal(newState.players.dordan.counters.nightmare ?? 0, 0, "불심검문 — 도르단 부정효과 정화(악몽)");
+  assert.equal(newState.players.dordan.counters.persecuteBias ?? 0, 0, "불심검문 — 도르단 부정효과 정화(박해)");
+}
+// --- 4d. 도르단 잠입: 대상 생존이면 불심검문 없음 ---
+{
+  const dordan = { ...player("dordan", "dordan", "angel"), counters: { persecuteBias: 1 } };
+  const state = emptyState(
+    { dordan, mark: player("mark", "citizen", "angel") },
+    [{ sourceUserId: "dordan", targetUserId: "mark", actionType: "dordan_infiltrate", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(newState.players.mark.tags.includes("infiltrated"), "잠입 표식 부여");
+  assert.ok(!events.some((e: any) => e.type === "stakeout_triggered"), "대상 생존 — 불심검문 미발동");
+  assert.equal(newState.players.dordan.counters.persecuteBias, 1, "미발동 — 도르단 부정효과 유지");
 }
 
 // --- 5. 투쟁(우노): 대상 소속 카운트 +1 ---
@@ -887,7 +928,7 @@ assert.match(roles, /id: "logen_nullify"[\s\S]*?type: "Nullify"/, "로건 무력
 assert.match(roles, /id: "daeakma_dominion"[\s\S]*?type: "Silence", target: "AllOthers"/, "대악마 압도적 존재감(자신 제외 전원 봉인)");
 assert.match(roles, /id: "uno_valor"[\s\S]*?type: "Cleanse"/, "우노 용맹함(자기 정화)");
 assert.match(roles, /id: "luna_corrupt"/, "루나 공포 능력 정의(단일 출처)");
-assert.match(roles, /id: "luna_corrupt"[\s\S]*?requiresCounter: \{ key: "moonGauge", min: 2/, "루나 공포 — 달 게이지 게이트");
+assert.match(roles, /id: "luna_corrupt"[\s\S]*?requiresCounter: \{ key: "moonGauge", min: 10/, "루나 공포 — 달 게이지 게이트(100%)");
 assert.match(roles, /id: "luna_moonlight"[\s\S]*?target: "VoteTarget"/, "루나 적막 — substrate VoteTarget 달빛");
 const lunaMig = readFileSync("supabase/migrations/20260614130000_gomdori_luna_moonlight.sql", "utf8");
 assert.match(lunaMig, /'luna_moonlight'/, "마이그레이션 action_type 에 적막 추가");
