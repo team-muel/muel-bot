@@ -124,15 +124,20 @@ export const CORE_ROLES: RoleDefinition[] = [
   },
   {
     // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입).
-    // 약간의 위선(v2): 대상 직업(진영) 통지 — 악마팀을 위한 정찰. match-action 이 즉시 결과 반환.
-    // 효과 연기(다음 밤)는 지속 카운터 필요 — 후속(TAG_DELAYED 가 밤 종료 시 리셋되는 타이밍 제약).
+    // 약간의 위선(v2 완성): ① 대상 직업(진영) 통지 — 악마팀을 위한 정찰(match-action-core 가
+    // investigationResult 로 즉시 반환, 엔진 중복 통지 없음). ② 대상의 *다음* 능력 발동을 한 밤
+    // 연기(DelayAction → delayPending → 다음 밤 TAG_DELAYED). canon '효과를 다음 밤으로 연기'를
+    // 지연 예약(밤 종료 리셋 타이밍 우회).
+    // ※ canon 후속(미구현): 대상이 악마에 탈락하면 연기 무효 + 다음 위선이 탈락 효과로 전환(스테이트풀).
     id: "gain",
     name: "가인",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [] },
+        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [
+          { type: "DelayAction", target: "Target" },
+        ] },
       ],
     },
   },
@@ -286,7 +291,8 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 네 안에 없는 것(v2): 대상의 *다음* 능력 효과를 소멸(Nullify, 지속·발동 시 소비).
         // 봉인(그 밤만)과 달리 대상이 능력을 쓸 때까지 기다렸다 무효화한다.
-        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Nullify", target: "Target" }] },
+        // 부서진 펜던트 3+ 적용 시 지정 대상 +2(targetCountCounter: pendantTargetBonus, 패시브가 세팅).
+        { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, targetCount: 1, targetCountCounter: "pendantTargetBonus", effects: [{ type: "Nullify", target: "Target" }] },
       ],
     },
   },
@@ -374,11 +380,18 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "uno_struggle", name: "투쟁", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "GrantCount", target: "Target", amount: 1 }] },
-        // 용맹함(v2, 1회): 군인의 사명 — 자기 부정효과 제거(Cleanse) + 명예 강화(천사팀 카운트 +1).
-        // canon 전원 효과·소속 공개·명예 실추는 후속.
-        // 용맹함(v2 verbatim): 전원에게 투쟁(GrantCount All) + 자기 부정효과 제거(Cleanse self). 1회.
-        // 소속 공개·명예 실추(밤행동 불가)는 새 프리미티브 필요 — 후속.
-        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "self" }, { type: "GrantCount", target: "All", amount: 1 }] },
+        // 용맹함(v2 완성, 1회): ① 전원에게 투쟁(GrantCount All) ② 자기 부정효과 제거(Cleanse self)
+        // ③ 우노가 직전에 투표한 대상(VoteTarget)의 소속 공개(RevealRole) ④ 그 대상이 천사면
+        // (onlyFactions:["angel"]) '명예 실추' = 다음 밤 행동 불가(DelaySilence). canon "우노의 투표
+        // 대상은 ... 소속 공개. 천사 소속이면 명예 실추(밤 동안 행동 불가)" — 주어 연속이라 명예
+        // 실추는 *투표 대상*에 적용. canon "사망자로 기록"은 반복 오토킬을 피해 RevealRole(정보)로
+        // 해석(결정 기록). VoteTarget 미투표 시 ③④ 자동 생략(substrate 가 null 이면 건너뜀).
+        { id: "uno_valor", name: "용맹함", targetType: "SELF", priority: 5, maxUses: 1, effects: [
+          { type: "Cleanse", target: "self" },
+          { type: "GrantCount", target: "All", amount: 1 },
+          { type: "RevealRole", target: "VoteTarget" },
+          { type: "DelaySilence", target: "VoteTarget", onlyFactions: ["angel"] },
+        ] },
       ],
     },
   },
@@ -430,9 +443,12 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 별이 떠오른 밤(canon 패시브): 초신성 발동 다음 밤은 의심 투표가 생략된다. onFireSetCounter
         // 로 source(세이카)에 starlitNext 표식 → phase-advance 가 다음 night_suspect 진입을 night 로 전환.
         { id: "seika_supernova", name: "초신성", targetType: "SINGLE_ALIVE", priority: 1, onFireSetCounter: { key: "starlitNext", value: 1 }, effects: [{ type: "Cleanse", target: "Target" }, { type: "Silence", target: "Target", tag: "seikaMark" }] },
-        // 자신만 아플 거야(v2, 1회): 전원의 부여 효과를 흡수=전원 정화(Cleanse All). priority 5
-        // (마지막) — 그 밤 걸린 효과들을 모두 씻는다. 악마팀 효과 3개+ 소멸·악마팀 공개는 후속.
-        { id: "seika_absorb", name: "자신만 아플 거야", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "Cleanse", target: "All" }] },
+        // 자신만 아플 거야(v2 완성, 1회): 전원의 받은 부여 효과를 세이카가 흡수(Absorb All) —
+        // 대상은 정화되고 세이카에 흡수량 누적(absorbedDebuffs). 누적 3+ 이면 세이카 소멸 + 이틀 후
+        // 악마팀 공개(demonRevealIn 카운트다운 → demons_revealed). priority 5(마지막)에 흡수.
+        // ※ canon '악마팀 효과 3개+'의 악마팀 출처 판별은 effect provenance 미보유라 '받은 부정
+        // 효과 수'로 근사(결정 기록 — 후속에서 출처 태깅으로 정밀화).
+        { id: "seika_absorb", name: "자신만 아플 거야", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "Absorb", target: "All" }] },
       ],
     },
   },

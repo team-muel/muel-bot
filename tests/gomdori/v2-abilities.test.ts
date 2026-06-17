@@ -338,15 +338,108 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.equal(newState.players.demon.counters.used_daeakma_dominion, 1, "압도적 존재감 1회 소진");
 }
 
-// --- 6d. 우노 용맹함: 자기 정화(Cleanse) + 명예(+1) ---
+// --- 6d. 우노 용맹함: 자기 정화 + 명예 + 소속 공개 + (천사 투표대상) 명예 실추 ---
 {
+  const uno = { ...player("uno", "uno", "angel"), lastVoteTarget: "ally", counters: { voteBias: 3 } };
   const clean = emptyState(
-    { uno: { ...player("uno", "uno", "angel"), counters: { voteBias: 3 } } },
+    { uno, ally: player("ally", "doctor", "angel") },
     [{ sourceUserId: "uno", targetUserId: null, actionType: "uno_valor", priority: 5 }],
   );
-  const { newState } = resolveNightActions(clean);
+  const { newState, events } = resolveNightActions(clean);
   assert.equal(newState.players.uno.counters.voteBias ?? 0, 0, "용맹함 — 자기 부정효과 제거");
   assert.equal(newState.players.uno.counters.countBonus, 1, "용맹함 — 명예 +1");
+  assert.ok(events.some((e: any) => e.type === "role_revealed" && e.payload?.user_id === "ally"), "용맹함 — 투표 대상 소속 공개");
+  assert.equal(newState.players.ally.counters.silencePending, 1, "용맹함 — 천사 투표대상 명예 실추(다음 밤 봉인 예약)");
+  // 다음 밤 — 예약이 silencedNights 로 승격되어 ally(의사) 행동 차단 → 피해자 사망.
+  const next = emptyState(
+    { ally: newState.players.ally, victim: player("victim", "citizen", "angel"), demon: player("demon", "demon", "demon") },
+    [
+      { sourceUserId: "ally", targetUserId: "victim", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState: after, events: ev2 } = resolveNightActions(next);
+  assert.ok(ev2.some((e: any) => e.type === "action_blocked_silenced" && e.userId === "ally"), "명예 실추 — 다음 밤 행동 봉인");
+  assert.equal(after.players.victim.alive, false, "봉인된 의사 치료 불발 → 피해자 사망");
+}
+// --- 6d-2. 우노 용맹함: 악마 투표대상은 명예 실추 없음(소속 공개만) ---
+{
+  const uno = { ...player("uno", "uno", "angel"), lastVoteTarget: "dem" };
+  const state = emptyState(
+    { uno, dem: player("dem", "demon", "demon") },
+    [{ sourceUserId: "uno", targetUserId: null, actionType: "uno_valor", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(events.some((e: any) => e.type === "role_revealed" && e.payload?.user_id === "dem"), "악마 투표대상도 소속 공개");
+  assert.equal(newState.players.dem.counters.silencePending ?? 0, 0, "악마 투표대상은 명예 실추(봉인) 없음");
+}
+// --- 6d-3. 세이카 자신만 아플 거야: 흡수 3+ → 세이카 소멸 + 악마팀 공개 카운트다운 ---
+{
+  // 지속 디버프(nightmare/persecuteBias/haunted)는 라운드 시작 리셋을 타지 않아 흡수 대상으로
+  // 남는다(voteBias/charmed 등 라운드성은 리셋 루프가 먼저 0 으로 지움 — 그 밤 신규분만 흡수).
+  const state = emptyState(
+    {
+      seika: player("seika", "seika", "angel"),
+      a: { ...player("a", "citizen", "angel"), counters: { nightmare: 1, persecuteBias: 1 } },
+      b: { ...player("b", "citizen", "angel"), counters: { haunted: 1 } },
+    },
+    [{ sourceUserId: "seika", targetUserId: null, actionType: "seika_absorb", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.seika.counters.absorbedDebuffs, 3, "흡수 누적 3");
+  assert.equal(newState.players.a.counters.nightmare ?? 0, 0, "흡수로 대상 정화");
+  assert.equal(newState.players.seika.alive, false, "악마팀 효과 3+ 흡수 → 세이카 소멸");
+  assert.equal(newState.players.seika.counters.annihilated, 1, "소멸 = 부활 불가");
+  assert.equal(newState.players.seika.counters.demonRevealIn, 2, "악마팀 공개 카운트다운 세팅");
+  assert.ok(events.some((e: any) => e.type === "seika_overload"), "세이카 과부하 이벤트");
+}
+// --- 6d-4. 세이카 악마팀 공개 카운트다운: 2→1→0(공개) ---
+{
+  const seika = { ...player("seika", "seika", "angel", false), counters: { demonRevealIn: 2 } };
+  const demon = player("demon", "demon", "demon");
+  let r = resolveNightActions(emptyState({ seika, demon }, []));
+  assert.equal(r.newState.players.seika.counters.demonRevealIn, 1, "카운트다운 2→1");
+  r = resolveNightActions(emptyState({ seika: r.newState.players.seika, demon }, []));
+  assert.equal(r.newState.players.seika.counters.demonRevealIn, 0, "카운트다운 1→0");
+  assert.ok(r.events.some((e: any) => e.type === "demons_revealed" && (e.payload?.demons ?? []).includes("demon")), "이틀 후 악마팀 공개");
+}
+// --- 6d-5. 로건 부서진 펜던트: 악마 처치자 3명 → 로건 지정 대상 +2 ---
+{
+  const state = emptyState(
+    {
+      logen: player("logen", "logen", "demon"),
+      d1: player("d1", "demon", "demon"),
+      d2: player("d2", "malen", "demon"),
+      d3: player("d3", "phantom", "demon"),
+      a: player("a", "citizen", "angel"),
+    },
+    [],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(newState.players.d1.tags.includes("pendant"), "악마 처치자에 펜던트 부여");
+  assert.ok(events.some((e: any) => e.type === "pendant_applied"), "펜던트 부여 이벤트");
+  assert.equal(newState.players.logen.counters.pendantTargetBonus, 2, "펜던트 3+ → 로건 지정 대상 +2");
+  assert.ok(!newState.players.a.tags.includes("pendant"), "천사엔 펜던트 미부여");
+}
+// --- 6d-6. 가인 약간의 위선: 대상의 다음 능력 발동을 한 밤 연기 ---
+{
+  const state = emptyState(
+    { gain: player("gain", "gain", "demon"), doc: player("doc", "doctor", "angel") },
+    [{ sourceUserId: "gain", targetUserId: "doc", actionType: "gain_hypocrisy", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.doc.counters.delayPending, 1, "위선 — 연기 예약");
+  assert.ok(events.some((e: any) => e.type === "hypocrisy_delayed"), "위선 연기 이벤트");
+  const next = emptyState(
+    { doc: newState.players.doc, victim: player("victim", "citizen", "angel"), demon: player("demon", "demon", "demon") },
+    [
+      { sourceUserId: "doc", targetUserId: "victim", actionType: "doctor_heal", priority: 3 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState: after, events: ev2 } = resolveNightActions(next);
+  assert.ok(ev2.some((e: any) => e.type === "action_delayed" && e.userId === "doc"), "위선 — 다음 밤 능력 연기");
+  assert.equal(after.players.victim.alive, false, "연기된 치료 불발 → 피해자 사망");
 }
 
 // --- 6e. 팬텀 영면: 이미 악몽인 대상 재지정 = 즉시 죽이지 않고 풀(deepsleep) 누적 + 악몽 지정 +1 ---
@@ -820,7 +913,7 @@ assert.match(
 //    비밀 정보가 클라이언트에 노출된다. public 허용목록 + private recipient.
 assert.match(
   phaseAdvanceSrc,
-  /PUBLIC_ENGINE_EVENTS = new Set\(\["player_died", "player_revived"\]\)/,
+  /PUBLIC_ENGINE_EVENTS = new Set\(\["player_died", "player_revived", "role_revealed", "demons_revealed"\]\)/,
   "엔진 이벤트 public 허용목록",
 );
 assert.match(

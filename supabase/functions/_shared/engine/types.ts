@@ -66,7 +66,15 @@ export interface Effect {
   //   = 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
   // Verdict(아서 해오름 판정): 대상이 부정 효과를 적용한 적 있으면(counters.tainted) '타락',
   //   아니면 '결백'으로 시전자에게 통지. 진영이 아니라 행위 이력으로 가린다(vault 아서 §해오름).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict";
+  // DelaySilence(우노 명예 실추): 대상을 *다음* 밤 봉인(counters.silencePending → 다음 밤 시작에
+  //   silencedNights 로 승격, 말렌 마비와 같은 지연 패턴 재사용). Silence(그 밤 한정)와 달리
+  //   priority 타이밍에 의존하지 않는다 — 우노 용맹함은 priority 5 라 같은 밤 봉인이 불가능.
+  // Absorb(세이카 자신만 아플 거야): 대상의 받은 부여 효과를 세이카가 흡수(대상은 정화=Cleanse,
+  //   흡수량은 source.counters.absorbedDebuffs 누적). 누적 3+ 이면 세이카 소멸(markedForDeath +
+  //   annihilated) + demonRevealIn 카운트다운 세팅(이틀 후 악마팀 공개). target:"All" 로 사용.
+  // DelayAction(가인 약간의 위선): 대상의 *다음* 능력 발동을 한 밤 연기(counters.delayPending →
+  //   다음 밤 시작에 TAG_DELAYED 로 승격). Nullify(소멸)와 달리 효과를 없애지 않고 미룬다.
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction";
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
   // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
   // 압도적 존재감). All 은 source 포함(천사 버프 등).
