@@ -1046,15 +1046,42 @@ Deno.serve((req: Request) => {
         const candidateUserId = engineState.verdict?.candidateUserId || null;
         const candidate = candidateUserId ? players.find((player) => player.user_id === candidateUserId) : null;
         let executed = false;
+        let blockedByShield = false;
 
         if (verdict.approved && candidate?.alive) {
-          // 처형(execution) — vault canon §8: '처형'은 '탈락'과 분류상 동질이지만 메커니즘
-          // 측면에서 별개. shield/protection 등 차단 효과는 *능력으로 인한 탈락*(engine 의
-          // markedForDeath 경로)에만 적용되고, 마을의 투표가 만드는 처형은 막을 수 없다.
-          // 아서 여명의 기사 패시브 "어떤 효과로도 탈락 X"도 능력 기반 탈락에 한정 — 투표
-          // 처형으로는 죽을 수 있어야 한다(canon: 마을의 의지). counters.shield 는 여기서
-          // 소비하지 않고 그대로 둬, 다음 밤 살해 1회 무효 자석으로 남는다.
-          {
+          const candidateEngineState = (candidate.engine_state ?? {}) as Record<string, unknown>;
+          const candidateCounters =
+            candidateEngineState.counters && typeof candidateEngineState.counters === "object" && !Array.isArray(candidateEngineState.counters)
+              ? { ...(candidateEngineState.counters as Record<string, number>) }
+              : {};
+          if ((candidateCounters.shield ?? 0) > 0) {
+            candidateCounters.shield = Math.max(0, (candidateCounters.shield ?? 0) - 1);
+            blockedByShield = true;
+            requireNoError(
+              await supabase
+                .from("match_players")
+                .update({ engine_state: { ...candidateEngineState, counters: candidateCounters } })
+                .eq("match_id", matchId)
+                .eq("user_id", candidateUserId),
+            );
+            requireNoError(
+              await supabase
+                .from("match_events")
+                .insert({
+                  match_id: matchId,
+                  phase_id: phase.id,
+                  event_type: "execution_blocked_shield",
+                  visibility: "public",
+                  payload: {
+                    user_id: candidate.user_id,
+                    display_name: candidate.display_name,
+                    role: candidate.role,
+                    faction: candidate.faction,
+                    cause: "vote",
+                  },
+                }),
+            );
+          } else {
             executed = true;
             requireNoError(
               await supabase
@@ -1104,6 +1131,7 @@ Deno.serve((req: Request) => {
                 skipped: verdict.skipped,
                 approved: verdict.approved,
                 executed,
+                blocked_by_shield: blockedByShield,
               },
             }),
         );
