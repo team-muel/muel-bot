@@ -193,9 +193,10 @@ assert.match(roles, /id: "helen_sleep"/, "헬렌 수면 능력 정의");
 const helenSleepMig = readFileSync("supabase/migrations/20260614120000_gomdori_helen_sleep.sql", "utf8");
 assert.match(helenSleepMig, /'helen_sleep'/, "마이그레이션 action_type 에 수면 추가");
 // 배치B 배선
-assert.match(roles, /id: "arthur_judge"[\s\S]*?type: "Annihilate"/, "아서 단죄(Annihilate)");
+assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Annihilate"/, "아서 잔불 대검(타락자=Annihilate)");
+assert.match(roles, /id: "arthur_judge"[\s\S]*?type: "Verdict"/, "아서 잔불이 꺼지기 전에(Verdict 결백/타락 통지)");
 assert.match(roles, /id: "mizlet_dessert"[\s\S]*?type: "Protect"/, "미즐렛 디저트 버프(Protect)");
-assert.match(roles, /id: "arthur_judge"/, "아서 단죄 능력 정의(단일 출처)");
+assert.match(roles, /id: "arthur_judge"/, "아서 잔불이 꺼지기 전에 능력 정의(단일 출처)");
 assert.match(roles, /id: "mizlet_dessert"/, "미즐렛 디저트 능력 정의(단일 출처)");
 const batch2bMig = readFileSync("supabase/migrations/20260614150000_gomdori_batch_tier2b.sql", "utf8");
 assert.match(batch2bMig, /'arthur_judge'/, "마이그레이션 — 단죄");
@@ -360,13 +361,13 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   assert.ok(events.some((e: any) => e.type === "deep_sleep"), "영면 이벤트");
 }
 
-// --- 7. 잔불 대검(아서): 대상 하루 무적 → 처치 무효 ---
+// --- 7. 잔불 대검(아서): 결백자(tainted 없음) 하루 무적 → 처치 무효. 충전(emberCharge) 소비. ---
 {
   const state = emptyState(
     {
-      arthur: player("arthur", "arthur", "angel"),
+      arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 1 } },
       demon: player("demon", "demon", "demon"),
-      ally: player("ally", "citizen", "angel"),
+      ally: player("ally", "citizen", "angel"), // 부정 효과 적용 이력 없음 → 결백 → Protect 분기.
     },
     [
       { sourceUserId: "arthur", targetUserId: "ally", actionType: "arthur_emberblade", priority: 3 },
@@ -374,26 +375,41 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
     ],
   );
   const { newState, events } = resolveNightActions(state);
-  assert.equal(newState.players.ally.alive, true, "잔불 대검 보호로 처치 무효");
+  assert.equal(newState.players.ally.alive, true, "잔불 대검 보호로 처치 무효(결백자)");
   assert.ok(events.some((e: any) => e.type === "attack_prevented"), "보호 이벤트");
+  assert.equal(newState.players.arthur.counters.emberCharge ?? 0, 0, "잔불 대검 — 충전 1 소비");
+  assert.equal(newState.players.ally.counters.branded ?? 0, 0, "결백자는 폭열 안 함");
 }
 
-// --- 7b. 아서 단죄: 폭열(branded) → 재적용 시 소멸(부활 불가) ---
+// --- 7a. 잔불 대검 충전 없으면 발동 차단(0회 제한·충전가능) ---
 {
   const state = emptyState(
-    { arthur: player("arthur", "arthur", "angel"), foe: player("foe", "corrupted", "demon") },
-    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_judge", priority: 4 }],
+    { arthur: player("arthur", "arthur", "angel"), ally: player("ally", "citizen", "angel") },
+    [{ sourceUserId: "arthur", targetUserId: "ally", actionType: "arthur_emberblade", priority: 4 }],
+  );
+  const { events } = resolveNightActions(state);
+  assert.ok(events.some((e: any) => e.type === "action_blocked_no_charge"), "충전 없으면 잔불 대검 차단");
+}
+
+// --- 7b. 잔불 대검(타락자): 폭열(branded) → 재적용 시 소멸. 타락 판정 = 행위 이력(tainted), 진영 아님. ---
+{
+  const state = emptyState(
+    {
+      arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 1 } },
+      foe: { ...player("foe", "citizen", "angel"), counters: { tainted: 1 } }, // 천사여도 부정효과 이력 → 타락 판정.
+    },
+    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_emberblade", priority: 4 }],
   );
   const r1 = resolveNightActions(state);
-  assert.equal(r1.newState.players.foe.counters.branded, 1, "첫 단죄 — 폭열 표식");
-  assert.equal(r1.newState.players.foe.alive, true, "첫 단죄로는 탈락 안 함");
-  // 재적용 → 소멸.
+  assert.equal(r1.newState.players.foe.counters.branded, 1, "첫 잔불 대검 — 타락자 폭열 표식");
+  assert.equal(r1.newState.players.foe.alive, true, "첫 잔불 대검으로는 탈락 안 함");
+  // 재적용 → 소멸(충전 다시 채움).
   const again = emptyState(
-    { arthur: { ...player("arthur", "arthur", "angel"), counters: { used_arthur_judge: 1 } }, foe: { ...r1.newState.players.foe } },
-    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_judge", priority: 4 }],
+    { arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 1 } }, foe: { ...r1.newState.players.foe } },
+    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_emberblade", priority: 4 }],
   );
   const r2 = resolveNightActions(again);
-  assert.equal(r2.newState.players.foe.alive, false, "폭열된 대상 재단죄 — 소멸");
+  assert.equal(r2.newState.players.foe.alive, false, "폭열된 타락자 재적용 — 소멸");
   assert.equal(r2.newState.players.foe.counters.annihilated, 1, "소멸 표식(부활 불가)");
   // 소멸자는 부활 불가.
   const tryRevive = emptyState(
@@ -861,36 +877,171 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(vote.candidateUserId, "demon", "우노 명예가 사탄의 마를 뚫어 악마 지목 — 천사 표 경로 성립");
 }
 
-// --- 아서 단죄(결백/타락 판정): 악마팀이면 폭열→소멸, 천사·중립이면 무적(무오사살) ---
+// --- 아서 잔불 대검(결백/타락 판정): *진영이 아니라 행위 이력(tainted)*으로 분기 ---
 {
-  // 타락(악마) 대상: 1회차 폭열(branded), 2회차 소멸(annihilated, 부활 불가).
+  // 타락(부정 효과 이력 보유) 대상: 진영 무관. 1회차 폭열(branded), 2회차 소멸(annihilated).
   const state = emptyState(
-    { arthur: player("arthur", "arthur", "angel"), demon: player("demon", "demon", "demon") },
-    [{ sourceUserId: "arthur", targetUserId: "demon", actionType: "arthur_judge", priority: 4 }],
+    {
+      arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 1 } },
+      foe: { ...player("foe", "demon", "demon"), counters: { tainted: 1 } },
+    },
+    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_emberblade", priority: 4 }],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.demon.counters.branded, 1, "단죄 1회 — 악마 폭열(branded)");
-  assert.equal(newState.players.demon.alive, true, "단죄 1회 — 아직 소멸 안 함");
+  assert.equal(newState.players.foe.counters.branded, 1, "잔불 대검 1회 — 타락자 폭열(branded)");
+  assert.equal(newState.players.foe.alive, true, "잔불 대검 1회 — 아직 소멸 안 함");
   const round2 = emptyState(
-    { arthur: { ...newState.players.arthur }, demon: { ...newState.players.demon } },
-    [{ sourceUserId: "arthur", targetUserId: "demon", actionType: "arthur_judge", priority: 4 }],
+    { arthur: { ...newState.players.arthur, counters: { ...newState.players.arthur.counters, emberCharge: 1 } }, foe: { ...newState.players.foe } },
+    [{ sourceUserId: "arthur", targetUserId: "foe", actionType: "arthur_emberblade", priority: 4 }],
   );
   const { newState: after } = resolveNightActions(round2);
-  assert.equal(after.players.demon.alive, false, "단죄 2회 — 폭열된 악마 소멸");
-  assert.equal(after.players.demon.counters.annihilated, 1, "소멸 — 부활 불가 표식");
+  assert.equal(after.players.foe.alive, false, "잔불 대검 2회 — 폭열된 타락자 소멸");
+  assert.equal(after.players.foe.counters.annihilated, 1, "소멸 — 부활 불가 표식");
+  assert.equal(after.players.arthur.counters.tainted ?? 0, 0, "아서가 소멸시켜도 자신은 tainted 안 됨(의로운 심판)");
 }
 {
-  // 결백(천사) 대상: 폭열 안 함 + 무적(보호)만 — 친화적 무오사살.
+  // 결백(부정 효과 이력 없음) 대상: 악마 진영이어도 폭열 안 함 + 무적(보호)만.
   const state = emptyState(
-    { arthur: player("arthur", "arthur", "angel"), ally: player("ally", "citizen", "angel"), demon: player("demon", "demon", "demon") },
+    {
+      arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 1 } },
+      innocentDemon: player("innocentDemon", "demon", "demon"), // 진영은 악마지만 부정효과 이력 없음 → 결백 판정.
+      killer: { ...player("killer", "demon", "demon"), counters: { tainted: 1 } },
+    },
     [
-      { sourceUserId: "arthur", targetUserId: "ally", actionType: "arthur_judge", priority: 4 },
-      { sourceUserId: "demon", targetUserId: "ally", actionType: "demon_kill", priority: 4 },
+      { sourceUserId: "arthur", targetUserId: "innocentDemon", actionType: "arthur_emberblade", priority: 3 },
+      { sourceUserId: "killer", targetUserId: "innocentDemon", actionType: "demon_kill", priority: 4 },
     ],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.ally.counters.branded ?? 0, 0, "단죄 — 결백한 천사는 폭열 안 함");
-  assert.equal(newState.players.ally.alive, true, "단죄 — 결백자는 무적(보호)이라 그 밤 처치 무효");
+  assert.equal(newState.players.innocentDemon.counters.branded ?? 0, 0, "잔불 대검 — 부정효과 이력 없는 대상은 폭열 안 함(진영 무관)");
+  assert.equal(newState.players.innocentDemon.alive, true, "잔불 대검 — 결백 판정 대상은 무적(보호)");
+}
+{
+  // 잔불이 꺼지기 전에(arthur_judge): 해오름 판정 통지(Verdict) + 충전(emberCharge) + 해오름 태그.
+  // 부정 효과(예: 처치)를 쓴 적 있는 대상 → '타락', 없는 대상 → '결백'.
+  const state = emptyState(
+    {
+      arthur: player("arthur", "arthur", "angel"),
+      tainted: { ...player("tainted", "citizen", "angel"), counters: { tainted: 1 } },
+    },
+    [{ sourceUserId: "arthur", targetUserId: "tainted", actionType: "arthur_judge", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(events.some((e: any) => e.type === "verdict_revealed" && e.payload?.user_id === "tainted" && e.payload?.verdict === "tainted"), "해오름 — 부정효과 이력 대상은 '타락' 통지");
+  assert.equal(newState.players.arthur.counters.emberCharge, 1, "잔불이 꺼지기 전에 — 잔불 대검 1충전");
+  assert.ok(newState.players.tainted.tags.includes("dawnrise"), "대상에 '해오름' 표식");
+}
+{
+  // 타락 표식의 발생: 부정 효과(처치)를 적용한 시전자는 counters.tainted=1 이 되어 이후 아서
+  // 조사에서 '타락'으로 통지된다. (루루 매료=양도는 부정 효과 아님 → 제외. 세이카 봉인은 조건부.)
+  const state = emptyState(
+    { killer: player("killer", "demon", "demon"), victim: player("victim", "citizen", "angel") },
+    [{ sourceUserId: "killer", targetUserId: "victim", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.killer.counters.tainted, 1, "부정 효과(처치)를 적용한 시전자는 tainted");
+}
+{
+  // 루루 매료는 부정 효과가 아니므로 시전자를 tainted 시키지 않는다(양도 ≠ 가해).
+  const state = emptyState(
+    { luru: player("luru", "luru", "angel"), victim: player("victim", "citizen", "angel") },
+    [{ sourceUserId: "luru", targetUserId: "victim", actionType: "luru_charm", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.luru.counters.tainted ?? 0, 0, "매료(양도)는 부정 효과 아님 — 루루 tainted 안 됨");
+}
+{
+  // 세이카 봉인(Silence)은 부정 효과 → 봉인을 쓰면 세이카(천사)도 tainted('경우에 따라 타락').
+  const state = emptyState(
+    { seika: player("seika", "seika", "angel"), victim: player("victim", "citizen", "angel") },
+    [{ sourceUserId: "seika", targetUserId: "victim", actionType: "seika_supernova", priority: 1 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.seika.counters.tainted, 1, "봉인을 쓴 세이카는 tainted(천사여도 타락 판정)");
+}
+{
+  // 투표/의심을 통한 가해(로마즈: 받는 표 +5, 받는 의심 +10)는 부정 효과 → 시전자 tainted.
+  // (단순 투표/의심 '행위'는 applyEffect 경로가 아니므로 애초에 taint 안 됨.)
+  const state = emptyState(
+    { romaz: player("romaz", "romaz", "angel"), victim: player("victim", "citizen", "angel") },
+    [{ sourceUserId: "romaz", targetUserId: "victim", actionType: "romaz_suspect", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.romaz.counters.tainted, 1, "투표/의심을 통해 가해한 로마즈는 tainted");
+}
+{
+  // 잔불이 꺼지기 전에(3명 지정): 3명 각각 해오름(dawnrise) + 결백/타락 통지(Verdict) + 충전 +1.
+  const state = emptyState(
+    {
+      arthur: player("arthur", "arthur", "angel"),
+      a: { ...player("a", "citizen", "angel"), counters: { tainted: 1 } },
+      b: player("b", "citizen", "angel"),
+      c: player("c", "demon", "demon"),
+    },
+    [{ sourceUserId: "arthur", targetUserId: null, targetUserIds: ["a", "b", "c"], actionType: "arthur_judge", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  for (const id of ["a", "b", "c"]) {
+    assert.ok(newState.players[id].tags.includes("dawnrise"), `${id} 해오름 표식`);
+    assert.ok(events.some((e: any) => e.type === "verdict_revealed" && e.payload?.user_id === id), `${id} 결백/타락 통지`);
+  }
+  assert.ok(events.some((e: any) => e.type === "verdict_revealed" && e.payload?.user_id === "a" && e.payload?.verdict === "tainted"), "a(부정효과 이력)=타락");
+  assert.ok(events.some((e: any) => e.type === "verdict_revealed" && e.payload?.user_id === "c" && e.payload?.verdict === "innocent"), "c(악마지만 이력 없음)=결백");
+  assert.equal(newState.players.arthur.counters.emberCharge, 1, "3명 지정 — 충전 발동당 +1(총합)");
+}
+{
+  // 여명의 기사 면역: 아서는 밤 처치/소멸로 탈락하지 않는다.
+  const state = emptyState(
+    { arthur: player("arthur", "arthur", "angel"), demon: player("demon", "demon", "demon") },
+    [{ sourceUserId: "demon", targetUserId: "arthur", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.arthur.alive, true, "아서는 밤 처치로 탈락하지 않음(면역)");
+  assert.ok(events.some((e: any) => e.type === "arthur_immune"), "면역 이벤트");
+}
+{
+  // 여명의 기사: 결백 천사 2명 탈락 → 아서 생존 + 잔불 대검 충전 2. 3명+ → 다음 처리에서 동반 탈락.
+  const two = emptyState(
+    {
+      arthur: player("arthur", "arthur", "angel"),
+      d1: player("d1", "citizen", "angel", false),
+      d2: player("d2", "citizen", "angel", false),
+    },
+    [],
+  );
+  const r2 = resolveNightActions(two);
+  assert.equal(r2.newState.players.arthur.alive, true, "결백 천사 2명 탈락 — 아서 생존");
+  assert.equal(r2.newState.players.arthur.counters.emberCharge, 2, "탈락 1명당 잔불 대검 +1 충전");
+
+  const three = emptyState(
+    {
+      arthur: player("arthur", "arthur", "angel"),
+      d1: player("d1", "citizen", "angel", false),
+      d2: player("d2", "citizen", "angel", false),
+      d3: player("d3", "citizen", "angel", false),
+      tainted: { ...player("tainted", "seika", "angel", false), counters: { tainted: 1 } }, // 타락 천사는 안 셈.
+    },
+    [],
+  );
+  const r3 = resolveNightActions(three);
+  assert.equal(r3.newState.players.arthur.alive, false, "결백 천사 3명 탈락 — 아서 동반 탈락");
+  assert.ok(r3.events.some((e: any) => e.type === "dawnbreaker_fallen"), "동반 탈락 이벤트");
+  assert.equal(r3.newState.players.arthur.counters.emberCharge, 3, "타락 천사는 충전에 안 셈(결백 3명만 +3)");
+}
+{
+  // 위용: 충전 ≥3 + 해오름 적용된 결백 천사 1명당 아서 투표가치 +3.
+  const players: Record<string, any> = {
+    arthur: { ...player("arthur", "arthur", "angel"), counters: { emberCharge: 3 } },
+    ally1: { ...player("ally1", "citizen", "angel"), tags: ["dawnrise"] },
+    ally2: { ...player("ally2", "citizen", "angel"), tags: ["dawnrise"] },
+    foe: player("foe", "demon", "demon"),
+  };
+  const tally = tallyEliminationVotes([{ actorUserId: "arthur", targetUserId: "foe" }], players);
+  assert.equal(tally.tallies.foe, 1 + 2 * 3, "위용 — 해오름 결백 천사 2명 → 아서 투표가치 1+6=7");
+  // 충전 <3 이면 미발동.
+  const players2 = { ...players, arthur: { ...players.arthur, counters: { emberCharge: 2 } } };
+  const tally2 = tallyEliminationVotes([{ actorUserId: "arthur", targetUserId: "foe" }], players2);
+  assert.equal(tally2.tallies.foe, 1, "충전 2(<3) — 위용 미발동(기본 투표가치 1)");
 }
 
 // --- 말렌 혼령 방출 다단계(Haunt): 1회 표식, 2회 잠식 탈락 + 투표가치 조공 ---

@@ -35,8 +35,11 @@ export const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = Object.fromEntrie
 export type SubmitActionParams = {
   matchId: string;
   actorUserId: string;
-  actionType: string;
   targetUserId: string | null;
+  // 멀티타깃 능력(아서 잔불이 꺼지기 전에=3명). targetCount>1 인 능력에서 사용. 단일 능력은
+  // targetUserId 만 보내면 된다(하위호환). 제네릭 — 능력 정의의 targetCount 로만 분기, 직업 하드코딩 X.
+  targetUserIds?: string[] | null;
+  actionType: string;
 };
 
 // 사탄의 마 전역 판정(canon 대악마): 생존 천사팀(currentFaction='angel') 전원의 행사
@@ -75,7 +78,7 @@ async function isAngelTeamVoteFullySuppressed(
 export async function submitMatchAction(
   // deno-lint-ignore no-explicit-any
   supabase: SupabaseClient<any, "mafia">,
-  { matchId, actorUserId, actionType, targetUserId }: SubmitActionParams,
+  { matchId, actorUserId, actionType, targetUserId, targetUserIds }: SubmitActionParams,
 ): Promise<{ investigationResult: string | null }> {
   const match = await getMatch(matchId);
 
@@ -130,44 +133,54 @@ export async function submitMatchAction(
     const requiresNoTarget =
       ability.targetType === "SELF" || ability.targetType === "NONE" || ability.targetType === "ALL";
     if (!requiresNoTarget) {
-      if (!targetUserId) throw badRequest("missing_target", "대상을 선택해야 합니다.");
-      if (ability.excludeSelf && targetUserId === actorUserId) {
-        throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
-      }
-      const { data: targetState } = await supabase
-        .from("match_players")
-        .select("alive, role, faction, engine_state, eliminated_phase_number")
-        .eq("match_id", matchId)
-        .eq("user_id", targetUserId)
-        .single();
-      if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
-      const targetRole = effectiveRole(targetState);
-      if (ability.targetType === "SINGLE_DEAD") {
-        if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
-        // 부활 딜레이(canon 미즐렛 — 즉시 복귀가 아니라 예측 가능한 메커니즘): 탈락 직후
-        // 다음 밤 즉시 부활을 막는다. 탈락 시점(eliminated_phase_number)으로부터 2일차 이상
-        // 지나야 부활 가능 — "1일차에 죽고 2일차에 부활" 방지.
-        const deathPhase = (targetState as { eliminated_phase_number?: number | null }).eliminated_phase_number ?? null;
-        if (deathPhase != null && currentPhase.phase_number - deathPhase < 2) {
-          throw conflict("revive_too_soon", "최근에 탈락한 대상은 아직 되살릴 수 없습니다. 며칠 지나야 합니다.");
+      // 멀티타깃(아서 잔불이 꺼지기 전에=3명): 능력 정의의 targetCount 로만 분기(직업 하드코딩 X).
+      // 단일 능력은 targetUserId, 멀티는 targetUserIds. 둘 다 한 검증 루프로 처리한다.
+      const maxTargets = (ability.targetCount && ability.targetCount > 1) ? ability.targetCount : 1;
+      const targets = (targetUserIds && targetUserIds.length)
+        ? targetUserIds
+        : (targetUserId ? [targetUserId] : []);
+      if (targets.length === 0) throw badRequest("missing_target", "대상을 선택해야 합니다.");
+      if (targets.length > maxTargets) throw badRequest("too_many_targets", `대상은 최대 ${maxTargets}명까지 지정할 수 있습니다.`);
+      if (new Set(targets).size !== targets.length) throw badRequest("duplicate_target", "같은 대상을 중복으로 지정할 수 없습니다.");
+      for (const tId of targets) {
+        if (ability.excludeSelf && tId === actorUserId) {
+          throw badRequest("invalid_target", "자기 자신을 대상으로 지정할 수 없습니다.");
         }
-      } else if (!targetState.alive) {
-        throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
-      }
-      // 대상 직업/진영 제한(ADR-006 S2): 능력 선언(targetFilter)에서 제네릭 평가.
-      // 과거 파스아·루나 하드코딩 if-블록을 대체. 엔진 applyEffect 도 이중 가드.
-      const tf = ability.targetFilter;
-      if (tf) {
-        const targetFaction =
-          (targetState.engine_state as { currentFaction?: string } | null)?.currentFaction ??
-          (typeof targetState.faction === "string" ? targetState.faction : null);
-        const blocked =
-          (tf.excludeRoleSets?.includes("demonKiller") && isDemonKillerRole(targetRole)) ||
-          (tf.excludeRoleSets?.includes("helper") && HELPER_ROLES.includes(targetRole)) ||
-          (tf.excludeRoles?.includes(targetRole)) ||
-          (targetFaction != null && tf.excludeFactions?.includes(targetFaction as never));
-        if (blocked) {
-          throw badRequest("invalid_target", tf.message ?? "그 대상에게는 사용할 수 없습니다.");
+        const { data: targetState } = await supabase
+          .from("match_players")
+          .select("alive, role, faction, engine_state, eliminated_phase_number")
+          .eq("match_id", matchId)
+          .eq("user_id", tId)
+          .single();
+        if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
+        const targetRole = effectiveRole(targetState);
+        if (ability.targetType === "SINGLE_DEAD") {
+          if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
+          // 부활 딜레이(canon 미즐렛 — 즉시 복귀가 아니라 예측 가능한 메커니즘): 탈락 직후
+          // 다음 밤 즉시 부활을 막는다. 탈락 시점(eliminated_phase_number)으로부터 2일차 이상
+          // 지나야 부활 가능 — "1일차에 죽고 2일차에 부활" 방지.
+          const deathPhase = (targetState as { eliminated_phase_number?: number | null }).eliminated_phase_number ?? null;
+          if (deathPhase != null && currentPhase.phase_number - deathPhase < 2) {
+            throw conflict("revive_too_soon", "최근에 탈락한 대상은 아직 되살릴 수 없습니다. 며칠 지나야 합니다.");
+          }
+        } else if (!targetState.alive) {
+          throw badRequest("dead_target", "이미 사망한 대상은 선택할 수 없습니다.");
+        }
+        // 대상 직업/진영 제한(ADR-006 S2): 능력 선언(targetFilter)에서 제네릭 평가.
+        // 과거 파스아·루나 하드코딩 if-블록을 대체. 엔진 applyEffect 도 이중 가드.
+        const tf = ability.targetFilter;
+        if (tf) {
+          const targetFaction =
+            (targetState.engine_state as { currentFaction?: string } | null)?.currentFaction ??
+            (typeof targetState.faction === "string" ? targetState.faction : null);
+          const blocked =
+            (tf.excludeRoleSets?.includes("demonKiller") && isDemonKillerRole(targetRole)) ||
+            (tf.excludeRoleSets?.includes("helper") && HELPER_ROLES.includes(targetRole)) ||
+            (tf.excludeRoles?.includes(targetRole)) ||
+            (targetFaction != null && tf.excludeFactions?.includes(targetFaction as never));
+          if (blocked) {
+            throw badRequest("invalid_target", tf.message ?? "그 대상에게는 사용할 수 없습니다.");
+          }
         }
       }
     }
@@ -243,6 +256,13 @@ export async function submitMatchAction(
     if (clearVerdictError) throw clearVerdictError;
   }
 
+  // 멀티타깃은 (phase_id,actor,action_type) 유니크 제약상 한 행에 담는다 — 대표 대상은 첫 번째,
+  // 전체 목록은 result.targetUserIds(JSON)에 저장. phase-advance 가 이 목록을 actionStack 으로 복원.
+  const primaryTarget = (targetUserIds && targetUserIds.length) ? targetUserIds[0] : targetUserId;
+  const resultPayload: Record<string, unknown> = {};
+  if (investigationResult) resultPayload.investigationResult = investigationResult;
+  if (targetUserIds && targetUserIds.length > 1) resultPayload.targetUserIds = targetUserIds;
+
   const { error: actionError } = await supabase
     .from("match_actions")
     .upsert({
@@ -250,8 +270,8 @@ export async function submitMatchAction(
       match_id: matchId,
       actor_user_id: actorUserId,
       action_type: actionType,
-      target_user_id: targetUserId,
-      result: investigationResult ? { investigationResult } : null,
+      target_user_id: primaryTarget,
+      result: Object.keys(resultPayload).length ? resultPayload : null,
       submitted_at: new Date().toISOString(),
     }, { onConflict: "phase_id, actor_user_id, action_type" });
 

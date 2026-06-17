@@ -123,6 +123,10 @@ async function processMatch(
     const did = actedByActor.get(ai.user_id) ?? new Set<string>();
     const ok = await actForAi(supabase, matchId, status, ai, allPlayers, did, phase.id);
     if (ok) count++;
+    // 도배 방지(2026-06-17): 낮 토론은 tick 당 AI 1명만 발화시켜 분산한다. 나머지 AI 는 다음
+    // tick 에서 한 명씩 발화 → 휴먼이 끼어들 틈이 생기고 AI 채팅이 한꺼번에 쏟아지지 않는다.
+    // (밤 행동은 cap 없음 — 각 AI 가 그 페이즈에 능력/투표를 제출해야 게임이 진행된다.)
+    if (status === "day" && ok) break;
   }
   return count;
 }

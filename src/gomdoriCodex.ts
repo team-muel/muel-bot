@@ -133,8 +133,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "잔불이 꺼지기 전에", text: "대상에게 '해오름' 하루(조사 시 결백/타락만 통지). '잔불 대검' 1회 충전. 3인 지정." },
       { kind: "능력2", name: "잔불 대검", text: "결백자에게 하루 무적. 타락자에게 '폭열'(다음 잔불 대검에 베이면 소멸). 0회 제한·충전." },
     ],
-    v1: "구현됨. self shield +1(배정) + arthur_emberblade(잔불 대검: 하루 무적, Protect) + arthur_judge(단죄 결백/타락 판정: 악마팀이면 폭열 branded→소멸 annihilated·부활 불가, 천사·중립이면 무적 Protect — onlyFactions 진영 게이트, 친화적 무오사살, 2회). 탈락 면역 패시브는 후속.",
-    v2: "탈락 면역 패시브(결백 천사 3명 탈락 시 해제) + 해오름/잔불 대검(결백·타락 판정, 무적·폭열·소멸). 새 이펙트: Invuln/Brand/Annihilate-tag.",
+    v1: "구현됨(2026-06-17 정정 — 행위 기반). 결백/타락은 *진영이 아니라* counters.tainted(부정 효과를 한 번이라도 적용한 적 있는가)로 판정(vault §해오름). arthur_judge=잔불이 꺼지기 전에(Verdict 결백/타락 통지 + 해오름 태그 + emberCharge +1). arthur_emberblade=잔불 대검(requiresCounter emberCharge 1 소비: 결백=Protect skipIfTainted / 타락=Annihilate onlyIfTainted, branded→annihilated 2단). 새 프리미티브: Verdict + onlyIfTargetCounter/skipIfTargetCounter. ※구버전 onlyFactions 진영 게이트는 캐논 위반이라 폐기.",
+    v2: "구현됨(2026-06-17). 여명의 기사 패시브 = 아서 밤 효과 면역(arthur_immune) + 결백한(tainted 0) 천사팀 누적 3명+ 탈락 시 동반 탈락(dawnbreaker_fallen) + 결백 천사 탈락 1명당 잔불 대검 +1 충전(applyDawnbreakerPassive). 위용 = 충전≥3 시 해오름(dawnrise) 적용된 결백 천사 1명당 아서 투표가치 +3(prowessVoteBonus, tally 통합). 잔불이 꺼지기 전에 = 3명 지정(targetCount:3, 멀티타깃). 세이카 봉인=부정효과 포함, 루루 양도=제외(Annihilate 도 제외 — 의로운 심판). 해오름 1일 만료·멀티타깃 영속화(result.targetUserIds)+제네릭 다중선택 UI(maxTargets)·투표/의심 가해 taint(부호 기반) 모두 라이브. 4게이트 통과. 남은 후속: 멀티타깃 무대 다중 하이라이트(패널엔 표시됨)·라이브 매치 스모크.",
     vault: "Universes/BoW/Characters/아서.md",
   },
   {

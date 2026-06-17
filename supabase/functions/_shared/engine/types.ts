@@ -39,6 +39,9 @@ export interface MatchState {
 export interface ActionPayload {
   sourceUserId: string;
   targetUserId: string | null;
+  // 멀티타깃 능력(아서 잔불이 꺼지기 전에=3명 지정). targetCount>1 인 능력에서 "Target" 효과를
+  // 이 목록의 각 대상에 적용한다. 단일 대상 능력은 targetUserId 만 사용(하위호환).
+  targetUserIds?: string[];
   actionType: string; // e.g., "demon_kill", "doctor_heal"
   priority: number;
 }
@@ -61,7 +64,9 @@ export interface Effect {
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
   // Haunt(말렌 혼령 방출 다단계): 1회차 → 혼령 표식(haunted). 2회차(표식 보유) → 영에게 잠식
   //   = 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt";
+  // Verdict(아서 해오름 판정): 대상이 부정 효과를 적용한 적 있으면(counters.tainted) '타락',
+  //   아니면 '결백'으로 시전자에게 통지. 진영이 아니라 행위 이력으로 가린다(vault 아서 §해오름).
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict";
   // VoteTarget/SuspectTarget: source 가 직전에 투표/의심한 대상으로 해소(substrate).
   // AllOthers: source 를 제외한 생존자 전체(악마 "전원" 능력은 보통 자신 제외 — 사탄의 마·
   // 압도적 존재감). All 은 source 포함(천사 버프 등).
@@ -77,6 +82,12 @@ export interface Effect {
   // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
   // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.
   onlyFactions?: Faction[];
+  // 행위-기반 게이트(아서 잔불 대검 결백/타락 판정). 대상의 counters[key] 가 min 이상일 때만
+  // 이 효과를 적용한다(onlyIfTargetCounter) / min 이상이면 건너뛴다(skipIfTargetCounter).
+  // onlyFactions(진영 게이트)의 행위 버전 — '부정 효과 적용 이력(tainted)' 같은 누적 카운터로
+  // 분기한다. 한 능력에 두 효과를 붙여 결백(skipIfTargetCounter)/타락(onlyIfTargetCounter) 분기.
+  onlyIfTargetCounter?: { key: string; min: number };
+  skipIfTargetCounter?: { key: string; min: number };
   // 홀수날 한정(엘런 박해자: 홀수날에만 발동). state.dayCount 가 홀수일 때만 적용한다.
   oddDayOnly?: boolean;
 }
@@ -97,6 +108,9 @@ export interface ActiveAbility {
   // 자기 자신을 대상으로 지정할 수 없는 능력(처치·변환·박해 등). match-action 검증의
   // 단일 출처(ADR-006 S1) — 과거 KILL_LIKE/NO_SELF_TARGET 하드코딩을 대체한다.
   excludeSelf?: boolean;
+  // 멀티타깃 지정 수(아서 잔불이 꺼지기 전에=3). 미지정/1 이면 단일 대상. "Target" 효과를
+  // ActionPayload.targetUserIds 의 각 대상에 적용한다. match-action 이 최대 개수를 검증한다.
+  targetCount?: number;
   // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
   // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
   // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).
@@ -108,8 +122,9 @@ export interface ActiveAbility {
     message?: string;
   };
   // 발동 전 카운터 게이트(루나 달 게이지·우노 1회성 등 재사용). min 미만이면 발동 차단,
-  // consume 면 발동 후 0 으로 소비.
-  requiresCounter?: { key: string; min: number; consume?: boolean };
+  // consume 면 발동 후 0 으로 소비. consumeAmount 면 0 이 아니라 그만큼만 차감(아서 잔불 대검
+  // 충전: 누적 충전을 1 씩 소비). consumeAmount 가 있으면 consume 보다 우선.
+  requiresCounter?: { key: string; min: number; consume?: boolean; consumeAmount?: number };
   // 발동 성공 후 source 카운터 세팅(ADR-006 S3) — 파스아 연속 포교 쿨다운 등.
   // 과거 resolveNightActions 의 actionType 분기를 선언형으로 대체.
   onFireSetCounter?: { key: string; value: number };
