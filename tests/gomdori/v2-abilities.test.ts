@@ -1612,4 +1612,96 @@ assert.match(gainV2Mig, /'gain_raid'/, "마이그레이션 — 가인 급습");
 const phaseAdvSrc = readFileSync("supabase/functions/phase-advance/index.ts", "utf8");
 assert.match(phaseAdvSrc, /shieldFromGain = 1/, "가인 보호막 부여 시 shieldFromGain 마커 동시 세팅");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료) checks passed");
+// --- 루나 해가 저문다: 100% 충전 소비 + dawn_triggered + state.modifiers.dawnRule=1 ---
+{
+  const luna: PlayerState = { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } };
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {}, players: { luna },
+    actionStack: [{ sourceUserId: "luna", targetUserId: null, actionType: "luna_dawn", priority: 5 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.modifiers.dawnRule, 1, "해가 저문다 — dawnRule 활성화");
+  assert.equal(r.newState.players.luna.counters.moonGauge, 0, "해가 저문다 — 100% 충전 소비");
+  assert.equal(r.newState.players.luna.counters.used_luna_dawn, 1, "해가 저문다 — 1회 제한");
+  assert.ok(r.events.some((e: any) => e.type === "dawn_triggered"), "dawn_triggered 이벤트");
+}
+
+// --- 해가 저문다 tally: dawnRule 시 능력 보너스(voteValueMod>0, prowess) 부호 반전 ---
+{
+  // 우노 명예 voteValueMod=+10 → dawnRule 시 -10. 1+(-10)=음수→Max(0,)=0(skip 처리).
+  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } };
+  const t = player("t", "citizen", "angel");
+  const normal = tallyEliminationVotes([{ actorUserId: "uno", targetUserId: "t" }], { uno, t });
+  assert.equal(normal.tallies["t"], 11, "평시 — 우노 1+10=11");
+  const dawn = tallyEliminationVotes([{ actorUserId: "uno", targetUserId: "t" }], { uno, t }, { dawnRule: 1 });
+  assert.equal(dawn.tallies["t"], undefined, "dawnRule — 우노 표 무력화(0)");
+  assert.equal(dawn.skipped, 1, "dawnRule — 우노 표 skipped");
+  // 사탄의 마(voteValueMod<0)는 그대로 — '증가'만 반전.
+  const sm: PlayerState = { ...player("a", "citizen", "angel"), counters: { voteValueMod: -1 } };
+  const dawnSm = tallyEliminationVotes([{ actorUserId: "a", targetUserId: "t" }], { a: sm, t }, { dawnRule: 1 });
+  assert.equal(dawnSm.tallies["t"], undefined, "dawnRule — 음수 voteValueMod 는 부호 반전 X (1-1=0 skip)");
+}
+
+// --- 달이 차오른다: moonriseRule + 악마 처치가 moonlit 대상에 발동하면 모든 달빛 대상 cascade ---
+{
+  const luna: PlayerState = { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } };
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const a: PlayerState = { ...player("a", "citizen", "angel"), tags: ["moonlit"] };
+  const b: PlayerState = { ...player("b", "doctor", "angel"), tags: ["moonlit"] };
+  const c: PlayerState = player("c", "rainer", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { luna, demon, a, b, c },
+    actionStack: [
+      { sourceUserId: "luna", targetUserId: null, actionType: "luna_moonrise", priority: 2 },
+      { sourceUserId: "demon", targetUserId: "a", actionType: "demon_kill", priority: 4 },
+    ],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.a.alive, false, "악마가 지목한 a(달빛) 탈락");
+  assert.equal(r.newState.players.b.alive, false, "cascade — b(달빛)도 같은 효과로 탈락");
+  assert.equal(r.newState.players.c.alive, true, "c(달빛 없음) — 영향 없음");
+  assert.ok(r.events.some((e: any) => e.type === "moonrise_cascade" && e.payload?.user_id === "b"), "moonrise_cascade 이벤트");
+  assert.equal(r.newState.modifiers.moonriseRule ?? 0, 0, "moonriseRule — 그 밤 종료 시 해제");
+}
+
+// --- 루나 공포 속에 밀어 넣다: maxUses 1 강제 ---
+{
+  const luna: PlayerState = { ...player("luna", "luna", "demon"), counters: { moonGauge: 10, used_luna_corrupt: 1 } };
+  const a: PlayerState = player("a", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { luna, a },
+    actionStack: [{ sourceUserId: "luna", targetUserId: "a", actionType: "luna_corrupt", priority: 5 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.a.currentRole, "citizen", "루나 공포 — 1회 사용 후 차단(타락 안 됨)");
+  assert.ok(r.events.some((e: any) => e.type === "action_blocked_exhausted"), "공포 — 소진 차단 이벤트");
+}
+
+// --- 100% 충전 분기 셋 중 하나만 (corrupt/dawn/moonrise 가 같은 moonGauge 풀 소비) ---
+{
+  const luna: PlayerState = { ...player("luna", "luna", "demon"), counters: { moonGauge: 10 } };
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {}, players: { luna },
+    actionStack: [{ sourceUserId: "luna", targetUserId: null, actionType: "luna_moonrise", priority: 2 }],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.luna.counters.moonGauge, 0, "moonrise 발동 → moonGauge 소비");
+  const r2 = resolveNightActions({
+    ...r.newState,
+    actionStack: [{ sourceUserId: "luna", targetUserId: null, actionType: "luna_dawn", priority: 5 }],
+  });
+  assert.ok(r2.events.some((e: any) => e.type === "action_blocked_no_charge"), "dawn — moonGauge 소진 시 차단");
+  assert.equal(r2.newState.modifiers.dawnRule ?? 0, 0, "dawn 차단 → dawnRule 활성 안 됨");
+}
+
+// 루나 v2 — 계약 정규식.
+assert.match(roles, /id: "luna_corrupt"[\s\S]*?maxUses: 1/, "루나 공포 — 1회 제한");
+assert.match(roles, /id: "luna_dawn"[\s\S]*?maxUses: 1[\s\S]*?requiresCounter: \{ key: "moonGauge", min: 10/, "루나 해가 저문다 — 1회 + 100% 게이트");
+assert.match(roles, /id: "luna_moonrise"[\s\S]*?priority: 2[\s\S]*?requiresCounter: \{ key: "moonGauge", min: 10/, "루나 달이 차오른다 — priority 2 + 100% 게이트");
+const lunaV2Mig = readFileSync("supabase/migrations/20260618120000_gomdori_luna_v2.sql", "utf8");
+assert.match(lunaV2Mig, /'luna_dawn'/, "마이그레이션 — 해가 저문다");
+assert.match(lunaV2Mig, /'luna_moonrise'/, "마이그레이션 — 달이 차오른다");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기) checks passed");

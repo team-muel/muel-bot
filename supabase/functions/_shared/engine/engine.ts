@@ -274,6 +274,19 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (ability.onFireSetCounter) {
       sourcePlayer.counters[ability.onFireSetCounter.key] = ability.onFireSetCounter.value;
     }
+    // 루나 100% 분기(canon "달의 힘 100% 시 효과 선택"): 발동 성공 시 modifier 영속화.
+    //   dawn = 다음 처형 투표(phase-advance tally)에서 voteValueMod>0 부호 반전(우노 명예 -10
+    //          처럼 능력 누적 표를 역전) — phase-advance 가 1회 소비.
+    //   moonrise = 같은 밤(priority 2 라 Kill priority 4 보다 먼저 처리) Kill 이 moonlit 대상
+    //              에 발동하면 모든 달빛 대상 cascade — 그 밤 한정(아래 loop 종료 시 해제).
+    if (action.actionType === "luna_dawn") {
+      newState.modifiers.dawnRule = 1;
+      events.push({ type: "dawn_triggered", payload: { user_id: sourcePlayer.userId } });
+    }
+    if (action.actionType === "luna_moonrise") {
+      newState.modifiers.moonriseRule = 1;
+      events.push({ type: "moonrise_triggered", payload: { user_id: sourcePlayer.userId } });
+    }
     // 소명 예약(하브레터스): onSaveGrantSelf 를 가진 보호 능력이 대상에 걸렸으면, 그 대상이
     // 이 밤 실제 공격을 막았을 때(아래 death 해소의 attack_prevented) 시전자에게 보상한다.
     if (ability.onSaveGrantSelf && targetPlayer) {
@@ -358,6 +371,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 달이 차오른다 cascade 는 그 밤 한정(canon "밤" 효과) — 처치 cascade 가 적용된 후 모두 해제.
+  // dawnRule 은 다음 처형 투표가 끝나야 소비되므로 여기서 건드리지 않는다(phase-advance 소비).
+  if ((newState.modifiers.moonriseRule ?? 0) > 0) {
+    newState.modifiers.moonriseRule = 0;
+  }
+
   // 여명의 기사(패시브): 결백한(tainted 0) 천사팀의 누적 탈락을 반영. 탈락 1명당 아서 '잔불 대검'
   // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
   // 가 같은 헬퍼를 호출해 반영한다(아래 applyDawnbreakerPassive).
@@ -440,6 +459,7 @@ function prowessVoteBonus(actor: PlayerState, players: Record<string, PlayerStat
 export function tallyEliminationVotes(
   actions: VoteActionInput[],
   players: Record<string, PlayerState>,
+  modifiers?: Record<string, number>,
 ): VoteTallyResult {
   const tallies: Record<string, number> = {};
   let skipped = 0;
@@ -466,7 +486,15 @@ export function tallyEliminationVotes(
     }
 
     // 루루 매료 양도분(voteWeightBonus) + 사탄의 마 감소분(voteValueMod) + 아서 위용(+3/해오름결백)을 합산.
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
+    // 해가 저문다(루나, 1일 한정): modifiers.dawnRule=1 일 때 *능력으로 증가한 투표가치*(voteValueMod>0,
+    // 우노 명예 +10 등)만 부호 반전 — canon "패시브 제외 능력으로 증가한 투표가치를 마이너스로 판정".
+    // 음수(사탄의 마)는 그대로 — '증가'만 반전. prowessVoteBonus(위용)도 능력 보너스라 함께 반전.
+    const vvm = actor.counters?.voteValueMod ?? 0;
+    const prowess = prowessVoteBonus(actor, players);
+    const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
+    const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
+    const adjProwess = dawnFlip ? -prowess : prowess;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -566,7 +594,7 @@ export function tallySuspicionVotes(
   };
 }
 
-export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<string, PlayerState>): VerdictTallyResult {
+export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<string, PlayerState>, modifiers?: Record<string, number>): VerdictTallyResult {
   let approve = 0;
   let reject = 0;
   let skipped = 0;
@@ -575,7 +603,13 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const actor = players[action.actorUserId];
     if (!actor?.alive) continue;
 
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
+    // 해가 저문다 적용(루나): 능력 보너스 부호 반전 — tallyEliminationVotes 와 동일 식.
+    const vvm = actor.counters?.voteValueMod ?? 0;
+    const prowess = prowessVoteBonus(actor, players);
+    const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
+    const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
+    const adjProwess = dawnFlip ? -prowess : prowess;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -822,6 +856,18 @@ function applyEffect(
         break;
       }
       target.markedForDeath = true;
+      // 달이 차오른다 cascade(canon "악마가 달빛 부여 대상 지목 시 달빛 부여 모두에게 같은 효과"):
+      // moonriseRule 활성 + 시전자 actualFaction='demon' + 대상이 moonlit 태그 보유 → 그 밤 한정
+      // 으로 모든 살아있는 moonlit 대상에 같은 처치(markedForDeath) cascade. 같은 효과(immune
+      // 동일)·재귀 없음(이미 마크된 대상은 무영향).
+      if ((_state.modifiers?.moonriseRule ?? 0) > 0 && _source.actualFaction === "demon" && target.tags.includes("moonlit")) {
+        for (const p of Object.values(_state.players)) {
+          if (p.userId !== target.userId && p.alive && p.tags.includes("moonlit") && !effect.immuneFactions?.includes(p.actualFaction)) {
+            p.markedForDeath = true;
+            events.push({ type: "moonrise_cascade", payload: { user_id: p.userId, anchor: target.userId } });
+          }
+        }
+      }
       break;
     case "Heal":
       // 소멸(아서 단죄)된 대상은 부활 불가(counters.annihilated).

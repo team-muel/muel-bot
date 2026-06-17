@@ -237,8 +237,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "고요한 적막", text: "달빛 대상 1명당 달의 힘 +10%(악마 +30%). 100% 시 해가 저문다(토론 생략·증가 투표가치 마이너스 판정) / 달이 차오른다 선택." },
       { kind: "능력2", name: "공포 속에 밀어 넣다", text: "대상에게 '달빛 저주'. 달의 힘 가득 차면 대상은 직업 잃고 악마팀. 1회 제한." },
     ],
-    v1: "구현됨. luna_moonlight(고요한 적막 — 투표/의심 대상에 달빛 태그, 천사/중립 +1, 악마 +3 비례 충전) + luna_corrupt(공포 — moonGauge 10 이상 시 천사→악마팀 타락, 발동 후 게이지 소비).",
-    v2: "달빛 1명당 +10%/악마 +30%, 100% 임계, 투표·의심 substrate 충전, 공포 타락까지 핵심 라이브. 해가 저문다/달이 차오른다 선택 분기는 별도 확장 대상.",
+    v1: "구현됨. luna_moonlight(고요한 적막 — 투표/의심 대상에 달빛 태그, 천사/중립 +1, 악마 +3 비례 충전) + luna_corrupt(공포 — moonGauge 10 이상 시 천사→악마팀 타락, 1회 제한) + luna_dawn(해가 저문다 v2, 1회: state.modifiers.dawnRule=1 → 다음 처형/찬반 투표에서 능력으로 증가한 voteValueMod>0 와 prowess 부호 반전, phase-advance verdict 종료 시 소비) + luna_moonrise(달이 차오른다 v2, priority 2: state.modifiers.moonriseRule=1 → 같은 밤 악마 Kill 이 moonlit 대상에 발동하면 모든 달빛 대상 cascade markedForDeath, 그 밤 종료 시 해제). 셋(corrupt/dawn/moonrise) 모두 moonGauge 100% 소비 — 같은 풀에서 하나만 선택.",
+    v2: "달빛 비례 충전·공포 타락(1회)·해가 저문다 능력보너스 부호 반전·달이 차오른다 cascade 까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/루나.md",
   },
   {
