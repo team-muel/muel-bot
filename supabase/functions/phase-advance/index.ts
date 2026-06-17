@@ -636,7 +636,9 @@ Deno.serve((req: Request) => {
           // public. 나머지(봉인·매료·빙의·전향·변신·낙인·차단 피드백 등)는 비밀
           // 정보라 영향받은 당사자에게만 private(recipient RLS)로 전달 — 전부
           // public 으로 쌓으면 포교/변신/낙인이 클라이언트에서 그대로 읽혔다.
-          const PUBLIC_ENGINE_EVENTS = new Set(["player_died", "player_revived"]);
+          // role_revealed(우노 용맹함 '소속 공개')·demons_revealed(세이카 '자신만 아플 거야'
+          // 소멸 이틀 후 악마팀 공개)는 canon 상 마을 전체 공개 정보라 public.
+          const PUBLIC_ENGINE_EVENTS = new Set(["player_died", "player_revived", "role_revealed", "demons_revealed"]);
           const engineEvents = events as Array<{ type: string; payload?: { user_id?: string }; userId?: string }>;
           for (const event of engineEvents) {
             const isPublic = PUBLIC_ENGINE_EVENTS.has(event.type);

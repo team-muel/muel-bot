@@ -113,15 +113,33 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       }
       // 마비 지연 봉인(말렌 빙의의 '다음 밤 봉인'): 지정 밤(N)에 silencePending 예약 → 다음 밤(N+1)
       // 시작인 여기에서 silencedNights 로 옮겨 그 밤 행동을 막는다(악몽 지연과 같은 패턴, 재사용).
+      // 우노 명예 실추(DelaySilence)도 같은 예약 경로를 공유한다.
       if (counters.silencePending && counters.silencePending > 0) {
         counters.silencedNights = (counters.silencedNights ?? 0) + counters.silencePending;
         counters.silencePending = 0;
+      }
+      // 세이카 '자신만 아플 거야' 악마팀 공개 카운트다운: 흡수 소멸(demonRevealIn=2) 후 매 밤
+      // 시작에 1 씩 감소, 0 이 되는 밤(=소멸 이틀 후)에 악마팀 전원 공개 이벤트를 방출한다.
+      if (counters.demonRevealIn && counters.demonRevealIn > 0) {
+        counters.demonRevealIn -= 1;
+        if (counters.demonRevealIn === 0) {
+          const demons = Object.values(newState.players)
+            .filter((p) => p.actualFaction === "demon")
+            .map((p) => p.userId);
+          events.push({ type: "demons_revealed", payload: { demons, by: userId } });
+        }
       }
     }
     // 해오름(dawnrise) 만료: 1_DAY 태그 — 적용된 밤(N) → 다음 낮(N) 투표(위용)까지 유지되고,
     // 다음 밤(N+1) 시작인 여기에서 만료된다. 그 밤 재지정 시 아래 action 루프가 다시 부여.
     const pl = newState.players[userId];
     if (pl.tags.includes("dawnrise")) pl.tags = pl.tags.filter((t) => t !== "dawnrise");
+    // 가인 약간의 위선(DelayAction) 지연 승격: 지정 밤(N)에 delayPending 예약 → 다음 밤(N+1)
+    // 시작인 여기에서 TAG_DELAYED 로 옮겨 대상의 그 밤 능력 발동을 한 밤 미룬다(소멸 아닌 연기).
+    if (pl.counters?.delayPending && pl.counters.delayPending > 0) {
+      pl.counters.delayPending = 0;
+      if (!pl.tags.includes(TAG_DELAYED)) pl.tags.push(TAG_DELAYED);
+    }
   }
 
   for (const action of sortedActions) {
@@ -292,6 +310,10 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
   // 가 같은 헬퍼를 호출해 반영한다(아래 applyDawnbreakerPassive).
   applyDawnbreakerPassive(newState.players, events);
+
+  // 부서진 펜던트(로건 패시브): 악마팀(처치자)에게 지워지지 않는 '펜던트' 표식을 부여하고,
+  // 셋 이상 적용되면 로건의 지정 대상 +2(pendantTargetBonus). 매 밤 해소 시 갱신한다.
+  applyLogenPendant(newState.players, events);
 
   // 팬텀 아침 처리: ① 어둠이 내린 도시 봉인 가능 수 '매 아침 +1'(sealCap, 지속). ② 그 밤 아무도
   // 봉인하지 않았으면(어둠이 내린 도시 미발동) 악몽 사용 횟수 +2 충전(상한 5) — 봉인 대신 악몽을
@@ -651,6 +673,24 @@ export function applyDawnbreakerPassive(players: Record<string, PlayerState>, ev
   }
 }
 
+// 부서진 펜던트(로건 패시브): 게임 진행 중 악마팀(처치자 풀)에게 지워지지 않는 '펜던트' 표식을
+// 부여한다. 표식이 셋 이상이면 로건의 능력 지정 대상 +2(pendantTargetBonus, logen_nullify 가
+// targetCountCounter 로 읽음). 횟수 제한 해제는 logen_nullify 가 본디 무제한이라 추가 효과 없음.
+// 표식은 '지워지거나 빼앗기지 않음'(canon) — 한 번 붙으면 유지, 매 밤 해소 시 임계만 재평가.
+export function applyLogenPendant(players: Record<string, PlayerState>, events: unknown[]): void {
+  const logen = Object.values(players).find((p) => p.currentRole === "logen");
+  if (!logen) return;
+  logen.counters = logen.counters ?? {};
+  for (const p of Object.values(players)) {
+    if (isDemonKillerRole(p.currentRole) && !p.tags.includes("pendant")) {
+      p.tags.push("pendant");
+      events.push({ type: "pendant_applied", payload: { user_id: p.userId } });
+    }
+  }
+  const pendantCount = Object.values(players).filter((p) => p.tags.includes("pendant")).length;
+  logen.counters.pendantTargetBonus = pendantCount >= 3 ? 2 : 0;
+}
+
 function applyEffect(
   _state: MatchState,
   _source: PlayerState,
@@ -807,6 +847,53 @@ function applyEffect(
       }
       target.tags = target.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
       events.push({ type: "cleansed", payload: { user_id: target.userId } });
+      break;
+    }
+    case "DelaySilence":
+      // 명예 실추(우노 용맹함): 대상을 *다음* 밤 봉인. silencePending 예약 경로(말렌 마비와 공유)
+      // 로 미루므로 priority 1 이 아니어도 안전 — 용맹함은 priority 5 라 같은 밤 봉인이 불가능.
+      // 우노는 자기가 투표한 대상(VoteTarget)이 천사(onlyFactions)일 때만 이 효과를 건다.
+      target.counters.silencePending = (target.counters.silencePending ?? 0) + 1;
+      events.push({ type: "honor_disgraced", payload: { user_id: target.userId } });
+      break;
+    case "DelayAction":
+      // 약간의 위선(가인): 대상의 *다음* 능력 발동을 한 밤 연기(소멸이 아니라 미룸). delayPending
+      // 예약 → 다음 밤 시작에 TAG_DELAYED 로 승격(resolveNightActions 리셋 루프). 지속 카운터라
+      // 라운드 리셋 대상이 아니다(예약은 다음 밤에 한 번 소비). canon '효과를 다음 밤으로 연기'.
+      // ※ canon 후속(미구현): 대상이 악마에 의해 탈락하면 연기 무효 + 다음 위선이 탈락 효과로 전환.
+      target.counters.delayPending = (target.counters.delayPending ?? 0) + 1;
+      events.push({ type: "hypocrisy_delayed", payload: { user_id: target.userId } });
+      break;
+    case "RevealRole":
+      // 소속/직업 통지(우노 용맹함의 '소속 공개', 가인 위선 정찰 등). 시전자에게 대상의 진영·
+      // 직업을 통지하는 정보 효과 — 상태 변경 없음(이벤트만). recipient 는 phase-advance 가
+      // private 으로 시전자에게 전달한다(소속 공개는 우노 투표 대상 한정 정찰).
+      events.push({ type: "role_revealed", payload: { user_id: target.userId, faction: target.actualFaction, role: target.currentRole } });
+      break;
+    case "Absorb": {
+      // 자신만 아플 거야(세이카, target:"All"): 대상의 받은 부여 효과를 세이카(source)가 대신
+      // 받아낸다 — 대상은 정화(Cleanse 동일 키)되고, 흡수한 부정 효과 수를 source.absorbedDebuffs
+      // 에 누적. 자기 자신은 흡수 대상 제외. ※ canon '악마팀 효과 3개+' 의 *악마팀* 출처 판별은
+      // 효과 provenance 가 없어 '받은 부정 효과 수'로 근사(후속에서 정밀화). 누적 3+ 이면 세이카
+      // 소멸(markedForDeath + annihilated, 부활 불가) + 악마팀 공개 카운트다운(demonRevealIn=2).
+      if (target.userId === _source.userId) break;
+      const ABSORB_KEYS = ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"];
+      let absorbed = 0;
+      for (const key of ABSORB_KEYS) {
+        if (target.counters[key]) { absorbed += 1; target.counters[key] = 0; }
+      }
+      if (target.tags.includes(TAG_SUSPECTED)) absorbed += 1;
+      target.tags = target.tags.filter((t) => t !== TAG_SUSPECTED && t !== TAG_DELAYED);
+      if (absorbed > 0) {
+        _source.counters.absorbedDebuffs = (_source.counters.absorbedDebuffs ?? 0) + absorbed;
+        events.push({ type: "absorbed", payload: { user_id: target.userId, by: _source.userId, amount: absorbed } });
+      }
+      if ((_source.counters.absorbedDebuffs ?? 0) >= 3 && !_source.counters.demonRevealIn) {
+        _source.markedForDeath = true;
+        _source.counters.annihilated = 1;
+        _source.counters.demonRevealIn = 2;
+        events.push({ type: "seika_overload", payload: { user_id: _source.userId } });
+      }
       break;
     }
     case "GrantCount": {
