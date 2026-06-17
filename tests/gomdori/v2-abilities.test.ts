@@ -1561,4 +1561,45 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 라이너 강한 의지: 관찰 + willCount +1; 관찰 대상 사망 시 +2 추가 ---
+{
+  const rainer: PlayerState = player("rainer", "rainer", "angel");
+  const demon: PlayerState = player("demon", "demon", "demon");
+  const a: PlayerState = player("a", "citizen", "angel");
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { rainer, demon, a },
+    actionStack: [
+      { sourceUserId: "rainer", targetUserId: "a", actionType: "rainer_resolve", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "a", actionType: "demon_kill", priority: 4 },
+    ],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.a.alive, false, "a 처치");
+  // 관찰 +1 + 사망 +2 = willCount 3.
+  assert.equal(r.newState.players.rainer.counters.willCount, 3, "willCount = 관찰 +1 + 사망 +2");
+  assert.ok(r.events.some((e: any) => e.type === "rainer_will_surge"), "rainer_will_surge 이벤트");
+  assert.ok(!r.newState.players.a.tags.includes("observedByRainer"), "observedByRainer 표식 소비");
+}
+
+// --- 라이너 그날의 저항: 1회 self — deadCountBonus +1 + willCount +1 ---
+{
+  const rainer: PlayerState = player("rainer", "rainer", "angel");
+  const r = resolveNightActions(emptyState(
+    { rainer },
+    [{ sourceUserId: "rainer", targetUserId: null, actionType: "rainer_resistance", priority: 5 }],
+  ));
+  assert.equal(r.newState.players.rainer.counters.deadCountBonus, 1, "그날의 저항 — deadCountBonus +1");
+  assert.equal(r.newState.players.rainer.counters.willCount, 1, "그날의 저항 — willCount +1");
+  assert.equal(r.newState.players.rainer.counters.used_rainer_resistance, 1, "1회 제한 기록");
+}
+
+// 라이너 v2 — 계약 정규식.
+assert.match(roles, /id: "rainer_resolve"[\s\S]*?noConsecutiveTarget: true/, "라이너 강한 의지 — 연속 지목 금지");
+assert.match(roles, /id: "rainer_resolve"[\s\S]*?tag: "observedByRainer"/, "라이너 강한 의지 — observed 표식");
+assert.match(roles, /id: "rainer_resistance"[\s\S]*?maxUses: 1/, "라이너 그날의 저항 — 1회 제한");
+const rainerMig = readFileSync("supabase/migrations/20260618160000_gomdori_rainer_v2.sql", "utf8");
+assert.match(rainerMig, /'rainer_resolve'/, "마이그레이션 — 강한 의지");
+assert.match(rainerMig, /'rainer_resistance'/, "마이그레이션 — 그날의 저항");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/라이너의지) checks passed");
