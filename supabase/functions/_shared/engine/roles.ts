@@ -144,6 +144,12 @@ export const CORE_ROLES: RoleDefinition[] = [
             { type: "DelayAction", target: "Target", skipIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
             { type: "Kill", target: "Target", onlyIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
           ] },
+        // 급습(v2, 1회): 대상 능력 통지 삭제(noticeSuppressed 표식 — 그 밤 한정, engine 아침 cleanup
+        // 에서 제거) + 가인 raidCharge +1 충전(canon "급습 1회 충전"). 다음 아침까지 악마와 대화는
+        // Discord 채팅 회로라 별도 후속 — 백엔드는 raid_initiated 이벤트로 신호만 발사한다.
+        { id: "gain_raid", name: "급습", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, maxUses: 1,
+          onFireSetCounter: { key: "raidCharge", value: 1 },
+          effects: [{ type: "AddTag", target: "Target", tag: "noticeSuppressed" }] },
       ],
     },
   },

@@ -225,8 +225,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "약간의 위선", text: "대상 직업 통지 + 적용 효과를 다음 밤으로 연기. 대상이 악마에 탈락하면 연기 무효+다음 위선이 탈락 효과로 변경. 조사." },
       { kind: "능력2", name: "급습", text: "대상의 통지 삭제 + 급습 1회 충전. 다음 아침까지 악마와 대화. 1회 제한." },
     ],
-    v1: "구현됨. 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(대상 진영 통지, 효과 다음 밤 연기, 위선 대상이 밤에 탈락하면 다음 위선이 처치로 전환).",
-    v2: "약간의 위선의 정찰·연기·처치 전환 코어와 보호막은 라이브. 급습(통지 삭제)과 2일 후 패시브 만료는 별도 확장 대상.",
+    v1: "구현됨. 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효, shieldFromGain 마커 동시 세팅) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(대상 진영 통지, 효과 다음 밤 연기, 위선 대상이 밤에 탈락하면 다음 위선이 처치로 전환) + gain_raid(급습 v2, 1회: AddTag noticeSuppressed[그 밤 한정] + onFireSetCounter raidCharge=1 + raid_initiated 이벤트). 두 번째 밤 종료 시(dayCount===2) shieldFromGain 보유 demon 의 보호막 자동 만료(canon '두 번째 밤 종료 시 패시브 삭제') — 가인 생존 여부와 무관.",
+    v2: "약간의 위선의 정찰·연기·처치 전환, 보호막 1회 + 두 번째 밤 만료, 급습 통지 삭제+raidCharge 충전까지 핵심 라이브. 다음 아침까지 악마와 대화(채팅 회로)는 Discord 인프라 후속.",
     vault: "Universes/BoW/Characters/가인.md",
   },
   {

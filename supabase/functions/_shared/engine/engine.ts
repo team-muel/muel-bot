@@ -339,9 +339,23 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       }
     }
 
-    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED);
-    // 봉인은 같은 밤 한정 — 종료 시 해제.
+    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED && tag !== "noticeSuppressed");
+    // 봉인은 같은 밤 한정 — 종료 시 해제. 가인 급습의 noticeSuppressed 표식도 그 밤 한정(canon
+    // "다음 아침까지" 의 backend 접근면) — 다음 밤 시작 전에 해제돼야 통지 차단이 한 라운드만 유효.
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
+  }
+
+  // 가인 진실을 가리는 암흑(canon "두 번째 밤 종료 시 패시브 삭제"): 가인이 부여한 demon 보호막
+  // (shield + shieldFromGain 마커)을 두 번째 밤 종료 시 만료. 가인 생존 여부와 무관(패시브 자체가
+  // 시간 만료 — vault canon). 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
+  if (newState.dayCount === 2) {
+    for (const p of Object.values(newState.players)) {
+      if ((p.counters?.shieldFromGain ?? 0) > 0) {
+        if ((p.counters.shield ?? 0) > 0) p.counters.shield = 0;
+        p.counters.shieldFromGain = 0;
+        events.push({ type: "gain_passive_expired", payload: { user_id: p.userId } });
+      }
+    }
   }
 
   // 여명의 기사(패시브): 결백한(tainted 0) 천사팀의 누적 탈락을 반영. 탈락 1명당 아서 '잔불 대검'
@@ -856,7 +870,14 @@ function applyEffect(
       target.tags.push(TAG_PROTECTED);
       break;
     case "AddTag":
-      if (effect.tag) target.tags.push(effect.tag);
+      if (effect.tag) {
+        target.tags.push(effect.tag);
+        // 가인 급습: noticeSuppressed 표식이 붙으면 raid_initiated 이벤트로 신호 — Discord/UI 가
+        // 그 라운드 통지를 차단하고 가인-악마 채팅 회로(다음 아침까지)를 연결하는 hook.
+        if (effect.tag === "noticeSuppressed") {
+          events.push({ type: "raid_initiated", payload: { user_id: target.userId, by: _source.userId } });
+        }
+      }
       break;
     case "RemoveTag":
       if (effect.tag) {

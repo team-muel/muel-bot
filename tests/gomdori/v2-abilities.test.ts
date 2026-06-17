@@ -1561,4 +1561,55 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 가인 급습: noticeSuppressed 표식 + raidCharge 충전 + 1회 제한 ---
+{
+  const r = resolveNightActions(emptyState(
+    { gain: player("gain", "gain", "demon"), v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "gain", targetUserId: "v", actionType: "gain_raid", priority: 5 }],
+  ));
+  // raid_initiated 이벤트 발사. 표식은 그 밤 cleanup 에서 즉시 제거된다.
+  assert.ok(r.events.some((e: any) => e.type === "raid_initiated" && e.payload?.user_id === "v" && e.payload?.by === "gain"), "급습 — raid_initiated 이벤트");
+  assert.equal(r.newState.players.gain.counters.raidCharge, 1, "급습 — 가인 raidCharge +1 충전");
+  assert.ok(!r.newState.players.v.tags.includes("noticeSuppressed"), "급습 — 표식은 그 밤 한정");
+  assert.equal(r.newState.players.gain.counters.used_gain_raid, 1, "급습 — 사용 횟수 기록");
+}
+
+// --- 가인 보호막 만료: dayCount=2 종료 시 shieldFromGain 보유자만 만료(아서는 영향 없음) ---
+{
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: {
+      gain: player("gain", "gain", "demon"),
+      demon: { ...player("demon", "demon", "demon"), counters: { shield: 1, shieldFromGain: 1 } },
+      arthur: { ...player("arthur", "arthur", "angel"), counters: { shield: 1 } },
+    },
+    actionStack: [],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.demon.counters.shield, 0, "가인 패시브 — 둘째 밤 종료 시 demon 보호막 만료");
+  assert.equal(r.newState.players.demon.counters.shieldFromGain, 0, "가인 패시브 — shieldFromGain 마커도 제거");
+  assert.equal(r.newState.players.arthur.counters.shield, 1, "아서 자기 보호막은 영향 없음(shieldFromGain 미보유)");
+  assert.ok(r.events.some((e: any) => e.type === "gain_passive_expired" && e.payload?.user_id === "demon"), "만료 이벤트");
+}
+{
+  // dayCount=1 에는 만료 X (둘째 밤이 아니므로).
+  const state: MatchState = {
+    matchId: "v2", dayCount: 1, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { demon: { ...player("demon", "demon", "demon"), counters: { shield: 1, shieldFromGain: 1 } } },
+    actionStack: [],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.demon.counters.shield, 1, "1일차 종료 — 보호막 유지(둘째 밤이 아님)");
+  assert.equal(r.newState.players.demon.counters.shieldFromGain, 1, "1일차 — 마커 유지");
+}
+
+// 가인 v2 — 계약 정규식.
+assert.match(roles, /id: "gain_raid"[\s\S]*?maxUses: 1/, "가인 급습 — 1회 제한");
+assert.match(roles, /id: "gain_raid"[\s\S]*?onFireSetCounter: \{ key: "raidCharge", value: 1 \}/, "가인 급습 — raidCharge 충전");
+assert.match(roles, /id: "gain_raid"[\s\S]*?tag: "noticeSuppressed"/, "가인 급습 — noticeSuppressed 표식");
+const gainV2Mig = readFileSync("supabase/migrations/20260618110000_gomdori_gain_v2.sql", "utf8");
+assert.match(gainV2Mig, /'gain_raid'/, "마이그레이션 — 가인 급습");
+const phaseAdvSrc = readFileSync("supabase/functions/phase-advance/index.ts", "utf8");
+assert.match(phaseAdvSrc, /shieldFromGain = 1/, "가인 보호막 부여 시 shieldFromGain 마커 동시 세팅");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료) checks passed");

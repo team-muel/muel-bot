@@ -185,6 +185,10 @@ async function finalizeRoleSelection(supabase: ReturnType<typeof getSupabaseAdmi
           : {};
       if (!((counters.shield ?? 0) > 0)) {
         counters.shield = 1;
+        // shieldFromGain 마커: 이 보호막이 가인 패시브가 부여한 것임을 영속화. engine 이
+        // 두 번째 밤 종료 시(canon "두 번째 밤 종료 시 패시브 삭제") 이 마커 보유자만 만료한다 —
+        // 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
+        counters.shieldFromGain = 1;
         const nextEs = { ...es, counters };
         requireNoError(
           await supabase.from("match_players").update({ engine_state: nextEs }).eq("match_id", matchId).eq("user_id", demon.user_id),
