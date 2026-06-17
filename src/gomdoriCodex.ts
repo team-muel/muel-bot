@@ -211,8 +211,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "히든 포지션", text: "미발동 시 강화(최대 2회). 다음 아침 토론 중 효과발동자가 언급한 대상 탈락(최대 1+강화). 2회 제한." },
       { kind: "능력2", name: "누명씌우기", text: "대상이 히든 포지션 효과를 받음. 이 효과 탈락 시 강화 +1. 짝숫날 발동 불가." },
     ],
-    v1: "구현됨. besto_hidden(히든 포지션: 처치) + besto_shift(두 번째 자아 = 밤마다 솔/하베스토 판정 전환, Disguise) — 핵심 시그니처 완비. 히든 강화 스택·멘션킬(아침 토론 언급 기반 = 텍스트 파싱)·배후(효과 반전)는 후속.",
-    v2: "두 번째 자아(밤마다 솔/하베스토 판정 전환) + 히든 포지션(언급 기반 탈락 + 강화 스택) + 배후(조력자 효과 반전). 새 이펙트: AltSelf/MentionKill.",
+    v1: "구현됨. besto_hidden(히든 포지션 v2 = 처치, 멀티타깃 1+hiddenStack, 발동 시 중첩 리셋·2회 제한) + besto_shift(두 번째 자아 — Disguise 토글 + tally bestoSelfVoteValue 가 행사 투표가치 절대값 고정: 솔 1 / 하베스토 3+2×hiddenStack, 사탄의 마 면역) + besto_frameup(누명씌우기 — hiddenMark 표식, 짝숫날 evenDayBlocked 게이트, 대상 사망 시 hiddenStack +1, 베스토·조력자 제외). 미발동 밤마다 hiddenStack +1(상한 2). 멘션킬은 밤 지목으로 근사 — 아침 토론 텍스트 파싱·배후(조력자 효과 반전 통지) reveal pipeline 은 별도 확장 대상.",
+    v2: "두 번째 자아 투표가치 고정, 히든 포지션 강화·멀티타깃·중첩 리셋, 누명씌우기 hiddenMark+짝숫날 게이트까지 핵심 라이브. 배후는 후속.",
     vault: "Universes/BoW/Characters/베스토.md",
   },
 

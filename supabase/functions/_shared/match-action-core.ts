@@ -129,6 +129,11 @@ export async function submitMatchAction(
         throw conflict("convert_cooldown", "연속으로 포교할 수 없습니다. 다음 밤에 다시 시도하세요.");
       }
     }
+    // 짝숫날 발동 금지(베스토 누명씌우기): 능력 정의의 evenDayBlocked 플래그가 있으면 phase_number
+    // 짝수일 때 거부. dayCount 와 phase_number 가 1:1 라 같은 식으로 판정한다(직업 하드코딩 X).
+    if (ability.evenDayBlocked && currentPhase.phase_number % 2 === 0) {
+      throw conflict("even_day_blocked", "짝숫날에는 이 능력을 사용할 수 없습니다.");
+    }
     // 대상 없이 발동(SELF/NONE/ALL)이면 대상 검증 생략.
     const requiresNoTarget =
       ability.targetType === "SELF" || ability.targetType === "NONE" || ability.targetType === "ALL";

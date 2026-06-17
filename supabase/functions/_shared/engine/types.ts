@@ -59,7 +59,9 @@ export interface Effect {
   //   해소(resolveNightmares)에서 탈락. 재적용 시 영면(나중 단계).
   // Possess(말렌 빙의): 대상 그 밤 행동 봉인(silencedNights) + 그 라운드 악마팀으로 카운트
   //   (counters.possessed, 라운드 한정 — checkWinCondition 이 demon 버킷으로 셈).
-  // Disguise(베스토 변신): self 토글 — counters.disguised(0 하베스토→악마 판정 / 1 솔→조사 시 천사).
+  // Disguise(베스토 두 번째 자아): self 토글 — counters.disguised(0 하베스토→악마 판정·투표가치 3+강화
+  //   ×2 / 1 솔→조사 시 천사·투표가치 1 고정). 베스토 한정 — tally 가 bestoSelfVoteValue 로 vote 절대값
+  //   고정(사탄의 마 누적 -1 면역). hiddenStack(미발동 강화)이 하베스토 강화 +2/스택을 부여.
   // Rebrand(대악마 낙인): 대상의 currentRole 을 임의의 천사 직업으로 재배정(직업 삭제→비밀 재배정).
   // Eclipse(팬텀 일식): self.counters.eclipse=1 — phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀 소멸.
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
@@ -152,6 +154,9 @@ export interface ActiveAbility {
   // 낮(day/vote/verdict)에도 발동 가능(팬텀 영면 발동 — 처형 시간에 쌓아둔 영면 일괄 처치).
   // match-action 이 낮 제출을 허용하고 즉시 처리한다(밤 제출은 기존 엔진 경로).
   usableInDay?: boolean;
+  // 짝숫날 발동 금지(베스토 누명씌우기, canon "짝숫날 발동 불가"). 선언형 게이트 —
+  // match-action 이 day_count 가 짝수면 거부. 엔진은 dayCount % 2 === 0 일 때 action 을 패스.
+  evenDayBlocked?: boolean;
   // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
   // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
   // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).

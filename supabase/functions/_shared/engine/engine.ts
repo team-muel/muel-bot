@@ -195,6 +195,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       continue;
     }
 
+    // 짝숫날 발동 금지(베스토 누명씌우기 canon "짝숫날 발동 불가"). 선언형 게이트 —
+    // dayCount 가 짝수면 능력 자체를 패스(통지만, 카운터·횟수 소비 X).
+    if (ability.evenDayBlocked && newState.dayCount % 2 === 0) {
+      events.push({ type: "action_blocked_even_day", userId: sourcePlayer.userId });
+      continue;
+    }
+
     // maxUses 강제 — 1회성 능력(부활 등)의 사용 횟수를 counters.used_<id> 로 영속 기록.
     // 미강제 시 미즐렛/헬렌 부활이 매 밤 반복돼 게임이 수렴하지 않는 교착 엔진이 된다
     // (docs/gomdori-gameplay-verification.md P0-B). used_* 는 지속 카운터 — 라운드 리셋 X.
@@ -366,6 +373,35 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 베스토 아침 처리: 히든 포지션 미발동(미공격) 밤마다 강화 스택 +1(상한 2, vault canon "미발동 시
+  // 점점 강해짐 — 최대 2회 강화, 발동 시 중첩 초기화"). 발동(besto_hidden) 시 onFireSetCounter
+  // hiddenStack=0 으로 소비된다. hiddenMark 표식 보유 대상이 그 밤 탈락하면 추가 +1 — 누명씌우기로
+  // 처형/탈락을 유도하면 강화로 환원되는 canon "이 효과로 탈락 시 강화 +1".
+  const firedHidden = new Set(sortedActions.filter((a) => a.actionType === "besto_hidden").map((a) => a.sourceUserId));
+  const diedHiddenMarked = new Set<string>();
+  for (const ev of events) {
+    const e = ev as { type?: string; payload?: { user_id?: string } };
+    if (e.type === "player_died" && e.payload?.user_id) {
+      const dp = newState.players[e.payload.user_id];
+      if (dp && dp.tags.includes("hiddenMark")) diedHiddenMarked.add(dp.userId);
+    }
+  }
+  for (const p of Object.values(newState.players)) {
+    if (!p.alive || p.currentRole !== "besto") continue;
+    if (!firedHidden.has(p.userId)) {
+      p.counters.hiddenStack = Math.min(2, (p.counters.hiddenStack ?? 0) + 1);
+    }
+    if (diedHiddenMarked.size > 0) {
+      p.counters.hiddenStack = Math.min(2, (p.counters.hiddenStack ?? 0) + diedHiddenMarked.size);
+      events.push({ type: "frameup_credited", payload: { user_id: p.userId, deaths: Array.from(diedHiddenMarked) } });
+    }
+  }
+  // hiddenMark 표식은 사망/소비 후 정리 — 일회용(canon "이 효과로 탈락" 한 번 trigger 후 만료).
+  for (const uid of diedHiddenMarked) {
+    const dp = newState.players[uid];
+    if (dp) dp.tags = dp.tags.filter((t) => t !== "hiddenMark");
+  }
+
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
   // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
@@ -423,6 +459,18 @@ function prowessVoteBonus(actor: PlayerState, players: Record<string, PlayerStat
   return n * 3;
 }
 
+// 두 번째 자아(베스토 패시브): 행사 투표가치 절대값 고정 — 사탄의 마(-1) 누적과 무관.
+//   하베스토(disguised=0): 3 + 2*hiddenStack(미발동 강화) — 최대 3+4=7(강화 2스택까지).
+//   솔(disguised=1): 1 (고정).
+// 베스토가 아니면 null 을 돌려 tally 가 기본 식(base + 보너스)을 쓰게 한다. 베스토면 절대값
+// override — 모든 보너스/패널티 무시(canon "투표가치 X 고정").
+function bestoSelfVoteValue(actor: PlayerState): number | null {
+  if (actor.currentRole !== "besto") return null;
+  const sol = (actor.counters?.disguised ?? 0) > 0;
+  if (sol) return 1;
+  return 3 + 2 * Math.max(0, Math.min(2, actor.counters?.hiddenStack ?? 0));
+}
+
 export function tallyEliminationVotes(
   actions: VoteActionInput[],
   players: Record<string, PlayerState>,
@@ -451,8 +499,12 @@ export function tallyEliminationVotes(
       continue;
     }
 
-    // 루루 매료 양도분(voteWeightBonus) + 사탄의 마 감소분(voteValueMod) + 아서 위용(+3/해오름결백)을 합산.
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
+    // 베스토 두 번째 자아 고정값(있으면 모든 보너스/패널티 무시 — canon "투표가치 X 고정").
+    // 없으면 기본: base + 보너스 + 루루 매료 양도분 + 사탄의 마 감소분 + 아서 위용을 합산.
+    const bestoOverride = bestoSelfVoteValue(actor);
+    const voteValue = bestoOverride != null
+      ? Math.max(0, bestoOverride)
+      : Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -561,7 +613,10 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const actor = players[action.actorUserId];
     if (!actor?.alive) continue;
 
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
+    const bestoOverride = bestoSelfVoteValue(actor);
+    const voteValue = bestoOverride != null
+      ? Math.max(0, bestoOverride)
+      : Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteValueMod ?? 0) + prowessVoteBonus(actor, players));
     if (voteValue === 0) {
       skipped += 1;
       continue;

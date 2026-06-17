@@ -257,15 +257,27 @@ export const CORE_ROLES: RoleDefinition[] = [
     deathHook: { perDeath: { counter: "soul", amount: 1 }, convert: { from: "soul", threshold: 2, to: "deadCountBonus", amount: 1 } },
   },
   {
-    // 베스토(악마-14): 히든 포지션(처치) + 변신(솔/하베스토 토글 — 조사 회피). 배후 다단계는 후속.
+    // 베스토(악마-14): 두 번째 자아(변신·투표가치 고정) + 히든 포지션(처치, 미발동 강화 스택으로
+    // 멀티타깃) + 누명씌우기(대상에 hiddenMark — 그 대상 사망 시 강화 +1, 짝숫날 발동 불가).
+    // 배후(조력자-베스토 효과 반전 통지)는 별도 후속(reveal pipeline 재설계 필요).
     id: "besto",
     name: "베스토",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
+        // 히든 포지션(v2, 2회 제한): 멀티타깃 처치 — 1 + hiddenStack(미발동 강화) 만큼 동시 지정.
+        // 발동 시 onFireSetCounter 로 hiddenStack=0(중첩 초기화, canon "발동 시 중첩 초기화").
+        // 미발동 밤마다 강화 +1(상한 2)은 engine.resolveNightActions 아침 처리 루프에서 부여.
+        // 멘션 기반 탈락(아침 토론 텍스트 파싱)은 chat infra 필요라 v2 근사 — 밤 지목 = 멘션 대용.
+        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, maxUses: 2, targetCount: 1, targetCountCounter: "hiddenStack", onFireSetCounter: { key: "hiddenStack", value: 0 }, effects: [{ type: "Kill", target: "Target" }] },
+        // 변신(두 번째 자아): self 토글 Disguise(0=하베스토→악마 판정·투표가치 3+강화 ×2 /
+        // 1=솔→조사 시 천사·투표가치 1 고정). tally 가 bestoSelfVoteValue 로 절대값 강제.
         { id: "besto_shift", name: "변신", targetType: "SELF", priority: 1, effects: [{ type: "Disguise", target: "self" }] },
+        // 누명씌우기(v2, 짝숫날 발동 불가): 대상에 hiddenMark 표식 — 그 대상이 어떤 사인으로든 그
+        // 밤 탈락하면 베스토의 히든 강화 +1(engine 아침 처리). 베스토·조력자(처치자 풀+helper)는
+        // 대상에서 제외(canon "베스토·조력자 제외"). 횟수 무제한 + 짝숫날 게이트만으로 템포 조절.
+        { id: "besto_frameup", name: "누명씌우기", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, evenDayBlocked: true, targetFilter: { excludeRoleSets: ["demonKiller", "helper"], message: "베스토와 조력자는 누명씌우기 대상에서 제외됩니다." }, effects: [{ type: "AddTag", target: "Target", tag: "hiddenMark" }] },
       ],
     },
   },

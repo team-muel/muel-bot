@@ -1561,4 +1561,99 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(r2.events.some((e: any) => e.type === "corpse_summoned" && e.payload?.amount === 2), "신출귀몰 — 시체 소환 이벤트");
 }
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰) checks passed");
+// --- 베스토 v2 두 번째 자아: 투표가치 절대값 고정(사탄의 마 면역) ---
+{
+  // 솔(disguised=1) → 행사 투표가치 1 고정. 사탄의 마(voteValueMod=-5) 무시.
+  const sol = { ...player("besto", "besto", "demon"), counters: { disguised: 1, voteValueMod: -5 } };
+  const t = player("t", "citizen", "angel");
+  const r = tallyEliminationVotes(
+    [{ actorUserId: "besto", targetUserId: "t" }],
+    { besto: sol, t },
+  );
+  assert.equal(r.tallies["t"], 1, "솔 — 투표가치 1 고정(사탄의 마 무시)");
+}
+{
+  // 하베스토(disguised=0) → 3. 강화 스택 1 이면 3+2=5, 2 면 3+4=7.
+  const ha0 = { ...player("besto", "besto", "demon"), counters: {} };
+  const t = player("t", "citizen", "angel");
+  assert.equal(tallyEliminationVotes([{ actorUserId: "besto", targetUserId: "t" }], { besto: ha0, t }).tallies["t"], 3, "하베스토 — 기본 3");
+  const ha1 = { ...player("besto", "besto", "demon"), counters: { hiddenStack: 1 } };
+  assert.equal(tallyEliminationVotes([{ actorUserId: "besto", targetUserId: "t" }], { besto: ha1, t }).tallies["t"], 5, "하베스토 강화 1 — 3+2=5");
+  const ha2 = { ...player("besto", "besto", "demon"), counters: { hiddenStack: 2 } };
+  assert.equal(tallyEliminationVotes([{ actorUserId: "besto", targetUserId: "t" }], { besto: ha2, t }).tallies["t"], 7, "하베스토 강화 2 — 3+4=7");
+}
+
+// --- 베스토 히든 포지션 미발동 → hiddenStack +1(상한 2) ---
+{
+  const r1 = resolveNightActions(emptyState(
+    { besto: player("besto", "besto", "demon"), a: player("a", "citizen", "angel") },
+    [],
+  ));
+  assert.equal(r1.newState.players.besto.counters.hiddenStack, 1, "미발동 밤 1 — 강화 1");
+  const r2 = resolveNightActions(r1.newState);
+  assert.equal(r2.newState.players.besto.counters.hiddenStack, 2, "미발동 밤 2 — 강화 2(상한)");
+  const r3 = resolveNightActions(r2.newState);
+  assert.equal(r3.newState.players.besto.counters.hiddenStack, 2, "미발동 밤 3 — 상한 유지(2 초과 X)");
+}
+
+// --- 베스토 히든 포지션 발동: 멀티타깃(1+강화) + 발동 후 스택 0 리셋 ---
+{
+  const besto = { ...player("besto", "besto", "demon"), counters: { hiddenStack: 2 } };
+  const v1 = player("v1", "citizen", "angel");
+  const v2 = player("v2", "doctor", "angel");
+  const v3 = player("v3", "rainer", "angel");
+  const v4 = player("v4", "romaz", "angel");
+  const r = resolveNightActions(emptyState(
+    { besto, v1, v2, v3, v4 },
+    [{ sourceUserId: "besto", targetUserId: "v1", targetUserIds: ["v1", "v2", "v3"], actionType: "besto_hidden", priority: 4 }],
+  ));
+  assert.equal(r.newState.players.v1.alive, false, "히든 포지션 — v1 탈락");
+  assert.equal(r.newState.players.v2.alive, false, "히든 포지션 — v2 탈락(멀티타깃)");
+  assert.equal(r.newState.players.v3.alive, false, "히든 포지션 — v3 탈락(강화 2 → 1+2=3 명)");
+  assert.equal(r.newState.players.v4.alive, true, "히든 포지션 — v4 비지정");
+  assert.equal(r.newState.players.besto.counters.hiddenStack ?? 0, 0, "발동 후 강화 중첩 0 리셋");
+}
+
+// --- 베스토 누명씌우기: hiddenMark 표식 + 대상 사망 시 강화 +1 + 짝숫날 차단 ---
+{
+  // 홀수날(dayCount=3): besto_frameup + 다른 처치로 대상 탈락 → 베스토 강화 +1.
+  const state: MatchState = {
+    matchId: "v2", dayCount: 3, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: {
+      besto: player("besto", "besto", "demon"),
+      demon: player("demon", "demon", "demon"),
+      v: player("v", "citizen", "angel"),
+    },
+    actionStack: [
+      { sourceUserId: "besto", targetUserId: "v", actionType: "besto_frameup", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "v", actionType: "demon_kill", priority: 4 },
+    ],
+  };
+  const r = resolveNightActions(state);
+  assert.equal(r.newState.players.v.alive, false, "누명 대상 — 처치로 탈락");
+  // hiddenMark 표식은 사망 후 정리됐어야 함.
+  assert.ok(!r.newState.players.v.tags.includes("hiddenMark"), "hiddenMark 표식은 사망 후 1회 소비");
+  assert.equal(r.newState.players.besto.counters.hiddenStack, 2, "누명 대상 사망 → 미발동 +1 + 누명 +1 = 2");
+  assert.ok(r.events.some((e: any) => e.type === "frameup_credited"), "frameup_credited 이벤트");
+}
+{
+  // 짝숫날(dayCount=2): evenDayBlocked 게이트로 차단 — hiddenMark 안 붙음.
+  const state: MatchState = {
+    matchId: "v2", dayCount: 2, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
+    players: { besto: player("besto", "besto", "demon"), v: player("v", "citizen", "angel") },
+    actionStack: [{ sourceUserId: "besto", targetUserId: "v", actionType: "besto_frameup", priority: 5 }],
+  };
+  const r = resolveNightActions(state);
+  assert.ok(!r.newState.players.v.tags.includes("hiddenMark"), "짝숫날 — 누명 차단(표식 없음)");
+  assert.ok(r.events.some((e: any) => e.type === "action_blocked_even_day"), "짝숫날 차단 이벤트");
+}
+
+// 베스토 v2 — 계약 정규식.
+assert.match(roles, /id: "besto_hidden"[\s\S]*?targetCountCounter: "hiddenStack"/, "히든 포지션 — 강화 멀티타깃");
+assert.match(roles, /id: "besto_hidden"[\s\S]*?onFireSetCounter: \{ key: "hiddenStack", value: 0 \}/, "히든 포지션 — 발동 시 중첩 리셋");
+assert.match(roles, /id: "besto_frameup"[\s\S]*?evenDayBlocked: true/, "누명씌우기 — 짝숫날 차단");
+assert.match(roles, /id: "besto_frameup"[\s\S]*?tag: "hiddenMark"/, "누명씌우기 — hiddenMark 표식");
+const bestoMig = readFileSync("supabase/migrations/20260618100000_gomdori_besto_v2.sql", "utf8");
+assert.match(bestoMig, /'besto_frameup'/, "마이그레이션 — 누명씌우기 action_type");
+
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/베스토두번째자아/히든강화/누명씌우기) checks passed");
