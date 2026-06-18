@@ -213,8 +213,22 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   );
   const { newState, events } = resolveNightActions(state);
   assert.equal(newState.players.angel.actualFaction, "demon", "천사가 악마팀으로 타락");
+  assert.equal(newState.players.angel.treatedAsFaction, "demon", "타락자 treatedAsFaction 도 demon — 승리 집계 합류(승패 역전 버그 회귀 방지)");
   assert.equal(newState.players.angel.currentRole, "corrupted", "타락자 역할");
   assert.ok(events.some((e: any) => e.type === "faction_changed" && e.payload?.new_faction === "demon"), "변환 이벤트");
+}
+// --- 4b. 타락자는 승리 집계에서 악마팀으로 잡힌다 (리로드 폴백 회귀 방지) ---
+{
+  // phase-advance 리로드는 treatedAsFaction 을 DB faction('angel')으로 폴백시킨다. Corrupt 가
+  // treatedAsFaction 까지 'demon' 으로 바꾸지 않으면 타락자가 영구히 천사로 집계돼 승패가 뒤집힌다.
+  const reloaded = {
+    demon: player("demon", "demon", "demon"),
+    corrupted: { ...player("corrupted", "corrupted", "demon"), treatedAsFaction: "demon" as Faction },
+    angel: player("angel", "citizen", "angel"),
+  };
+  const win = checkWinCondition(reloaded);
+  assert.equal(win.winner, "demons", "타락자 포함 악마2 vs 천사1 → 악마 승리");
+  assert.equal(win.aliveDemons, 2, "타락자가 악마 카운트에 합류");
 }
 // 악마는 타락 불가
 {

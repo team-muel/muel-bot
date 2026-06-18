@@ -1119,6 +1119,10 @@ function applyEffect(
         target.actualFaction !== "neutral"
       ) {
         target.actualFaction = "neutral";
+        // 타락(Corrupt)과 동일 사유: 전향자는 천사/악마 버킷에서 빠져야(bucket=null) 하므로
+        // treatedAsFaction 도 neutral 로 바꾼다. 안 그러면 리로드 후 treatedAsFaction='angel'
+        // 폴백이 actualFaction 을 가려 전향자가 angelCount 를 부풀린다(canon §전향자=중립 위배).
+        target.treatedAsFaction = "neutral";
         target.currentRole = "converted";
         events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "neutral" } });
       }
@@ -1325,6 +1329,10 @@ function applyEffect(
         target.currentRole !== "corrupted"
       ) {
         target.actualFaction = "demon";
+        // 승리 집계(countTeams)는 treatedAsFaction || actualFaction 순으로 본다. 리로드 시
+        // treatedAsFaction 은 DB faction('angel')으로 폴백되므로, treatedAsFaction 을 같이
+        // 바꿔야 타락자가 악마 카운트에 합류한다(안 그러면 영구히 천사로 집계 — 승패 역전 버그).
+        target.treatedAsFaction = "demon";
         target.currentRole = "corrupted";
         events.push({ type: "faction_changed", payload: { user_id: target.userId, new_faction: "demon" } });
       }
