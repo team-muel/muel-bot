@@ -7,6 +7,7 @@ import {
   getMatch,
   readJsonObject,
   readRequiredString,
+  reconcileLobbyPresence,
   toPlayerSummary,
 } from "../_shared/game.ts";
 
@@ -33,6 +34,13 @@ Deno.serve((req: Request) => {
     }
 
     const supabase = getSupabaseAdmin();
+
+    // 정원 카운트 전에 유령(하트비트 끊긴 잔류 row)을 솎아낸다 — 떠난 사람이
+    // 자리를 먹어 실제 신규 참가자가 막히는 것을 방지. best-effort: GC 실패가
+    // 입장 자체를 막아선 안 된다(실패 시 기존 동작=유령 포함 카운트로 폴백).
+    await reconcileLobbyPresence(match.id).catch((err) => {
+      console.error("[match-join] reconcileLobbyPresence failed", err);
+    });
 
     // M-2: enforce the 12-player cap. Existing players may rejoin (idempotent upsert).
     const { data: existingRow } = await supabase

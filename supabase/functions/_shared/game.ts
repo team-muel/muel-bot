@@ -251,3 +251,134 @@ export async function getNextTableNumber(
   if (error) throw error;
   return Number(data ?? 1);
 }
+
+// --- 로비 presence GC (유령 플레이어 정리) ---
+// 클라는 30s 마다 하트비트(match-heartbeat → last_seen_at)를 보낸다. Activity 를 닫거나
+// 탭/네트워크가 죽으면 best-effort leaveMatch 가 누락돼 match_players row 가 잔류한다(유령).
+// last_seen_at 이 TTL 보다 오래되면(=하트비트 끊김) **로비에서만** 솎아낸다. AI 용병은
+// 하트비트가 없으므로 GC 대상에서 제외. 진행 중 매치는 절대 건드리지 않는다(게임 무결성 —
+// 끊긴 플레이어는 alive/elimination 경로가 담당).
+export const LOBBY_PRESENCE_TTL_MS = 90_000;
+
+// 떠난 유저(들) 처리의 단일 경로 — match-leave 와 reconcileLobbyPresence 가 공유한다.
+// 호스트가 떠났으면 가장 먼저 들어온 '사람' 참가자에게 위임(AI 에는 절대 위임 안 함).
+// 사람이 없으면(AI 만 남음) 로비를 abort. 호스트는 남았지만 테이블이 비면 empty_table abort.
+export async function reassignLobbyHostOrAbort(
+  matchId: string,
+  departedUserIds: string[],
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { data: matchRow, error: matchErr } = await supabase
+    .from("matches")
+    .select("host_user_id, status")
+    .eq("id", matchId)
+    .maybeSingle();
+  if (matchErr) throw matchErr;
+  if (!matchRow || matchRow.status !== "lobby") return;
+
+  const hostDeparted =
+    typeof matchRow.host_user_id === "string" &&
+    departedUserIds.includes(matchRow.host_user_id);
+
+  if (hostDeparted) {
+    const { data: humans, error: humansErr } = await supabase
+      .from("match_players")
+      .select("user_id")
+      .eq("match_id", matchId)
+      .eq("is_ai", false)
+      .order("joined_at", { ascending: true })
+      .limit(1);
+    if (humansErr) throw humansErr;
+
+    const newHostId = humans?.[0]?.user_id as string | undefined;
+    if (newHostId) {
+      const { error: hostErr } = await supabase
+        .from("matches")
+        .update({ host_user_id: newHostId })
+        .eq("id", matchId)
+        .eq("status", "lobby");
+      if (hostErr) throw hostErr;
+      await supabase
+        .from("match_players")
+        .update({ is_host: false })
+        .eq("match_id", matchId)
+        .neq("user_id", newHostId);
+      await supabase
+        .from("match_players")
+        .update({ is_host: true })
+        .eq("match_id", matchId)
+        .eq("user_id", newHostId);
+      await supabase.from("match_events").insert({
+        match_id: matchId,
+        event_type: "host_changed",
+        visibility: "public",
+        payload: { hostUserId: newHostId, reason: "host_left" },
+      });
+      return;
+    }
+
+    await supabase
+      .from("matches")
+      .update({
+        status: "aborted",
+        abort_reason: "host_left_no_humans",
+        ended_at: new Date().toISOString(),
+      })
+      .eq("id", matchId)
+      .eq("status", "lobby");
+    return;
+  }
+
+  // 빈 테이블 자동 소멸: 로비에서 마지막 플레이어가 빠지면 abort.
+  const { count, error: countErr } = await supabase
+    .from("match_players")
+    .select("user_id", { count: "exact", head: true })
+    .eq("match_id", matchId);
+  if (countErr) throw countErr;
+  if (count === 0) {
+    await supabase
+      .from("matches")
+      .update({
+        status: "aborted",
+        abort_reason: "empty_table",
+        ended_at: new Date().toISOString(),
+      })
+      .eq("id", matchId);
+  }
+}
+
+// 로비의 유령 플레이어를 솎아내고(GC) 호스트 공백/빈 테이블을 정리한다. 진행 중 매치는 no-op.
+// read/entry 경로(heartbeat·join·list)에서 호출 — 활성 클라가 30s 마다 하트비트를 보내므로
+// 로비가 살아있는 한 GC 가 주기적으로 돈다.
+export async function reconcileLobbyPresence(matchId: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { data: matchRow, error: matchErr } = await supabase
+    .from("matches")
+    .select("status")
+    .eq("id", matchId)
+    .maybeSingle();
+  if (matchErr) throw matchErr;
+  if (!matchRow || matchRow.status !== "lobby") return;
+
+  const cutoff = new Date(Date.now() - LOBBY_PRESENCE_TTL_MS).toISOString();
+  const { data: removed, error: delErr } = await supabase
+    .from("match_players")
+    .delete()
+    .eq("match_id", matchId)
+    .eq("is_ai", false)
+    .or(`last_seen_at.lt.${cutoff},and(last_seen_at.is.null,joined_at.lt.${cutoff})`)
+    .select("user_id");
+  if (delErr) throw delErr;
+  if (!removed || removed.length === 0) return;
+
+  const departed = removed.map((r) => String(r.user_id));
+  for (const userId of departed) {
+    await supabase.from("match_events").insert({
+      match_id: matchId,
+      event_type: "player_left",
+      visibility: "public",
+      payload: { userId, reason: "presence_timeout" },
+    });
+  }
+  await reassignLobbyHostOrAbort(matchId, departed);
+}
