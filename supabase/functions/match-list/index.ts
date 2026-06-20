@@ -2,7 +2,12 @@ import { preflight, jsonResponse } from "../_shared/cors.ts";
 import { withErrorHandling } from "../_shared/errors.ts";
 import { requireGameAuth } from "../_shared/jwt.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
-import { readJsonObject, readRequiredString, toMatchSummary } from "../_shared/game.ts";
+import {
+  readJsonObject,
+  readRequiredString,
+  reconcileLobbyPresence,
+  toMatchSummary,
+} from "../_shared/game.ts";
 
 Deno.serve((req: Request) => {
   return withErrorHandling(req, async () => {
@@ -35,6 +40,15 @@ Deno.serve((req: Request) => {
 
     const matches = (matchesData ?? []).map((m) => toMatchSummary(m as Record<string, unknown>));
     const matchIds = matches.map((m) => m.id);
+
+    // 표시 전 각 로비의 유령 플레이어를 정리해 playerCounts 가 실제 접속자를 반영하도록 한다.
+    await Promise.all(
+      matchIds.map((id) =>
+        reconcileLobbyPresence(id).catch((err) => {
+          console.error("[match-list] reconcileLobbyPresence failed", id, err);
+        }),
+      ),
+    );
 
     // 2. Get counts of players in these matches
     const playerCounts: Record<string, number> = {};
