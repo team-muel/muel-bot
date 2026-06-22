@@ -135,7 +135,7 @@ Deno.serve((req: Request) => {
     // Check all players are ready
     const { data: players, error: playersError } = await supabase
       .from("match_players")
-      .select("user_id, ready, is_host")
+      .select("user_id, ready, is_host, is_ai")
       .eq("match_id", matchId);
     
     if (playersError) throw playersError;
@@ -159,14 +159,36 @@ Deno.serve((req: Request) => {
     //    레거시 includeNeutral 불리언도 resolveNeutralMode 가 흡수).
     const neutralMode = resolveNeutralMode(match.settings);
     const roles = generateRoles(players.length, neutralMode);
-    const assignments = players.map((p, index) => ({
-      user_id: p.user_id,
-      role: roles[index].role,
-      faction: roles[index].faction,
-      // match_players.engine_state 는 NOT NULL — 능력 카운터가 없는 직업(uno/arthur 외 천사,
-      // 라이너 자동주입 폐지 후 대부분)은 engineStateForAssignment 가 null 을 반환하므로 {} 로
-      // 폴백한다. null 을 그대로 UPDATE 하면 NOT NULL 위반 → 게임 시작 500. (2026-06-15 핫픽스)
-      engine_state: engineStateForAssignment(roles[index]) ?? {},
+
+    // #7 AI 악마 배정 가중치↓: 단순 좌석 zip(roles[index]↔players[index]) 은 AI·인간이 악마에
+    // 뽑힐 확률이 같았다. 악마팀 카드(faction='demon': 악마 본체 + 조력자)는 인간을 선호해 가중
+    // 추첨(AI 가중치 0.35, 인간 1.0 — 완전 배제는 아님). 나머지(천사/중립)는 무작위 배정.
+    const AI_DEMON_WEIGHT = 0.35;
+    const demonCards = roles.filter((r) => r.faction === "demon");
+    const otherCards = shuffle(roles.filter((r) => r.faction !== "demon"));
+    const pool = [...players];
+    const paired: Array<{ user_id: string; card: RoleCard }> = [];
+    for (const card of demonCards) {
+      const weights = pool.map((p) => (p.is_ai ? AI_DEMON_WEIGHT : 1));
+      const total = weights.reduce((a, b) => a + b, 0) || 1;
+      let r = Math.random() * total;
+      let pick = 0;
+      for (let i = 0; i < pool.length; i++) {
+        r -= weights[i];
+        if (r <= 0) { pick = i; break; }
+      }
+      paired.push({ user_id: pool[pick].user_id, card });
+      pool.splice(pick, 1);
+    }
+    const rest = shuffle(pool);
+    otherCards.forEach((card, i) => paired.push({ user_id: rest[i].user_id, card }));
+
+    const assignments = paired.map(({ user_id, card }) => ({
+      user_id,
+      role: card.role,
+      faction: card.faction,
+      // match_players.engine_state 는 NOT NULL — 카운터 없는 직업은 {} 폴백(null UPDATE 금지).
+      engine_state: engineStateForAssignment(card) ?? {},
     }));
 
     // Update match_players roles in a loop (since no bulk update in pure Supabase JS easily without RPC, but we can do it via promise all or rpc. 
