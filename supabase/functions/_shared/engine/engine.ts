@@ -775,6 +775,8 @@ export function resolveNightmares(players: Record<string, PlayerState>): unknown
 export type TeamCounts = {
   aliveAngels: number;
   aliveDemons: number;
+  // 생존 '악마 본체'(처치자 풀) 수 — 조력자/타락자 제외. 악마 진영 존속 판정의 기준.
+  aliveDemonKillers: number;
   angelCount: number;
   demonCount: number;
   pasuaAlive: boolean;
@@ -792,9 +794,13 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   // 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔 잡히지 않는다(bucket=null).
   let pasuaAlive = false;
   let pasuaFlock = 0;
+  // 생존 '악마 본체'(처치자 풀: demon/phantom/malen/besto). 빙의·사탄의 마 transient flip 과
+  // 무관하게 currentRole 기준 — 빙의된 천사나 타락자(corrupted)는 본체가 아니다.
+  let aliveDemonKillers = 0;
   for (const player of Object.values(players)) {
     if (player.currentRole === "pasua" && player.alive) pasuaAlive = true;
     if (player.currentRole === "converted" && player.alive) pasuaFlock += 1;
+    if (player.alive && isDemonKillerRole(player.currentRole)) aliveDemonKillers += 1;
   }
 
   // 사탄의 마 전역 취급(대악마): 살아있는 대악마 + 천사팀 전원 vote 0 이면 transient 로 천사를
@@ -833,11 +839,11 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     }
   }
 
-  return { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock };
+  return { aliveAngels, aliveDemons, aliveDemonKillers, angelCount, demonCount, pasuaAlive, pasuaFlock };
 }
 
 export function checkWinCondition(players: Record<string, PlayerState>): WinConditionResult {
-  const { aliveAngels, aliveDemons, angelCount, demonCount, pasuaAlive, pasuaFlock } =
+  const { aliveAngels, aliveDemons, aliveDemonKillers, angelCount, demonCount, pasuaAlive, pasuaFlock } =
     countTeams(players);
 
   // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
@@ -846,7 +852,11 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   let winner: "angels" | "demons" | "neutral" | null = null;
   if (pasuaAlive && pasuaFlock >= pasuaWinThreshold(totalPlayers)) {
     winner = "neutral";
-  } else if (aliveDemons === 0) {
+  } else if (aliveDemonKillers === 0) {
+    // 악마 본체(처치자)가 전멸하면 즉시 악마 진영 패배 — 조력자(가인·루나·로건·엘런)나
+    // 타락자만 남아도 진영을 지탱하지 못한다(canon: 악마 진영 = 악마 본체. 조력자 구분은
+    // 본체 사망 시 진영 종료를 위한 것). 중립 단독 승리는 위에서 우선 판정했으므로 여기 도달
+    // = 천사 승리. (조력자가 살아 aliveDemons>0 이어도 게임은 끝난다 — 무한 교착 차단.)
     winner = "angels";
   } else if (demonCount >= angelCount) {
     winner = "demons";
@@ -865,9 +875,11 @@ export function checkTimeoutWinner(players: Record<string, PlayerState>): {
   aliveAngels: number;
   aliveDemons: number;
 } {
-  const { aliveAngels, aliveDemons, angelCount, demonCount } = countTeams(players);
+  const { aliveAngels, aliveDemons, aliveDemonKillers, angelCount, demonCount } = countTeams(players);
   return {
-    winner: angelCount > demonCount ? "angels" : "demons",
+    // 악마 본체가 없으면 동률 악마 우세 규칙과 무관하게 천사 승리(checkWinCondition 이 이미
+    // 본체 사망 시 게임을 끝내므로 보통 도달 안 하지만, 타임아웃 경로 일관성 위해 가드).
+    winner: aliveDemonKillers === 0 ? "angels" : angelCount > demonCount ? "angels" : "demons",
     angelCount,
     demonCount,
     aliveAngels,

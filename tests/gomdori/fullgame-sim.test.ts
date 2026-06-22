@@ -71,7 +71,7 @@ function runDayVote(
 
 const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
 
-// ===== 시나리오 1: 천사 승리 — 악마+조력자를 처형으로 전멸 =====
+// ===== 시나리오 1: 천사 승리 — 악마 본체 처형 즉시(조력자 잔존 무관) =====
 {
   const s = makeState([
     player("d", "demon", "demon"),
@@ -82,17 +82,15 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
   ]);
   // 첫째 밤: 무능력(스킵). 승자 없음.
   assert.equal(winnerOf(s), null, "첫 밤 직후 승자 없음");
-  // 1일차: 마을이 악마(d) 처형.
+  // 1일차: 마을이 악마 본체(d) 처형.
   runDayVote(s, [{ actor: "a1", target: "d" }, { actor: "a2", target: "d" }, { actor: "a3", target: "d" }], [
     { actor: "a1", approve: true }, { actor: "a2", approve: true }, { actor: "a3", approve: true },
   ]);
-  assert.equal(s.players.d.alive, false, "악마 처형됨");
-  assert.equal(winnerOf(s), null, "조력자 생존 → 아직 천사승 아님");
-  // 2일차: 조력자(h) 처형 → 악마팀 전멸.
-  runDayVote(s, [{ actor: "a1", target: "h" }, { actor: "a2", target: "h" }, { actor: "a3", target: "h" }], [
-    { actor: "a1", approve: true }, { actor: "a2", approve: true }, { actor: "a3", approve: true },
-  ]);
-  assert.equal(winnerOf(s), "angels", "악마팀 전멸 → 천사 승리");
+  assert.equal(s.players.d.alive, false, "악마 본체 처형됨");
+  // 새 canon: 악마 본체(처치자)가 죽으면 조력자(가인 h)가 살아 있어도 즉시 악마 진영 패배 →
+  // 천사 승리. (조력자만 남은 무한 교착 차단 — 악마/조력자 구분의 존재 이유.)
+  assert.equal(s.players.h.alive, true, "조력자(가인)는 아직 생존");
+  assert.equal(winnerOf(s), "angels", "악마 본체 전멸 → 조력자 잔존과 무관하게 즉시 천사 승리");
 }
 
 // ===== 시나리오 2: 악마 승리 — 밤 살해로 카운트 패리티 =====
