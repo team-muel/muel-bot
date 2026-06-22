@@ -991,12 +991,13 @@ Deno.serve((req: Request) => {
         ) as DbAction[];
         const state = playerStateFromRows(matchId, "vote", phase.phase_number, players, engineState.modifiers);
         const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
-        // 루루 무투(악보 교체 무투): 그 라운드 적용 후 voteCountBonus 소비(canon "다음 아침" 1회 한정).
+        // 라운드성 투표 카운터 소비(canon "다음 아침" 1회 한정): 루루 무투(voteCountBonus) +
+        // 미즐렛 고급 와인 1일 페널티(wineVotePenalty). 이 처형 투표 tally 직후 함께 해제한다.
         for (const p of players) {
           const es = (p.engine_state ?? {}) as Record<string, unknown>;
           const c = (es.counters ?? {}) as Record<string, number>;
-          if ((c.voteCountBonus ?? 0) > 0) {
-            const next = { ...es, counters: { ...c, voteCountBonus: 0 } };
+          if ((c.voteCountBonus ?? 0) > 0 || (c.wineVotePenalty ?? 0) > 0) {
+            const next = { ...es, counters: { ...c, voteCountBonus: 0, wineVotePenalty: 0 } };
             requireNoError(await supabase.from("match_players").update({ engine_state: next }).eq("match_id", matchId).eq("user_id", p.user_id));
             p.engine_state = next;
           }
@@ -1044,7 +1045,17 @@ Deno.serve((req: Request) => {
           nextPhaseType = "verdict";
           nextDurationSec = durations.verdict;
         } else {
-          // 부결: 다음 밤으로. 둘째 밤부터는 의심 투표(night_suspect)를 먼저 거친다.
+          // 부결: 최후의 반론(verdict)에 아무도 오르지 않음 — 명시적 로그 emit(채팅 로그/모닝 표시용).
+          requireNoError(
+            await supabase.from("match_events").insert({
+              match_id: matchId,
+              phase_id: phase.id,
+              event_type: "verdict_no_candidate",
+              visibility: "public",
+              payload: { reason: tally.tie ? "tie" : "no_majority", skipped: tally.skipped },
+            }),
+          );
+          // 다음 밤으로. 둘째 밤부터는 의심 투표(night_suspect)를 먼저 거친다.
           const transition = nextNightSuspectTransition(phase.phase_number, durations);
           nextPhaseType = transition.phaseType;
           nextDurationSec = transition.durationSec;

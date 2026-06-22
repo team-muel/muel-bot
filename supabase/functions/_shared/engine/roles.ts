@@ -447,7 +447,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         // -1(skipIfTargetTag: dessert). 디저트 받은 자는 정화만(대화는 후속). 1회 — 누적 -1 남용 방지.
         { id: "mizlet_wine", name: "고급 와인", targetType: "NONE", priority: 5, maxUses: 1, effects: [
           { type: "Cleanse", target: "All" },
-          { type: "ModifyVoteValue", target: "All", amount: -1, skipIfTargetTag: "dessert" },
+          // 투표가치 -1 은 effect(영속 voteValueMod)로 주면 회복이 안 돼 전원 0 으로 깔려 처형이
+          // 영구 봉인된다(버그). resolveNightActions 의 wine 루프에서 **1일 한정** counter
+          // (wineVotePenalty)로 부여 → 다음 처형 투표 1회만 적용 후 phase-advance 가 소비/해제.
         ] },
       ],
     },

@@ -152,4 +152,31 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
   assert.equal(checkTimeoutWinner(s.players).winner, "angels", "countBonus 반영");
 }
 
-console.log("Gomdori 풀게임 e2e 시뮬 (천사/악마/중립 승리 경로 + 타임아웃 우세) passed");
+// ===== 시나리오 5: 미즐렛 고급 와인 — 투표가치 -1 은 1일 한정(다음 처형 1회 후 해제) =====
+// 회귀: 예전엔 영속 voteValueMod 로 깔려 전원 0 → 처형 영구 봉인(교착). 이제 wineVotePenalty
+// (날짜 스코프)로 그 처형 투표 1회만 적용되고 phase-advance 가 소비한다.
+{
+  const s = makeState([
+    player("m", "mizlet", "angel"),
+    player("a1", "citizen", "angel"),
+    player("a2", "citizen", "angel"),
+    player("d", "demon", "demon"),
+  ]);
+  runNight(s, [{ src: "m", actionType: "mizlet_wine", target: null }]);
+  assert.equal(s.players.a1.counters.wineVotePenalty, 1, "와인: 미회식자 1일 페널티 부여");
+  const t1 = tallyEliminationVotes(
+    [{ actorUserId: "a1", targetUserId: "d" }, { actorUserId: "a2", targetUserId: "d" }],
+    s.players,
+  );
+  assert.equal(t1.candidateUserId, null, "와인 적용일: 투표가치 0 → 후보 없음(부결)");
+  assert.equal(t1.skipped, 2, "두 표 모두 0표 무효");
+  // phase-advance 가 처형 투표 tally 직후 wineVotePenalty 소비 — 여기선 수동 클리어로 미러.
+  for (const p of Object.values(s.players)) p.counters.wineVotePenalty = 0;
+  const t2 = tallyEliminationVotes(
+    [{ actorUserId: "a1", targetUserId: "d" }, { actorUserId: "a2", targetUserId: "d" }],
+    s.players,
+  );
+  assert.equal(t2.candidateUserId, "d", "다음 날: 페널티 해제 → 정상 투표(처형 가능)");
+}
+
+console.log("Gomdori 풀게임 e2e 시뮬 (천사/악마/중립 승리 경로 + 타임아웃 우세 + 와인 1일 페널티) passed");
