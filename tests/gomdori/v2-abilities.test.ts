@@ -347,8 +347,10 @@ assert.match(batch2bMig, /'mizlet_dessert'/, "마이그레이션 — 디저트")
   const { newState } = resolveNightActions(state);
   assert.equal(newState.players.fed.counters.nightmare ?? 0, 0, "와인 — 디저트 대상 정화");
   assert.equal(newState.players.unfed.counters.nightmare ?? 0, 0, "와인 — 미제공자도 정화");
-  assert.equal(newState.players.fed.counters.voteValueMod ?? 0, 0, "디저트 대상은 투표가치 페널티 없음");
-  assert.equal(newState.players.unfed.counters.voteValueMod ?? 0, -1, "미제공자는 투표가치 -1");
+  // 1일 한정 페널티는 영속 voteValueMod 가 아니라 wineVotePenalty(날짜 스코프)로 부여한다.
+  assert.equal(newState.players.fed.counters.wineVotePenalty ?? 0, 0, "디저트 대상은 투표가치 페널티 없음");
+  assert.equal(newState.players.unfed.counters.wineVotePenalty ?? 0, 1, "미제공자는 1일 투표가치 -1(wineVotePenalty=1)");
+  assert.equal(newState.players.unfed.counters.voteValueMod ?? 0, 0, "영속 voteValueMod 는 미변경(회복 보장)");
 }
 // --- 4f. 헬렌 자유로운 새: 탈락자 추가 복귀 ---
 {

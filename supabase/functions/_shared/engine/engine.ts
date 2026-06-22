@@ -453,8 +453,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   const wineFiredBy = sortedActions.filter((a) => a.actionType === "mizlet_wine").map((a) => a.sourceUserId);
   for (const sourceId of wineFiredBy) {
     for (const p of Object.values(newState.players)) {
-      if (p.alive && p.tags.includes("dessert")) {
+      if (!p.alive) continue;
+      if (p.tags.includes("dessert")) {
         events.push({ type: "dessert_chat_open", payload: { user_id: p.userId, mizlet: sourceId } });
+      } else {
+        // 디저트 미회식자: 다음 처형 투표 1회 한정 투표가치 -1(1일). 영속 voteValueMod 가 아니라
+        // 날짜-스코프 counter — phase-advance 가 vote tally 직후 소비(아래 voteCountBonus 와 같은 라이프사이클).
+        p.counters.wineVotePenalty = 1;
+        events.push({ type: "vote_value_modified", payload: { user_id: p.userId, amount: -1, source: "mizlet_wine", scope: "1_day" } });
       }
     }
   }
@@ -603,7 +609,9 @@ export function tallyEliminationVotes(
     const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
     const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
     const adjProwess = dawnFlip ? -prowess : prowess;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess);
+    // 고급 와인 1일 페널티(미즐렛): 이 처형 투표 1회만 -1. phase-advance 가 tally 직후 소비.
+    const winePenalty = actor.counters?.wineVotePenalty ?? 0;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess - winePenalty);
     if (voteValue === 0) {
       skipped += 1;
       continue;
