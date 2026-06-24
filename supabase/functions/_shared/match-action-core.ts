@@ -71,6 +71,19 @@ async function isAngelTeamVoteFullySuppressed(
   });
 }
 
+// 사탄의 마 per-target 판정(canon 대악마 "이 -1 효과로 *그 대상* 투표가치가 0이 되면 그 대상의
+// 조사·취급이 악마로 판정"): 전역(전원 0) 판정과 별개로, *조사 대상 개인*의 행사 투표가치가
+// 0 이하면 그 한 명은 악마로 판정한다. 전역 경로의 strict superset — 전원 0 이 아니어도 개별
+// 적용. 행사가치 = 1(base) + bonusVoteValue + voteWeightBonus + voteValueMod(engine tally 동일식).
+function isTargetVoteSuppressed(
+  engineState: { bonusVoteValue?: number; counters?: Record<string, number> } | null,
+): boolean {
+  const es = engineState ?? {};
+  const c = es.counters ?? {};
+  const v = 1 + (es.bonusVoteValue ?? 0) + (c.voteWeightBonus ?? 0) + (c.voteValueMod ?? 0);
+  return v <= 0;
+}
+
 /**
  * 한 플레이어의 행동을 검증하고 match_actions 에 기록한다(사람·AI 공용).
  * 검증 실패 시 GameError 를 throw. police_investigate 는 즉시 결과를 계산해 반환.
@@ -264,7 +277,12 @@ export async function submitMatchAction(
       .single();
     if (target) {
       const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
-      investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+      // 사탄의 마 per-target: 대상 본인 투표가치가 0 이하로 꺼졌으면 악마로 판정(전역 0 불필요).
+      if (isTargetVoteSuppressed(target.engine_state as { bonusVoteValue?: number; counters?: Record<string, number> } | null)) {
+        investigationResult = "demon";
+      } else {
+        investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+      }
     }
   }
 
@@ -281,7 +299,10 @@ export async function submitMatchAction(
       const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
       const clue = (player.engine_state as { counters?: { clue?: number } } | null)?.counters?.clue ?? 0;
       // 사탄의 마 전역 판정 우선(천사팀 전원 투표가치 0 → 모든 조사가 '악마', 변신·정밀조사 무시).
+      // per-target(canon): 전원이 아니어도 *그 대상* 투표가치가 0 이하면 그 한 명은 악마로 판정.
       if (await isAngelTeamVoteFullySuppressed(supabase, matchId)) {
+        investigationResult = "demon";
+      } else if (isTargetVoteSuppressed(target.engine_state as { bonusVoteValue?: number; counters?: Record<string, number> } | null)) {
         investigationResult = "demon";
       } else if (clue >= 3 && !disguised) {
         investigationResult = effectiveRole(target);

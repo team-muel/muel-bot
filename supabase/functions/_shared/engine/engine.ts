@@ -67,12 +67,11 @@ export type WinConditionResult = {
 
 // 파스아(중립) 단독 승리 임계 — *생존* 교세가 ceil(인원/3) 이상 (최소 3).
 // 2026-06-11 P0-C 튜닝(후속 ALL 지시): 기존 "누적 전향 고정 3"은 시뮬에서 중립승
-// 35~70%(인원 단조 증가)로 지배적이었다. 후보 4안 비교(sim:balance --rule) 결과
-// scale-alive(인원 비례 임계 + 생존 교세)가 16~34%로 유일하게 비지배 + 단조성
-// 파괴 + "전향자 처형 = 교세 차감" 카운터플레이 성립. 8~9인=3, 10~12인=4.
-// 측정 근거: docs/gomdori-gameplay-verification.md §6.
-export function pasuaWinThreshold(totalPlayers: number): number {
-  return Math.max(3, Math.ceil(totalPlayers / 3));
+// 원문([중립] 구원자): "파스아 팀이 4명 이상이면 즉시 승리." → 고정 임계 4(인원 무관).
+// (과거 scale-alive max(3,ceil(인원/3)) 튜닝은 5인 가정 시절 산물 — 원문 우선으로 폐기.
+// 8~12인 실게임에서 4명 고정은 원문 그대로. 밸런스 재튜닝은 후속 측정 루프로.)
+export function pasuaWinThreshold(_totalPlayers: number): number {
+  return 4;
 }
 
 export function getRoleDefinition(roleId: string) {
@@ -111,6 +110,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // 연속 포교 제한(파스아): 포교한 밤에 1 로 세팅 → 다음 밤 submission 을 match-action
       // 이 거부. 매 밤 1 씩 감소시켜 한 밤 건너 다시 가능하게 한다(리셋 아닌 카운트다운).
       if (counters.convertCooldown) counters.convertCooldown = Math.max(0, counters.convertCooldown - 1);
+      // 로잔느 백일몽: 밤 해소(=아침 도래)마다 dreamMorning +1(7 도달 시 checkWinCondition 단독승)
+      // + 만들어가는 미래 충전(futureCharge). 생존 중에만 누적(canon 충전조건 v1 근사 — 하루 경과).
+      if (newState.players[userId].currentRole === "rosanne" && newState.players[userId].alive) {
+        counters.dreamMorning = (counters.dreamMorning ?? 0) + 1;
+        counters.futureCharge = (counters.futureCharge ?? 0) + 1;
+      }
       // 악몽 지연 (vault canon 팬텀): 지정한 그 밤(N)이 아니라 *다음* 밤(N+1)이 와야
       // 대상이 '악몽' 상태가 되고, 그 다음 아침(D N+2)에 탈락한다. 지정 시점엔
       // nightmarePending 만 세우고, 다음 밤 시작(여기)에서 nightmare 로 옮긴다.
@@ -153,8 +158,9 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 다음 밤(N+1) 시작인 여기에서 만료된다. 그 밤 재지정 시 아래 action 루프가 다시 부여.
     const pl = newState.players[userId];
     if (pl.tags.includes("dawnrise")) pl.tags = pl.tags.filter((t) => t !== "dawnrise");
-    // 가인 약간의 위선(DelayAction) 지연 승격: 지정 밤(N)에 delayPending 예약 → 다음 밤(N+1)
+    // DelayAction 지연 승격(범용 substrate): 지정 밤(N)에 delayPending 예약 → 다음 밤(N+1)
     // 시작인 여기에서 TAG_DELAYED 로 옮겨 대상의 그 밤 능력 발동을 한 밤 미룬다(소멸 아닌 연기).
+    // (가인 위선은 원문 충실화로 Silence='그 밤 취소'를 쓰므로 더 이상 이 경로를 쓰지 않는다.)
     if (pl.counters?.delayPending && pl.counters.delayPending > 0) {
       pl.counters.delayPending = 0;
       if (!pl.tags.includes(TAG_DELAYED)) pl.tags.push(TAG_DELAYED);
@@ -360,14 +366,16 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.alive = false;
         player.markedForDeath = false;
         events.push({ type: "player_died", payload: { user_id: player.userId } });
-        // 약간의 위선(가인) 전환: '위선' 표식이 걸린 대상이 밤에 탈락하면(악마 살해 경로) 가인의
-        // 다음 위선이 *탈락 효과*로 변한다(hypocrisyKillReady). canon "대상이 악마에 의해 탈락하면
-        // 다음 위선이 대상을 탈락시키는 효과로 변경". 출처 특정 없이 생존 가인에게 부여(보통 1명).
-        if (player.tags.includes("hypocrisy")) {
-          for (const g of Object.values(newState.players)) {
-            if (g.alive && g.currentRole === "gain") g.counters.hypocrisyKillReady = 1;
+        // 포교 충전(파스아, 원문 "포교 대상 사망 시 1회 충전"): 전향자(currentRole 'converted')가
+        // 그 밤 탈락하면 생존 파스아의 포교 사용 횟수(used_pasua_convert)를 1 되돌린다(floor 0).
+        // 출처 특정 없이 생존 파스아 전원(보통 1명). 투표 처형 경로 충전은 phase-advance 후속.
+        if (player.currentRole === "converted") {
+          for (const ps of Object.values(newState.players)) {
+            if (ps.alive && ps.currentRole === "pasua" && (ps.counters.used_pasua_convert ?? 0) > 0) {
+              ps.counters.used_pasua_convert = Math.max(0, ps.counters.used_pasua_convert - 1);
+              events.push({ type: "pasua_convert_recharged", payload: { user_id: ps.userId } });
+            }
           }
-          player.tags = player.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비(영구 재발동 방지)
         }
         // 잠입 수사(도르단) 불심검문: 관찰('infiltrated' 표식) 대상이 그 밤 탈락하면 도르단은
         // 그 밤 받은 부정 효과(상태이상)를 모두 무시 — retroactive 정화(canon "그 밤 모든 부정 효과
@@ -393,10 +401,28 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
-  // 가인 진실을 가리는 암흑(canon "두 번째 밤 종료 시 패시브 삭제"): 가인이 부여한 demon 보호막
-  // (shield + shieldFromGain 마커)을 두 번째 밤 종료 시 만료. 가인 생존 여부와 무관(패시브 자체가
-  // 시간 만료 — vault canon). 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
-  if (newState.dayCount === 2) {
+  // 약간의 위선(가인) 강화 트리거(원문 "악마가 대상을 투표했었다면 다음 위선이 봉인으로 강화"):
+  // 그 밤 위선을 받은 대상('hypocrisy' 표식)을 검사 — 생존 악마(actualFaction='demon')의 직전
+  // 투표 대상(lastVoteTarget)이 그 대상이면 생존 가인의 hypocrisySealReady 를 켠다(다음 위선 = 봉인
+  // 강화). 출처 특정 없이 생존 가인 전원에게 부여(보통 1명). 표식은 검사 후 소비(영구 재발동 방지).
+  for (const p of Object.values(newState.players)) {
+    if (!p.tags.includes("hypocrisy")) continue;
+    const demonVoted = Object.values(newState.players).some(
+      (d) => d.alive && d.actualFaction === "demon" && d.lastVoteTarget === p.userId,
+    );
+    if (demonVoted) {
+      for (const g of Object.values(newState.players)) {
+        if (g.alive && g.currentRole === "gain") g.counters.hypocrisySealReady = 1;
+      }
+      events.push({ type: "hypocrisy_seal_armed", payload: { user_id: p.userId } });
+    }
+    p.tags = p.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비
+  }
+
+  // 가인 진실을 가리는 암흑(원문 "세 번째 밤 종료 시 패시브 삭제"): 가인이 부여한 demon 보호막
+  // (shield + shieldFromGain 마커)을 세 번째 밤 종료 시 만료. 가인 생존 여부와 무관(패시브 자체가
+  // 시간 만료 — 원문). 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
+  if (newState.dayCount === 3) {
     for (const p of Object.values(newState.players)) {
       if ((p.counters?.shieldFromGain ?? 0) > 0) {
         if ((p.counters.shield ?? 0) > 0) p.counters.shield = 0;
@@ -802,7 +828,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   // 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔 잡히지 않는다(bucket=null).
   let pasuaAlive = false;
   let pasuaFlock = 0;
-  // 생존 '악마 본체'(처치자 풀: demon/phantom/malen/besto). 빙의·사탄의 마 transient flip 과
+  // 생존 '악마 본체'(처치자 풀: demon/phantom/malen). 빙의·사탄의 마 transient flip 과
   // 무관하게 currentRole 기준 — 빙의된 천사나 타락자(corrupted)는 본체가 아니다.
   let aliveDemonKillers = 0;
   for (const player of Object.values(players)) {
@@ -814,12 +840,18 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   // 사탄의 마 전역 취급(대악마): 살아있는 대악마 + 천사팀 전원 vote 0 이면 transient 로 천사를
   // 악마 카운트로 합산. 대악마 사망 시 자동 해제(영속 X — 카운트가 일관 유지된다).
   const realmActive = isSatanicRealmActive(players);
+  // per-target 취급(canon "이 -1 효과로 *그 대상* 투표가치가 0이 되면 그 대상의 취급이 악마"):
+  // 전역(전원 0)이 아니어도, 대악마 생존 중엔 *개별* 천사의 행사 투표가치가 0 이하면 그 한 명만
+  // 악마 카운트로 합산한다. 전역 경로의 strict superset — realmActive 면 전원이 이 조건도 만족.
+  const daeakmaAliveForBrand = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
 
   for (const player of Object.values(players)) {
     // 빙의(말렌): 그 라운드 악마팀으로 카운트.
     const possessed = (player.counters?.possessed ?? 0) > 0;
-    // 사탄의 마 전역 취급: 영역 활성 + 천사 → demon 으로 transient flip.
-    const satanicTreated = realmActive && player.actualFaction === "angel";
+    // 사탄의 마 취급: 영역 활성(전원 0) 또는 대악마 생존 중 개별 천사 vote 0 이하 → demon 으로 transient flip.
+    const ownVoteSuppressed = daeakmaAliveForBrand &&
+      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0)) <= 0;
+    const satanicTreated = (realmActive || ownVoteSuppressed) && player.actualFaction === "angel";
     const faction = possessed || satanicTreated ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
       faction === "demon" || faction === "helper"
@@ -855,10 +887,18 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     countTeams(players);
 
   // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
-  // 파스아 생존 + *생존* 교세가 인원 비례 임계(pasuaWinThreshold) 이상이면 중립 승리.
+  // 파스아 생존 + *생존* 파스아 팀(교주 본인 + 전향자)이 임계(pasuaWinThreshold=원문 4명) 이상이면
+  // 중립 승리. 원문 "파스아 팀이 4명 이상" → 팀 크기 = pasuaFlock(생존 전향자) + 1(교주 본인).
   const totalPlayers = Object.keys(players).length;
   let winner: "angels" | "demons" | "neutral" | null = null;
-  if (pasuaAlive && pasuaFlock >= pasuaWinThreshold(totalPlayers)) {
+  // 로잔느 백일몽(canon): 생존 + 아침 7번 도달 → 즉시 단독 승리. 파스아 우선승과 동급으로
+  // 진영 판정보다 먼저 본다(독립 솔로). dreamMorning 은 resolveNightActions 가 매 아침 누적.
+  const rosanneWinner = Object.values(players).find(
+    (p) => p.currentRole === "rosanne" && p.alive && (p.counters?.dreamMorning ?? 0) >= 7,
+  );
+  if (rosanneWinner) {
+    winner = "neutral";
+  } else if (pasuaAlive && (pasuaFlock + 1) >= pasuaWinThreshold(totalPlayers)) {
     winner = "neutral";
   } else if (aliveDemonKillers === 0) {
     // 악마 본체(처치자)가 전멸하면 즉시 악마 진영 패배 — 조력자(가인·루나·로건·엘런)나
@@ -1027,6 +1067,11 @@ function applyEffect(
         break;
       }
       target.markedForDeath = true;
+      // 부활 불가 처치(effect.annihilate — 로건 파멸 2중첩 소멸): counters.annihilated 로 소생 차단.
+      if (effect.annihilate) {
+        target.counters.annihilated = 1;
+        events.push({ type: "annihilated", payload: { user_id: target.userId } });
+      }
       // 달이 차오른다 cascade(canon "악마가 달빛 부여 대상 지목 시 달빛 부여 모두에게 같은 효과"):
       // moonriseRule 활성 + 시전자 actualFaction='demon' + 대상이 moonlit 태그 보유 → 그 밤 한정
       // 으로 모든 살아있는 moonlit 대상에 같은 처치(markedForDeath) cascade. 같은 효과(immune
@@ -1124,6 +1169,16 @@ function applyEffect(
       // tally(처형/판결)에서 voteValueMod 로 합산. 라운드 리셋 X(누적).
       target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) + (effect.amount ?? 0);
       events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
+      break;
+    case "VoteCrush":
+      // 증오(로잔느): 대상 행사 투표가치 -1. 기본 1 기준으로 0 이하가 되면 즉시 처형(canon
+      // "투표가치가 0이 되면 즉시 처형"). v1 근사 — 명예 등 다른 보정 무시, 1+voteValueMod 기준.
+      target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) - 1;
+      events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: -1 } });
+      if (1 + (target.counters.voteValueMod ?? 0) <= 0) {
+        target.markedForDeath = true;
+        events.push({ type: "hatred_execution", payload: { user_id: target.userId } });
+      }
       break;
     case "ChangeFaction":
       // 포교(파스아): 천사 + 조력자(가인)만 전향 가능. 악마(currentRole 'demon')·이미

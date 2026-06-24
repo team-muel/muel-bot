@@ -11,7 +11,7 @@ import {
 const def = (id: string) => CORE_ROLES.find((r) => r.id === id);
 
 // --- 1. 풀 구성 ---
-assert.deepEqual(DEMON_KILLER_ROLES, ["demon", "phantom", "malen", "besto"], "악마 풀 4");
+assert.deepEqual(DEMON_KILLER_ROLES, ["demon", "phantom", "malen"], "악마 풀 3");
 assert.deepEqual(HELPER_ROLES, ["gain", "luna", "logen", "ellen"], "조력자 풀 4");
 assert.equal(ANGEL_ROLES.length, 10, "천사 풀 10 (12인까지 커버)");
 assert.ok(!ANGEL_ROLES.includes("citizen"), "시민(무직)은 풀에 없다 — 폐지됨");
@@ -24,7 +24,7 @@ for (const id of [...DEMON_KILLER_ROLES, ...HELPER_ROLES, ...ANGEL_ROLES]) {
 // --- 2. 진영/능력 형상 ---
 for (const id of DEMON_KILLER_ROLES) {
   assert.equal(def(id)!.faction, "demon", `${id} faction demon`);
-  assert.ok(def(id)!.actions.night?.some((a) => a.id === "demon_kill" || a.id === "phantom_nightmare" || a.id === "malen_release" || a.id === "besto_hidden"), `${id} 처치 능력(처치/악몽/혼령 방출/히든)`);
+  assert.ok(def(id)!.actions.night?.some((a) => a.id === "demon_kill" || a.id === "phantom_nightmare" || a.id === "malen_release"), `${id} 처치 능력(처치/악몽/혼령 방출)`);
   assert.ok(isDemonKillerRole(id), `${id} 처치자 판정`);
 }
 for (const id of HELPER_ROLES) {
@@ -52,6 +52,11 @@ assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지
 assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 1/, "우노 명예 카운트 주입");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
 assert.ok(!/role === "rainer"/.test(matchStart), "라이너 배정 자동 카운트 주입 폐지(소환으로 획득)");
+// 로잔느(독립 중립 솔로): 파스아와 상호배타로 스폰 + 중립 카드로 추가. 처치 풀엔 없다.
+assert.match(matchStart, /spawnRosanne[\s\S]*?role: "rosanne", faction: "neutral"/, "로잔느 중립 솔로 스폰");
+assert.match(matchStart, /const spawnPasua = spawnNeutralSolo && !spawnRosanne/, "파스아↔로잔느 상호배타");
+assert.ok(!DEMON_KILLER_ROLES.includes("rosanne" as never), "로잔느는 처치 풀에 없다");
+assert.ok(!def("rosanne") || def("rosanne")!.faction === "neutral", "로잔느 엔진 진영 neutral");
 
 // 변종 선택 제출 fn + role_assign 마감 폴백 계약
 const selectFn = readFileSync("supabase/functions/match-select-role/index.ts", "utf8");
@@ -65,5 +70,10 @@ const migration = readFileSync("supabase/migrations/20260610130000_gomdori_base_
 for (const id of [...DEMON_KILLER_ROLES, ...HELPER_ROLES, ...ANGEL_ROLES]) {
   assert.match(migration, new RegExp(`'${id}'`), `migration allows ${id}`);
 }
+// 로잔느 배정 가능화 마이그레이션(role CHECK 에 'rosanne' 추가, 'besto' 는 히스토리 보존 유지).
+const rosanneRoleCheck = readFileSync("supabase/migrations/20260625130000_gomdori_rosanne_role_check.sql", "utf8");
+assert.match(rosanneRoleCheck, /match_players_role_check/, "role CHECK 재정의");
+assert.match(rosanneRoleCheck, /'rosanne'/, "role CHECK 가 rosanne 허용");
+assert.match(rosanneRoleCheck, /'besto'/, "role CHECK 가 besto 유지(히스토리 안전)");
 
 console.log("Gomdori 기본 로스터 checks passed");

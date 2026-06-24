@@ -176,14 +176,14 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "demon", name: "대악마", faction: "demon", title: "만악의 근원", slot: "악마-1",
     summary: "사탄·메피스토 모티프. 악마 진영의 1번 슬롯. 낙인으로 직업을 재배정한다.",
     abilities: [
-      { kind: "패시브", name: "사탄의 마", text: "처치 성공 시 자신을 제외한 전원의 투표가치가 -1 내려갑니다(악마 투표 독점 — 마을은 표로 악마를 처형할 수 없습니다). 생존 천사팀 전체의 투표가치가 0 이하로 떨어지면 모든 조사·취급 효과가 '악마' 로 판정되어 카운트와 승리 판정에도 자동 반영됩니다(살아있는 대악마가 영역을 유지하는 동안).", status: "live" },
+      { kind: "패시브", name: "사탄의 마", text: "대악마가 능력을 성공 발동시키면(처치·낙인·압도적 존재감) 자신을 제외한 전원의 투표가치가 -1 내려갑니다(악마 투표 독점 — 마을은 표로 악마를 처형할 수 없습니다). 생존 천사팀 전체의 투표가치가 0 이하로 떨어지면 모든 조사·취급 효과가 '악마' 로 판정되어 카운트와 승리 판정에도 자동 반영됩니다(살아있는 대악마가 영역을 유지하는 동안).", status: "live" },
       { kind: "특수 패시브", name: "메피스토의 낙인", text: "투표 대상에게 낙인을 통지하고, 대악마가 직업 삭제와 새 천사 직업 배정을 일으킵니다.", actionType: "daeakma_brand", status: "live" },
       { kind: "능력", name: "만악의 근원 / 감시", text: "대상을 탈락시키고, 낙인 적용자가 있으면 감시가 추가됩니다.", actionType: "demon_kill", status: "partial" },
       { kind: "능력2", name: "압도적인 존재감", text: "자신을 제외한 전원을 압도해 그 밤 능력을 봉인합니다. 1회성입니다.", actionType: "daeakma_dominion", status: "live" },
       { kind: "능력2", name: "역추리 (삶이 있는 곳으로)", text: "하브레터스로 의심되는 대상을 지목합니다. 적중하면 그 밤 치료 효과를 무시하고 다음 처치로 하브레터스를 탈락시킵니다.", actionType: "demon_deduce", status: "live" },
     ],
-    v1: "구현됨. demon_kill(처치 + 사탄의 마: 자신 제외 전원 투표가치 -1, 악마 투표 독점) + daeakma_brand(낙인: Rebrand) + daeakma_dominion(압도적 존재감 1회: 전원 봉인, Silence AllOthers). 가인 있으면 보호막 1. 사탄의 마 전역 판정(생존 천사팀 전원 투표가치 0 → 모든 조사 '악마', match-action-core) + 전역 취급 v2(engine.applySatanicRealm: 천사팀 전원 vote 0 ≤ 시 treatedAsFaction='demon' 플립, satanic_realm_treated 이벤트, phase-advance 가 영속화). countTeams 가 treatedAsFaction 우선이라 승리 판정·기타 취급 효과에 자동 반영.",
-    v2: "메피스토 낙인, 사탄의 마(투표 -1 + 전원 0 시 전역 악마 취급·승리 판정 자동 반영), 압도적 존재감 모두 핵심 라이브.",
+    v1: "구현됨. demon_kill(처치 + 사탄의 마 -1) + daeakma_brand(낙인: Rebrand + 사탄의 마 -1) + daeakma_dominion(압도적 존재감 1회: 전원 봉인 Silence AllOthers + 사탄의 마 -1). 원문 사탄의 마 트리거='능력 성공 발동'이라 처치·낙인·존재감 각각에 ModifyVoteValue AllOthers -1 동반(능력당 1회). 가인 있으면 보호막 1. 사탄의 마 전역 판정(생존 천사팀 전원 투표가치 0 → 모든 조사 '악마', match-action-core) + 전역 취급 v2(engine.applySatanicRealm: 천사팀 전원 vote 0 ≤ 시 treatedAsFaction='demon' 플립). countTeams 가 treatedAsFaction 우선이라 승리 판정·기타 취급 효과에 자동 반영.",
+    v2: "메피스토 낙인, 사탄의 마(능력 성공 발동마다 전원 -1 + 천사팀 전원 0 시 전역 악마 취급·승리 판정 자동 반영), 압도적 존재감 라이브. 원문 per-target 판정('이 효과로 한 대상이 0 되면 그 효과 무효 + 그 대상만 악마 취급')은 전역 근사로 처리 — 정밀 per-target 화는 후속. 감시(다음 아침 2표 + 같은 대상 2표 시 무조건 반론)는 투표·반론(verdict) 시스템 재설계 필요 — 후속.",
     vault: "Universes/BoW/Characters/대악마.md",
   },
   {
@@ -214,17 +214,17 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     vault: "Universes/BoW/Characters/말렌.md",
   },
   {
-    id: "besto", name: "베스토", faction: "demon", title: "히든 포지션", slot: "악마-14",
-    summary: "밤마다 모습을 바꾸는 변신 악마. 언급으로 탈락시킨다.",
+    id: "rosanne", name: "로잔느", faction: "neutral", title: "세헤라자드", slot: "중립-로잔느",
+    summary: "꿈을 길게 끄는 독립 솔로. 아침을 일곱 번 맞으면 홀로 승리한다.",
     abilities: [
-      { kind: "패시브", name: "두 번째 자아", text: "밤마다 솔과 하베스토 판정을 바꿉니다. 조사, 투표가치, 의심 지목 조건을 흔듭니다.", actionType: "besto_shift", status: "live" },
-      { kind: "특수 패시브", name: "배후", text: "조력자와 영혼을 교체해 베스토·조력자 대상 능력 효과가 반대로 통지됩니다.", status: "planned" },
-      { kind: "능력", name: "히든 포지션", text: "미발동 시 강화되고, 다음 아침 토론 중 효과발동자가 언급한 대상을 탈락시킵니다.", actionType: "besto_hidden", status: "partial" },
-      { kind: "능력2", name: "누명씌우기", text: "대상이 히든 포지션 효과를 받게 합니다. 이 효과로 탈락이 발생하면 강화됩니다.", status: "planned" },
+      { kind: "패시브", name: "백일몽", text: "아침을 일곱 번 맞이하면 즉시 단독 승리합니다. 대신 토론은 1분으로 짧아지고 무투에 참여할 수 없습니다.", status: "live" },
+      { kind: "특수 패시브", name: "증오", text: "로잔느가 지목한 대상의 투표가치를 1 낮추고, 투표가치가 0이 되면 그 대상을 즉시 처형합니다.", actionType: "rosanne_hatred", status: "live" },
+      { kind: "능력", name: "만들어가는 미래", text: "원한을 새깁니다(르상티망). 대상에 원한 표식을 남기고 로잔느의 아침을 한 번 더 끌어옵니다('만들어가는 미래' 충전 1 소비).", actionType: "rosanne_resentment", status: "live" },
+      { kind: "능력2", name: "건너뛰기", text: "이번 밤의 모든 효과와 통지를 다음 밤으로 미룹니다. 1회성입니다.", status: "planned" },
     ],
-    v1: "구현됨. besto_hidden(히든 포지션: 처치) + besto_shift(두 번째 자아 = 밤마다 솔/하베스토 판정 전환, Disguise) — 핵심 시그니처 완비. 히든 강화 스택·멘션킬(아침 토론 언급 기반 = 텍스트 파싱)·배후(효과 반전)는 후속.",
-    v2: "두 번째 자아(밤마다 솔/하베스토 판정 전환) + 히든 포지션(언급 기반 탈락 + 강화 스택) + 배후(조력자 효과 반전). 새 이펙트: AltSelf/MentionKill.",
-    vault: "Universes/BoW/Characters/베스토.md",
+    v1: "구현됨(독립 솔로, faction neutral — besto 교체). 백일몽(아침 7회 도달 시 checkWinCondition 단독 승리, dreamMorning 카운터) + rosanne_hatred(증오 = 대상 투표가치 -1 = VoteCrush, 0 도달 즉시 처형) + rosanne_resentment(만들어가는 미래 르상티망 약식 = futureCharge 1 소비 + 대상 '원한'(wonhan) 표식 + 자기 dreamMorning +1 = 아침 한 번 더). 라포르(2인 운명 공유)·외현기억(탈락자 부활)·조망(전역 시전비용)·받는가치 다운사이드·토론 1분·무투 불가는 후속.",
+    v2: "백일몽 단독승·증오 처형·만들어가는 미래(르상티망)까지 핵심 라이브. 라포르(LinkFate)·외현기억(ReviveDaily)·건너뛰기(SkipAll)·토론 1분·무투 불가는 v2 후속.",
+    vault: "Universes/BoW/Characters/로잔느.md",
   },
 
   // ===== 조력자 =====
@@ -232,12 +232,12 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "gain", name: "가인", faction: "helper", title: "진실을 가리는 암흑", slot: "조력자-1",
     summary: "악마를 살해·처형 1회로부터 보호하는 조력자. 조사 시 천사로 보인다.",
     abilities: [
-      { kind: "패시브", name: "진실을 가리는 암흑", text: "악마와 접선·대화하고, 악마가 처형 또는 탈락할 때 1회 없던 일로 만듭니다. 두 번째 밤 종료 시 보호막이 자동 만료됩니다(가인 생존 여부 무관).", status: "live" },
-      { kind: "능력", name: "약간의 위선", text: "매일 밤 한 명의 정체(진영)를 알아내 악마팀에 정찰 정보를 주고, 대상의 다음 능력을 한 밤 연기합니다. 위선 대상이 밤에 탈락하면 다음 위선은 처치로 전환됩니다.", actionType: "gain_hypocrisy", status: "live" },
+      { kind: "패시브", name: "진실을 가리는 암흑", text: "악마와 접선·대화하고, 악마가 처형 또는 탈락할 때 1회 없던 일로 만듭니다. 세 번째 밤 종료 시 보호막이 자동 만료됩니다(가인 생존 여부 무관).", status: "live" },
+      { kind: "능력", name: "약간의 위선", text: "대상의 직업(진영)을 통지받고 그 밤 능력의 발동을 취소시킵니다. 악마가 그 대상을 투표했었다면 다음 발동하는 약간의 위선이 능력을 봉인시키는 효과로 강화됩니다.", actionType: "gain_hypocrisy", status: "live" },
       { kind: "능력2", name: "급습", text: "대상의 통지를 한 라운드 차단하고 가인의 급습을 1 충전합니다. 다음 아침까지 악마와 대화하는 채팅 회로는 후속이며 현재는 이벤트 신호만 발사됩니다. 1회성입니다.", actionType: "gain_raid", status: "live" },
     ],
-    v1: "구현됨. 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효, shieldFromGain 마커 동시 세팅) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(대상 진영 통지, 효과 다음 밤 연기, 위선 대상이 밤에 탈락하면 다음 위선이 처치로 전환) + gain_raid(급습 v2, 1회: AddTag noticeSuppressed[그 밤 한정] + onFireSetCounter raidCharge=1 + raid_initiated 이벤트). 두 번째 밤 종료 시(dayCount===2) shieldFromGain 보유 demon 의 보호막 자동 만료(canon '두 번째 밤 종료 시 패시브 삭제') — 가인 생존 여부와 무관.",
-    v2: "약간의 위선의 정찰·연기·처치 전환, 보호막 1회 + 두 번째 밤 만료, 급습 통지 삭제+raidCharge 충전까지 핵심 라이브. 다음 아침까지 악마와 대화(채팅 회로)는 Discord 인프라 후속.",
+    v1: "구현됨(원문 충실). 배정 시 악마에 보호막 1(밤 살해·처형 1회 무효, shieldFromGain 마커 동시 세팅) + 조사 시 천사로 보임(처치자 아님) + gain_hypocrisy(대상 진영 통지 + 그 밤 능력 취소[Silence, priority 1 선처리], 악마가 그 대상을 투표했었다면[alive demon 의 lastVoteTarget] 다음 위선이 봉인 강화로 전환) + gain_raid(급습 v2, 1회: AddTag noticeSuppressed[그 밤 한정] + onFireSetCounter raidCharge=1 + raid_initiated 이벤트). 세 번째 밤 종료 시(dayCount===3) shieldFromGain 보유 demon 의 보호막 자동 만료(원문 '세 번째 밤 종료 시 패시브 삭제') — 가인 생존 여부와 무관.",
+    v2: "약간의 위선의 정찰·그 밤 능력 취소·봉인 강화 전환, 보호막 1회 + 세 번째 밤 만료, 급습 통지 삭제+raidCharge 충전까지 핵심 라이브. 다음 아침까지 악마와 대화(채팅 회로)는 Discord 인프라 후속.",
     vault: "Universes/BoW/Characters/가인.md",
   },
   {
@@ -260,9 +260,10 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "부서진 펜던트", text: "시작 시 악마와 접선합니다. 악마팀에 지워지지 않는 펜던트 효과를 남기고, 펜던트가 3개 이상 쌓이면 대상 수 보너스를 얻습니다.", status: "live" },
       { kind: "능력", name: "네 안에 없는 것", text: "대상의 가장 가까운 밤 능력 효과가 소멸한다는 통지와 펜던트를 적용합니다.", actionType: "logen_nullify", status: "live" },
+      { kind: "능력2", name: "전부 괜찮을 거야", text: "펜던트(또는 부서진 펜던트)가 적용된 자는 그 밤 무적이 되고, 적용되지 않은 자는 파멸 1중첩을 받습니다. 파멸 2중첩이 되면 소멸합니다. 1회성입니다.", actionType: "logen_allwell", status: "live" },
     ],
-    v1: "구현됨. logen_nullify — 네 안에 없는 것(대상의 *다음* 능력 효과 소멸, 지속·발동 시 소비). 부서진 펜던트는 악마 처치자에게 영구 태그를 부여하고 3명 이상이면 로건 지정 대상 +2(pendantTargetBonus).",
-    v2: "네 안에 없는 것과 부서진 펜던트 지정 대상 보너스까지 핵심 라이브.",
+    v1: "구현됨. logen_nullify — 네 안에 없는 것(대상의 *다음* 능력 효과 소멸, 지속·발동 시 소비). 부서진 펜던트는 악마 처치자에게 영구 태그를 부여하고 3명 이상이면 로건 지정 대상 +2(pendantTargetBonus). logen_allwell — 전부 괜찮을 거야(1회, AllOthers): 펜던트 적용자 무적(Protect) / 비적용자 파멸 1중첩(GrantCount doom) + 파멸 2중첩 시 소멸(Kill annihilate=부활 불가).",
+    v2: "네 안에 없는 것·부서진 펜던트 지정 대상 보너스·전부 괜찮을 거야(무적/파멸/소멸)까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/로건.md",
   },
   {
@@ -270,24 +271,25 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "투표가치를 조작하는 박해자. 자아 해체 메커닉.",
     abilities: [
       { kind: "패시브", name: "박해자 / 해체된 퍼즐", text: "홀수날에만, 엘런이 직전에 투표한 대상의 받는-투표가치를 올려 처형대로 밀어냅니다. 같은 대상을 다시 박해하면 +3/+6/+9로 누진됩니다. 해체된 퍼즐 후 자아 회복 시 자해 박해로 영구 전환됩니다.", actionType: "ellen_persecute", status: "live" },
-      { kind: "능력", name: "비치지 않는 자아 (해체된 퍼즐)", text: "자아를 망가뜨려 2밤 동안 투표·의심·능력 가치를 모두 상실합니다. 그 다음 밤 자동 회복(selfRecovered)되며, 회복 후 박해는 자해 누진으로 영구 전환됩니다. 1회 제한입니다.", actionType: "ellen_shatter", status: "live" },
+      { kind: "능력", name: "비치지 않는 자아 (해체된 퍼즐)", text: "자아를 망가뜨려 2밤 동안 투표·의심·능력 가치를 모두 상실합니다. 그 다음 밤 자동 회복(selfRecovered)되며, 회복 후 박해는 자해 누진으로 영구 전환됩니다. 1회 제한입니다.", actionType: "ellen_shatter", status: "partial" },
+      { kind: "능력2", name: "혼탁해진 정의", text: "대상의 다음 밤 능력 발동을 봉인합니다. 이미 박해에 찍힌 대상이라면 그 대상을 탈락시킵니다. 2회 제한입니다.", actionType: "ellen_chaos", status: "live" },
     ],
-    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). persecuteBias 가 지속 누적되어 같은 대상 재박해 시 +3/+6/+9로 tally에 반영된다. ellen_shatter(v2, 1회): 자아 해체 — brokenSelf=1 세팅. engine 이 2밤 동안 brokenSelf 유지(brokenAge 0→1) 후 selfRecovered=1 영구 전환. broken 상태 = 투표·의심 가치 0(tally skip), 능력 발동 차단(action_blocked_broken_self). selfRecovered 상태 = ellen_persecute 변경효과 — VoteTarget 분기 skipIfSourceCounter, self 분기 onlyIfSourceCounter 로 자해 박해(+3 누진 근사 — canon '얻은 투표가치만큼 자신 투표' 의 동적 매핑은 후속).",
-    v2: "박해 누진, 해체된 퍼즐 2밤 가치 상실 + 자동 회복, 회복 후 자해 박해 영구 전환까지 핵심 라이브. 비치지 않는 자아 다단계와 동적 자해 amount(받은 voteValueMod 비례)는 후속.",
+    v1: "구현됨. ellen_persecute — 박해(NONE 타깃, substrate VoteTarget: 직전 투표 대상 받는-투표가치 +3, 홀수날 한정 oddDayOnly 게이트). persecuteBias 가 지속 누적되어 같은 대상 재박해 시 +3/+6/+9로 tally에 반영된다. ellen_shatter(1회): 자아 해체 — brokenSelf=1 세팅, 2밤 가치 상실 후 selfRecovered=1 영구 전환(회복 후 자해 박해). ellen_chaos(혼탁해진 정의, 2회): 대상 다음 밤 능력 봉인(DelaySilence→silencePending) + 박해 표적(persecuteBias≥1)이면 탈락(Kill).",
+    v2: "박해 누진, 해체된 퍼즐 2밤 가치 상실 + 자동 회복, 혼탁해진 정의(다음 밤 봉인 + 박해 표적 탈락)까지 라이브. 원문 〈능력〉비치지 않는 자아의 *타깃화*(타인 자아 파괴 + 자아 이전 + 대상 투표 회복 + 재차 불가)와 혼탁해진 정의의 '다음날 투표·의심 0 강제'·'자아 잃은 중 영원히 못 찾음'은 자아-이전 시스템과 함께 후속(현재 ellen_shatter 는 self 근사라 partial).",
     vault: "Universes/BoW/Characters/엘런.md",
   },
 
   // ===== 중립 =====
   {
     id: "pasua", name: "파스아", faction: "neutral", title: "사이비 교주", slot: "중립(특수-4)",
-    summary: "포교로 천사·조력자를 교세로 흡수. 누적 3명 전향 시 단독 즉시 승리.",
+    summary: "포교로 천사·조력자를 교세로 흡수. 파스아 팀 4명 이상이면 단독 즉시 승리.",
     abilities: [
-      { kind: "패시브", name: "구원자", text: "시작 전 파스아 존재를 전원에게 통지합니다. 생존 교세가 max(3, ceil(인원/3)) 이상이면 즉시 승리합니다.", status: "live" },
-      { kind: "능력", name: "포교", text: "대상을 포교합니다. 악마와 중립은 포교할 수 없고, 전향자는 파스아 승리를 따릅니다.", actionType: "pasua_convert", status: "live" },
+      { kind: "패시브", name: "구원자", text: "시작 전 파스아 존재를 전원에게 통지합니다. 파스아 팀(교주 본인 + 전향자)이 4명 이상이면 즉시 승리합니다.", status: "live" },
+      { kind: "능력", name: "포교", text: "대상을 포교합니다. 악마와 중립은 포교할 수 없고, 전향자는 파스아 승리를 따릅니다. 2회 제한이며, 포교 대상이 사망하면 1회 충전됩니다.", actionType: "pasua_convert", status: "live" },
       { kind: "능력2", name: "신앙", text: "대상을 탈락시킵니다. 악마는 탈락하지 않습니다.", actionType: "pasua_faith", status: "live" },
     ],
-    v1: "구현됨. pasua_convert → 천사·가인 전향(currentRole=converted, 중립). 누적 3명+파스아 생존 시 checkWinCondition 우선 중립 승리. pasua_faith(신앙) → 대상 탈락(Kill, 악마 면역 immuneFactions). 연속 포교 제한(convertCooldown).",
-    v2: "승리 임계는 생존 교세 기준 max(3, ceil(인원/3))로 라이브 튜닝 완료. 신앙·연속 포교 제한도 v2 반영 완료.",
+    v1: "구현됨(원문 충실). pasua_convert → 천사·가인 전향(currentRole=converted, 중립). 파스아 팀(생존 전향자 + 교주) 4명 이상 + 파스아 생존 시 checkWinCondition 우선 중립 승리(원문 '파스아 팀 4명 이상'). pasua_faith(신앙) → 대상 탈락(Kill, 악마 면역 immuneFactions). 포교 2회 제한(maxUses 2) + 전향자 사망 시 1회 충전(used_pasua_convert death hook).",
+    v2: "승리 임계는 원문 그대로 팀 4명 고정. 포교 2회 제한 + 전향자 사망 충전, 신앙까지 v2 반영 완료. (과거 scale-alive 임계 튜닝은 원문 우선으로 폐기.)",
     vault: "Universes/BoW/Characters/파스아.md",
   },
 ];

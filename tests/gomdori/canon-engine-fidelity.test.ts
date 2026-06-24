@@ -35,7 +35,7 @@ const KNOWN_PASSIVE_SLOTS = new Set<string>([
   "phantom:phantom_silentnight", // 침묵의 밤 (self 연장)
   "phantom:phantom_seal",      // 어둠이 내린 도시 (대상 봉인)
   "malen:malen_possess",       // 악령 마야 (대상 빙의)
-  "besto:besto_shift",         // 두 번째 자아 (self 변신)
+  "rosanne:rosanne_hatred",    // 증오 (특수 패시브 — 지목 대상 투표가치 깎기)
   "ellen:ellen_persecute",     // 박해자 (self/자동 누진)
 ]);
 

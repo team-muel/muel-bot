@@ -82,7 +82,7 @@ export interface Effect {
   //   효과 면역 근사) + deduce_hit. 빗나가면 deduce_miss. 악마측 역추리(하브 탈락)는 후속(양방향 서브게임).
   // SummonCorpse(말렌 신출귀몰): 혼령 표식(haunted)을 수거해 다음 밤 corpsePending → deadCountBonus
   //   로 시체를 소환한다. 시체는 현재 악마팀 사망 무관 카운트 보너스로 표현된다.
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse";
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush";
   // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
   demonAmount?: number;
   // 태그 게이트(미즐렛 고급 와인): 대상에게 tag 가 있으면(onlyIfTargetTag) / 없으면(skipIfTargetTag 는
@@ -100,6 +100,9 @@ export interface Effect {
   // 시점에 actualFaction 이 목록에 들면 markedForDeath 를 세우지 않는다(클린 — 처치
   // 프리미티브 재사용, 직업 하드코딩 금지).
   immuneFactions?: Faction[];
+  // Kill 전용: 부활 불가 처치(로건 '전부 괜찮을 거야' 파멸 2중첩 소멸). markedForDeath 와 함께
+  // counters.annihilated=1 을 세워 미즐렛/헬렌/소생 계열의 부활 게이트를 막는다(canon '소멸').
+  annihilate?: boolean;
   // 진영 게이트(아서 단죄 결백/타락 판정). 대상 actualFaction 이 이 목록에 없으면 이 효과
   // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
   // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.

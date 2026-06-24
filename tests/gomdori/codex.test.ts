@@ -7,13 +7,13 @@ import {
 } from "../../src/gomdoriCodex.ts";
 
 // 데이터 모듈은 엔진과 분리 — 순수 데이터(엔진 import 없음). 정합성만 검증.
-assert.equal(GOMDORI_CODEX.length, 19, "19 직업(천사10+악마4+조력자4+중립1)");
+assert.equal(GOMDORI_CODEX.length, 19, "19 직업(천사10+악마3+조력자4+중립2)");
 
 // 진영별 카운트
 assert.equal(codexByFaction("angel").length, 10, "천사 10");
-assert.equal(codexByFaction("demon").length, 4, "악마 4");
+assert.equal(codexByFaction("demon").length, 3, "악마 3(besto→로잔느 중립 이동)");
 assert.equal(codexByFaction("helper").length, 4, "조력자 4");
-assert.equal(codexByFaction("neutral").length, 1, "중립 1(파스아)");
+assert.equal(codexByFaction("neutral").length, 2, "중립 2(파스아·로잔느)");
 
 // id 유일
 const ids = GOMDORI_CODEX.map((e) => e.id);
@@ -31,7 +31,7 @@ for (const e of GOMDORI_CODEX) {
 }
 
 // 로스터 핵심 id 가 도감에 존재(엔진 풀과 사람-검증 동기화)
-for (const id of ["demon", "phantom", "malen", "besto", "gain", "luna", "logen", "ellen",
+for (const id of ["demon", "phantom", "malen", "rosanne", "gain", "luna", "logen", "ellen",
   "romaz", "rainer", "dordan", "habreterus", "mizlet", "helen", "uno", "arthur", "seika", "luru", "pasua"]) {
   assert.ok(codexById(id), `도감에 ${id} 존재`);
 }
@@ -47,11 +47,11 @@ const implementedCore: Array<[string, RegExp[]]> = [
   ["luru", [/luru_score/, /자기 투표가치 \+1/]],
   ["phantom", [/phantom_reap/, /phantom_silentnight/, /2\+sealCap/]],
   ["malen", [/다음 밤 마비 예약/, /malen_elusive/, /corpsePending/]],
-  ["gain", [/효과 다음 밤 연기/, /다음 위선이 처치로 전환/]],
+  ["gain", [/그 밤 능력 취소/, /다음 위선이 봉인 강화로 전환/]],
   ["luna", [/moonGauge 10/, /악마 \+3/]],
   ["logen", [/pendantTargetBonus/]],
   ["ellen", [/persecuteBias/, /\+3\/\+6\/\+9/]],
-  ["pasua", [/max\(3, ceil\(인원\/3\)\)/]],
+  ["pasua", [/팀 4명/, /포교 2회 제한/]],
 ];
 
 for (const [id, patterns] of implementedCore) {

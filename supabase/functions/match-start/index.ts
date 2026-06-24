@@ -22,6 +22,10 @@ type RoleCard = { role: string; faction: "angel" | "demon" | "neutral"; pending?
 // W6 중립(파스아) 등장 최소 인원. 중립은 천사 머릿수를 1 줄이므로 큰 게임에서만.
 const PASUA_MIN_PLAYERS = 8;
 
+// 독립 중립 솔로가 등장하기로 결정됐을 때, 파스아 대신 로잔느(백일몽 단독승)가 뽑힐 확률.
+// 두 독립 솔로는 상호배타 — 한 게임에 둘 다 등장하지 않는다(중립 슬롯은 1개). 튜닝 가능.
+const ROSANNE_PICK_CHANCE = 0.5;
+
 function shuffle<T>(arr: T[]): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i--) {
@@ -49,17 +53,22 @@ function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): 
   }
 
   const neutralEligible = playerCount >= PASUA_MIN_PLAYERS;
-  const spawnPasua = neutralEligible &&
+  // 독립 중립 솔로 등장 여부(파스아/로잔느 공용 확률 게이트). 등장하기로 결정되면
+  // ROSANNE_PICK_CHANCE 로 둘 중 하나를 뽑는다 — 한 게임에 둘 다 나오지 않게(상호배타).
+  const spawnNeutralSolo = neutralEligible &&
     (neutralMode === "on" ||
       (neutralMode === "auto" && Math.random() < NEUTRAL_SPAWN_CHANCE));
+  const spawnRosanne = spawnNeutralSolo && Math.random() < ROSANNE_PICK_CHANCE;
+  const spawnPasua = spawnNeutralSolo && !spawnRosanne;
 
   const roles: RoleCard[] = [];
   // 악마팀: 악마 1 + 조력자 1 — 변종은 role_assign 단계에서 본인이 선택(pending).
   // placeholder role 은 각 풀의 기본(대악마/가인). 미선택 시 phase-advance 가 풀에서 폴백.
   roles.push({ role: "demon", faction: "demon", pending: "demon" });
   roles.push({ role: "gain", faction: "demon", pending: "helper" });
-  // 중립(파스아)
+  // 중립 독립 솔로(파스아 또는 로잔느 — 상호배타). 처치 풀(DEMON_KILLER_ROLES)에 들어가지 않는다.
   if (spawnPasua) roles.push({ role: "pasua", faction: "neutral" });
+  if (spawnRosanne) roles.push({ role: "rosanne", faction: "neutral" });
   // 천사: 남은 슬롯을 천사 풀에서 distinct 추첨. ANGEL_ROLES(10) 은 12인(악마+조력자 제외 10)까지 커버.
   const angelSlots = playerCount - roles.length;
   for (const role of shuffle(ANGEL_ROLES).slice(0, angelSlots)) {

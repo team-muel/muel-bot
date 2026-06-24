@@ -547,12 +547,13 @@ Deno.serve((req: Request) => {
             targetUserId: action.targetUserId,
             targetUserIds: action.targetUserIds,
             actionType: action.actionType || "",
-            // 봉인(세이카/팬텀)·변신(베스토 self)은 가장 먼저(1) — 대상 능력보다 앞서 처리.
-            // 부활/치료=3, 처치=4, 조사·색출·포교·낙인·일식=5.
+            // 봉인(세이카/팬텀)·무력화(로건)·빙의(말렌)는 가장 먼저(1) — 대상 능력보다 앞서 처리.
+            // 가인 위선(원문: 그 밤 능력 *취소* = Silence)도 priority 1 — 대상 능력 발동 전에 봉인.
+            // 부활/치료/무적(로건 전부 괜찮을 거야)=3, 처치=4, 조사·색출·포교·낙인·일식=5.
             priority:
-              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" || action.actionType === "besto_shift" || action.actionType === "daeakma_dominion" ? 1
-                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "besto_hidden" || action.actionType === "pasua_faith" || action.actionType === "arthur_judge" ? 4
-                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "mizlet_dessert" || action.actionType === "helen_revive" || action.actionType === "helen_sleep" || action.actionType === "arthur_emberblade" ? 3
+              action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" || action.actionType === "daeakma_dominion" || action.actionType === "gain_hypocrisy" ? 1
+                : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "pasua_faith" || action.actionType === "arthur_judge" ? 4
+                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "mizlet_dessert" || action.actionType === "helen_revive" || action.actionType === "helen_sleep" || action.actionType === "arthur_emberblade" || action.actionType === "logen_allwell" ? 3
                 : 5,
           }));
 
