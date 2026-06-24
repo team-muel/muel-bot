@@ -6,6 +6,7 @@ import {
 } from "discord.js";
 import { renderDiscordMessage } from "./rendering/discordRenderer.js";
 import {
+  type CodexAbility,
   type CodexEntry,
   type CodexFaction,
   FACTION_LABEL,
@@ -80,10 +81,19 @@ function factionListMessage(faction: CodexFaction) {
 
 function detailMessage(entry: CodexEntry) {
   const label = FACTION_LABEL[entry.faction];
-  const abilityFields = entry.abilities.map((a) => ({
-    name: `〈${a.kind}〉 ${a.name}`,
-    value: a.text.slice(0, 1024),
-  }));
+  // 패시브(상시·직접 사용 아님)와 능력(사용)을 위계로 나눠 표시 — 로컬 캐논 구조.
+  const isPassiveKind = (k: CodexAbility["kind"]): boolean => k === "패시브" || k === "특수 패시브";
+  const usableAbilities = entry.abilities.filter((a) => !isPassiveKind(a.kind));
+  const passiveAbilities = entry.abilities.filter((a) => isPassiveKind(a.kind));
+  const abilityFields: { name: string; value: string }[] = [];
+  if (usableAbilities.length > 0) {
+    abilityFields.push({ name: "【사용 능력 · 밤에 발동】", value: "직접 발동하는 능력입니다." });
+    for (const a of usableAbilities) abilityFields.push({ name: `〈${a.kind}〉 ${a.name}`, value: a.text.slice(0, 1024) });
+  }
+  if (passiveAbilities.length > 0) {
+    abilityFields.push({ name: "【패시브 · 상시】", value: "직접 사용하는 능력이 아니라 상시·조건으로 작동합니다." });
+    for (const a of passiveAbilities) abilityFields.push({ name: `〈${a.kind}〉 ${a.name}`, value: a.text.slice(0, 1024) });
+  }
 
   return renderDiscordMessage([
     {
