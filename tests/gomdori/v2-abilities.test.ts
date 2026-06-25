@@ -1306,6 +1306,43 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.equal(nDom.players.a.counters.voteValueMod, -1, "사탄의 마 — 압도적 존재감 성공 시에도 전원 -1");
 }
 
+// --- 대악마 감시(2표): 낙인 적용자(mephistoBrand) 존재 시 처치 발동하면 self voteCountBonus +1 ---
+{
+  // 낙인 적용자 없음 → 감시 미발동(voteCountBonus 0).
+  const sNoBrand = emptyState(
+    { demon: player("demon", "demon", "demon"), v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "demon", targetUserId: "v", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState: nNoBrand } = resolveNightActions(sNoBrand);
+  assert.equal(nNoBrand.players.demon.counters.voteCountBonus ?? 0, 0, "낙인 적용자 없음 — 감시 미발동");
+
+  // 낙인 적용자 존재(mephistoBrand 태그) → 처치 발동 시 대악마 voteCountBonus +1(다음 아침 2표).
+  const branded = { ...player("branded", "citizen", "angel"), tags: ["mephistoBrand"] };
+  const sBrand = emptyState(
+    { demon: player("demon", "demon", "demon"), branded, v: player("v", "citizen", "angel") },
+    [{ sourceUserId: "demon", targetUserId: "v", actionType: "demon_kill", priority: 4 }],
+  );
+  const { newState: nBrand } = resolveNightActions(sBrand);
+  assert.equal(nBrand.players.demon.counters.voteCountBonus, 1, "감시 — 낙인 적용자 존재 시 voteCountBonus +1");
+  // 다음 아침 처형 투표: voteCountBonus=1 → 대악마 표 2배(루루 무투와 동일 라이프사이클).
+  // 생존자 branded 를 지목(v 는 처치로 탈락). branded 는 사탄의 마 -1 을 받았으므로(AllOthers)
+  // 별도 player 로 깨끗한 voteValue 테스트 — 대악마 자신은 영향 없음(독점), 표=1*2=2.
+  const aliveT = player("at", "citizen", "angel");
+  const votePlayers = { ...nBrand.players, at: aliveT };
+  const vote = tallyEliminationVotes([{ actorUserId: "demon", targetUserId: "at" }], votePlayers);
+  assert.equal(vote.tallies["at"], 2, "감시 — 대악마 처형 투표 2표");
+}
+
+// --- 메피스토 낙인: 대상에 mephistoBrand 표식(감시 게이트의 전역 조건) ---
+{
+  const sBrand = emptyState(
+    { demon: player("demon", "demon", "demon"), t: player("t", "citizen", "angel") },
+    [{ sourceUserId: "demon", targetUserId: "t", actionType: "daeakma_brand", priority: 5 }],
+  );
+  const { newState } = resolveNightActions(sBrand);
+  assert.ok(newState.players.t.tags.includes("mephistoBrand"), "낙인 — 대상 mephistoBrand 표식");
+}
+
 // --- 우노 명예(투표가치 +10): 사탄의 마(-1)를 뚫고 우노의 표가 살아남는 천사 표 경로 ---
 {
   const uno = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } }; // 배정 시 명예 주입
@@ -1790,58 +1827,100 @@ const lunaV2Mig = readFileSync("supabase/migrations/20260618120000_gomdori_luna_
 assert.match(lunaV2Mig, /'luna_dawn'/, "마이그레이션 — 해가 저문다");
 assert.match(lunaV2Mig, /'luna_moonrise'/, "마이그레이션 — 달이 차오른다");
 
-// --- 엘런 해체된 퍼즐: shatter → 다음 밤 능력 차단 → 그 다음 밤 자동 회복(selfRecovered) ---
+// --- 엘런 비치지 않는 자아(타깃화): 대상 자아 망가짐 + everShattered + carrier 자아 이전 ---
 {
   const ellen: PlayerState = player("ellen", "ellen", "demon");
-  const a: PlayerState = player("a", "citizen", "angel");
-  // N1: shatter 발동 — brokenSelf=1, brokenAge=0.
+  const tgt: PlayerState = player("tgt", "citizen", "angel");
+  // carrier = 생존자(대상 제외) 중 행사 투표가치 최고 → cap 에게 baseVoteValue 5 부여.
+  const cap: PlayerState = { ...player("cap", "uno", "angel"), baseVoteValue: 5 };
+  // N1: 엘런이 tgt 의 자아를 망가뜨린다.
   const r1 = resolveNightActions(emptyState(
-    { ellen, a },
-    [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_shatter", priority: 5 }],
+    { ellen, tgt, cap },
+    [{ sourceUserId: "ellen", targetUserId: "tgt", actionType: "ellen_shatter", priority: 5 }],
   ));
-  assert.equal(r1.newState.players.ellen.counters.brokenSelf, 1, "shatter — brokenSelf 세팅");
-  assert.equal(r1.newState.players.ellen.counters.used_ellen_shatter, 1, "shatter — 1회 제한");
-  // N2: 다음 밤 — pre-loop 상태머신이 brokenAge 0→1, brokenSelf 유지. 능력 발동 시 차단.
+  assert.equal(r1.newState.players.tgt.counters.brokenSelf, 1, "비치지 않는 자아 — 대상 brokenSelf 세팅");
+  assert.ok(r1.newState.players.tgt.tags.includes("everShattered"), "대상 everShattered 표식(재차 불가)");
+  assert.ok(r1.newState.players.tgt.tags.includes("soulCarrier_cap"), "자아 이전 — 투표가치 최고 carrier(cap) 표식");
+  assert.equal(r1.newState.players.ellen.counters.brokenSelf ?? 0, 0, "엘런 자신은 자아 멀쩡(타깃화 — self 아님)");
+  assert.ok(r1.events.some((e: any) => e.type === "soul_shattered" && e.payload?.carrier === "cap"), "soul_shattered 이벤트");
+
+  // 망가진 대상은 그 라운드 투표·의심·능력 가치 상실.
+  const vote = tallyEliminationVotes([{ actorUserId: "tgt", targetUserId: "cap" }], r1.newState.players);
+  assert.equal(vote.skipped, 1, "broken 대상 — 투표 무효");
+  // N2: 대상이 능력을 쓰려 해도 차단(brokenSelf gate).
   const r2 = resolveNightActions({
     ...r1.newState,
-    actionStack: [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
+    players: { ...r1.newState.players, tgt: { ...r1.newState.players.tgt, currentRole: "logen", lastVoteTarget: "ellen" } },
+    actionStack: [{ sourceUserId: "tgt", targetUserId: "cap", actionType: "logen_nullify", priority: 5 }],
   });
-  assert.equal(r2.newState.players.ellen.counters.brokenSelf, 1, "N2 — 여전히 broken");
-  assert.equal(r2.newState.players.ellen.counters.brokenAge, 1, "N2 — age 1");
-  assert.ok(r2.events.some((e: any) => e.type === "action_blocked_broken_self" && e.userId === "ellen"), "broken 동안 능력 차단");
-  // N3: pre-loop 상태머신이 brokenAge=1 보고 자동 회복(brokenSelf=0, selfRecovered=1).
-  const r3 = resolveNightActions(r2.newState);
-  assert.equal(r3.newState.players.ellen.counters.brokenSelf ?? 0, 0, "N3 — broken 해제");
-  assert.equal(r3.newState.players.ellen.counters.selfRecovered, 1, "N3 — selfRecovered 영속");
-  assert.ok(r3.events.some((e: any) => e.type === "ellen_recovered"), "회복 이벤트");
+  assert.ok(r2.events.some((e: any) => e.type === "action_blocked_broken_self" && e.userId === "tgt"), "broken 동안 대상 능력 차단");
+  assert.equal(r2.newState.players.tgt.counters.brokenSelf, 1, "carrier 미투표 — 여전히 broken");
+  assert.equal(r2.newState.players.tgt.counters.brokenAge, 1, "carrier 미투표 — age 누진(자동 회복 없음)");
 }
 
-// --- broken 상태 — 투표·의심 가치 0 ---
+// --- 비치지 않는 자아 회복: 망가진 대상이 carrier 를 투표하면 다음 아침 회복(selfRecovered) ---
 {
-  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), counters: { brokenSelf: 1 } };
-  const t = player("t", "citizen", "angel");
-  const vote = tallyEliminationVotes([{ actorUserId: "ellen", targetUserId: "t" }], { ellen, t });
-  assert.equal(vote.tallies["t"], undefined, "broken 엘런 — 투표 무효");
+  const ellen: PlayerState = player("ellen", "ellen", "demon");
+  const tgt: PlayerState = player("tgt", "citizen", "angel");
+  const cap: PlayerState = { ...player("cap", "uno", "angel"), baseVoteValue: 5 };
+  const r1 = resolveNightActions(emptyState(
+    { ellen, tgt, cap },
+    [{ sourceUserId: "ellen", targetUserId: "tgt", actionType: "ellen_shatter", priority: 5 }],
+  ));
+  // 망가진 대상이 carrier(cap)를 투표 → 다음 resolve 시작의 carrier-vote 루프가 회복.
+  const r2 = resolveNightActions({
+    ...r1.newState,
+    players: { ...r1.newState.players, tgt: { ...r1.newState.players.tgt, lastVoteTarget: "cap" } },
+    actionStack: [],
+  });
+  assert.equal(r2.newState.players.tgt.counters.brokenSelf ?? 0, 0, "carrier 투표 — broken 해제");
+  assert.equal(r2.newState.players.tgt.counters.selfRecovered, 1, "carrier 투표 — selfRecovered 영속");
+  assert.ok(!r2.newState.players.tgt.tags.some((t: string) => t.startsWith("soulCarrier_")), "회복 시 carrier 표식 제거");
+  assert.ok(r2.events.some((e: any) => e.type === "ellen_recovered"), "회복 이벤트");
+}
+
+// --- 비치지 않는 자아 — 한 대상 재차 불가(everShattered) ---
+{
+  const ellen: PlayerState = player("ellen", "ellen", "demon");
+  const tgt: PlayerState = { ...player("tgt", "citizen", "angel"), tags: ["everShattered"] };
+  const cap: PlayerState = { ...player("cap", "uno", "angel"), baseVoteValue: 5 };
+  const r = resolveNightActions(emptyState(
+    { ellen, tgt, cap },
+    [{ sourceUserId: "ellen", targetUserId: "tgt", actionType: "ellen_shatter", priority: 5 }],
+  ));
+  assert.equal(r.newState.players.tgt.counters.brokenSelf ?? 0, 0, "이미 해체된 대상 — 재차 불가(skipIfTargetTag)");
+  assert.ok(!r.events.some((e: any) => e.type === "soul_shattered"), "재차 — soul_shattered 미발동");
+}
+
+// --- broken 상태 — 임의 플레이어의 투표·의심 가치 0(엘런 한정 아님) ---
+{
+  const t = { ...player("t", "citizen", "angel"), counters: { brokenSelf: 1 } };
+  const u = player("u", "citizen", "angel");
+  const vote = tallyEliminationVotes([{ actorUserId: "t", targetUserId: "u" }], { t, u });
+  assert.equal(vote.tallies["u"], undefined, "broken 대상 — 투표 무효");
   assert.equal(vote.skipped, 1, "broken — skipped");
-  const susp = tallySuspicionVotes([{ actorUserId: "ellen", targetUserId: "t" }], { ellen, t });
-  assert.equal(susp.tallies["t"], undefined, "broken 엘런 — 의심 무효");
+  const susp = tallySuspicionVotes([{ actorUserId: "t", targetUserId: "u" }], { t, u });
+  assert.equal(susp.tallies["u"], undefined, "broken 대상 — 의심 무효");
   assert.equal(susp.skipped, 1, "broken — suspicion skipped");
 }
 
-// --- 박해 변경효과: selfRecovered 상태에서 VoteTarget 대신 자기 자신 박해 ---
+// --- 박해 변경효과: 누군가 selfRecovered(전역) 면 VoteTarget 대신 엘런 자신 박해 ---
 {
-  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), counters: { selfRecovered: 1 }, lastVoteTarget: "victim" };
+  // 회복한 대상 rec(selfRecovered=1)이 생존 → 전역 트리거. 엘런 박해가 자해로 전환.
+  const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), lastVoteTarget: "victim" };
   const victim: PlayerState = player("victim", "citizen", "angel");
+  const rec: PlayerState = { ...player("rec", "citizen", "angel"), counters: { selfRecovered: 1 } };
   const state: MatchState = {
     matchId: "v2", dayCount: 3, phase: "night", angelCount: 0, demonCount: 0, modifiers: {},
-    players: { ellen, victim },
+    players: { ellen, victim, rec },
     actionStack: [{ sourceUserId: "ellen", targetUserId: null, actionType: "ellen_persecute", priority: 5 }],
   };
   const r = resolveNightActions(state);
-  assert.equal(r.newState.players.ellen.counters.persecuteBias, 3, "selfRecovered — 자해 박해 +3");
-  assert.equal(r.newState.players.victim.counters.persecuteBias ?? 0, 0, "selfRecovered — VoteTarget 박해 차단");
+  assert.equal(r.newState.players.ellen.counters.persecuteBias, 3, "전역 selfRecovered — 자해 박해 +3");
+  assert.equal(r.newState.players.victim.counters.persecuteBias ?? 0, 0, "전역 selfRecovered — VoteTarget 박해 차단");
 }
 {
+  // 아무도 회복 안 함 → 평시 VoteTarget 박해.
   const ellen: PlayerState = { ...player("ellen", "ellen", "demon"), lastVoteTarget: "victim" };
   const victim: PlayerState = player("victim", "citizen", "angel");
   const state: MatchState = {
@@ -1878,14 +1957,18 @@ assert.match(lunaV2Mig, /'luna_moonrise'/, "마이그레이션 — 달이 차오
 }
 
 // 엘런 v2 — 계약 정규식.
-assert.match(roles, /id: "ellen_shatter"[\s\S]*?maxUses: 1[\s\S]*?tag: "brokenSelf"/, "엘런 해체된 퍼즐 — 1회 + brokenSelf 세팅");
+assert.match(roles, /id: "ellen_shatter"[\s\S]*?targetType: "SINGLE_ALIVE"[\s\S]*?type: "Shatter", target: "Target", skipIfTargetTag: "everShattered"/, "엘런 비치지 않는 자아 — 타깃화 Shatter(재차 불가)");
 assert.match(roles, /id: "ellen_chaos"[\s\S]*?maxUses: 2[\s\S]*?type: "DelaySilence"/, "엘런 혼탁해진 정의 — 2회 + 다음 밤 봉인");
 assert.match(roles, /id: "ellen_chaos"[\s\S]*?type: "Kill", target: "Target", onlyIfTargetCounter: \{ key: "persecuteBias", min: 1 \}/, "혼탁해진 정의 — 박해 표적 탈락");
 assert.match(allwellMig, /'ellen_chaos'/, "마이그레이션 — 혼탁해진 정의");
-assert.match(roles, /id: "ellen_persecute"[\s\S]*?skipIfSourceCounter: \{ key: "selfRecovered"/, "박해 평시 — selfRecovered 면 VoteTarget 분기 스킵");
-assert.match(roles, /id: "ellen_persecute"[\s\S]*?onlyIfSourceCounter: \{ key: "selfRecovered"/, "박해 변경 — selfRecovered 시 자해 분기");
+assert.match(roles, /id: "ellen_persecute"[\s\S]*?skipIfAnyPlayerCounter: \{ key: "selfRecovered"/, "박해 평시 — 전역 selfRecovered 면 VoteTarget 분기 스킵");
+assert.match(roles, /id: "ellen_persecute"[\s\S]*?onlyIfAnyPlayerCounter: \{ key: "selfRecovered"/, "박해 변경 — 전역 selfRecovered 시 자해 분기");
 const ellenV2Mig = readFileSync("supabase/migrations/20260618130000_gomdori_ellen_v2.sql", "utf8");
 assert.match(ellenV2Mig, /'ellen_shatter'/, "마이그레이션 — 해체된 퍼즐");
+
+// 대악마 감시(2표) — 계약 정규식.
+assert.match(roles, /id: "demon_kill"[\s\S]*?tag: "voteCountBonus", amount: 1, onlyIfAnyPlayerTag: "mephistoBrand"/, "대악마 감시 — 낙인 적용자 존재 시 self voteCountBonus +1(2표)");
+assert.match(roles, /id: "daeakma_brand"[\s\S]*?type: "AddTag", target: "Target", tag: "mephistoBrand"/, "메피스토 낙인 — mephistoBrand 표식(감시 게이트)");
 
 // --- 사탄의 마 전역 취급: 살아있는 대악마 + 천사팀 전원 vote 0 → 천사 transient 악마 카운트 ---
 {

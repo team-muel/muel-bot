@@ -62,10 +62,19 @@ export const CORE_ROLES: RoleDefinition[] = [
           // 1회). 기본 투표가치=1 이라 누적되면 전원 0 — 마을은 표로 악마를 처형할 수 없다(투표 독점).
           // 원문 "이 효과로 대상 투표가치가 0이 되면 그 대상의 조사·취급이 악마로 판정"의 *per-target*
           // 판정은 후속 — 현재는 천사팀 전원 0 → 전역 악마 취급(applySatanicRealm)으로 보수적 근사.
-          effects: [{ type: "Kill", target: "Target" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }],
+          // 감시(원문 만악의 근원): 발동 시 낙인 적용자(mephistoBrand 보유)가 존재하면 대악마 자신에게
+          // voteCountBonus +1(다음 아침 2표) 부여 — 루루 무투와 같은 라이프사이클(phase-advance 가 처형
+          // tally 직후 소비). onlyIfAnyPlayerTag 로 낙인 적용자 존재 시에만 발동. "같은 대상 2표 시 무조건
+          // 반론"(강제 재심)은 verdict 반론 override 가 필요해 후속(루루 무투와 동일 blocker).
+          effects: [
+            { type: "Kill", target: "Target" },
+            { type: "ModifyVoteValue", target: "AllOthers", amount: -1 },
+            { type: "GrantCount", target: "self", tag: "voteCountBonus", amount: 1, onlyIfAnyPlayerTag: "mephistoBrand" },
+          ],
         },
-        // 낙인 — 원문 사탄의 마는 '능력 성공 발동'이 트리거이므로 낙인 성공에도 전원 -1 동반.
-        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
+        // 낙인 — 원문 사탄의 마는 '능력 성공 발동'이 트리거이므로 낙인 성공에도 전원 -1 동반. AddTag
+        // mephistoBrand: 낙인 적용자 표식(감시 게이트의 전역 조건) — '자기 직업 모르는 대상'의 backend 면.
+        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }, { type: "AddTag", target: "Target", tag: "mephistoBrand" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
         // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
         // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인. 사탄의 마: 성공 시 전원 -1.
         { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
@@ -399,19 +408,22 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 표적을 처형대로 민다 — 별도 지목 없이 자기 투표를 따라간다(canon 박해자).
         // 박해(v2 누진): 직전 투표 대상의 받는-투표가치가 *지속 누적*(persecuteBias). 같은 대상을
         // 거듭 투표·박해하면 +3, +6, +9… 처형대로 점점 민다(canon 투표마다 누진). 홀수날 한정.
-        // 해체된 퍼즐 변경효과(canon "박해자 변경 — 얻은 투표가치만큼 그날 아침 자신을 투표한
-        // 것으로 적용"): selfRecovered 상태에선 VoteTarget 대신 *자신*(엘런)에게 +3 누진 자해
-        // 박해(approx). 정확한 "얻은 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
+        // 해체된 퍼즐 변경효과(canon "박해자 변경 — *누군가* 자아를 되찾으면 엘런 박해가 자해
+        // 박해로 전환"): 비치지 않는 자아가 타깃화되면서 selfRecovered 는 *해체당한 대상*에게 붙는다.
+        // 따라서 자해 전환 트리거를 전역(생존자 누군가의 selfRecovered≥1)으로 본다 — 누군가 회복하면
+        // VoteTarget 박해 대신 *자신*(엘런)에게 +3 누진 자해 박해로 영구 전환(approx). 정확한 "얻은
+        // 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
         { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [
-          { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfSourceCounter: { key: "selfRecovered", min: 1 } },
-          { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfSourceCounter: { key: "selfRecovered", min: 1 } },
+          { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
+          { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
         ] },
-        // 해체된 퍼즐(v2 능력 — 비치지 않는 자아 다단계 첫 단계): 자아를 의도적으로 해체(brokenSelf=1).
-        // 그 밤·다음 밤(brokenAge 1) 동안 투표·의심·능력 가치 모두 상실(tally 가 0 강제, 능력 차단).
-        // 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1) — canon "누군가 자아를 되찾으면 박해자
-        // 효과 변경". 회복 후 박해는 자해 박해(위 자신 대상 분기)로 영구 전환. 1회 제한 — 한 번
-        // 해체하면 게임 끝까지 selfRecovered 라 박해 패턴이 바뀐다.
-        { id: "ellen_shatter", name: "해체된 퍼즐", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "brokenSelf", amount: 1 }] },
+        // 비치지 않는 자아(원문 〈능력〉 타깃화): *대상(타인)*의 자아를 망가뜨린다(Shatter). 대상은
+        // brokenSelf=1 로 2밤 동안 투표·의심·능력 가치를 모두 상실하고, 그 자아가 생존자 중 *행사
+        // 투표가치 최고*인 carrier(대상 제외)에게 이전된다(soulCarrier_<id> 표식). 망가진 대상이
+        // carrier 를 투표하면 다음 아침 회복(selfRecovered) — resolveNightActions 의 carrier-vote
+        // 회복 루프가 처리. everShattered 표식으로 한 대상은 재차 해체 불가(skipIfTargetTag). 누군가
+        // 자아를 되찾으면(selfRecovered) 엘런 박해가 자해 박해로 영구 전환(ellen_persecute 전역 게이트).
+        { id: "ellen_shatter", name: "비치지 않는 자아", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Shatter", target: "Target", skipIfTargetTag: "everShattered" }] },
         // 혼탁해진 정의(원문 〈능력2〉 지정/2회): "대상 다음날 투표·의심·능력 소멸 + 자아 잃은 중이면
         // 영원히 못 찾음 + 박해자 대상이면 탈락." 매핑(보수적·원문 충실):
         //   - DelaySilence → 대상 다음 밤 봉인(능력 소멸, silencePending). 다음날 투표·의심 소멸의

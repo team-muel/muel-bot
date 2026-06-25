@@ -165,17 +165,22 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       pl.counters.delayPending = 0;
       if (!pl.tags.includes(TAG_DELAYED)) pl.tags.push(TAG_DELAYED);
     }
-    // 엘런 해체된 퍼즐 상태 머신(canon "해체된 퍼즐"): shatter 발동 밤 brokenSelf=1, brokenAge=0 →
-    // 다음 밤(여기) age 1 → 그 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1). 2밤 동안 가치
-    // 상실(tally/action gate)·회복 후 변경효과(자해 박해) 영구 전환. selfRecovered 영속.
+    // 비치지 않는 자아 회복(canon "망가진 대상이 carrier 를 투표하면 다음 아침 회복"): 자아가
+    // 망가진(brokenSelf>0) 대상이 자신에게 부여된 soulCarrier_<carrierUserId> 표식의 carrier 를
+    // *직전에 투표*(lastVoteTarget)했으면 회복한다 — selfRecovered=1(영속, 엘런 박해 자해 전환
+    // 전역 트리거), brokenSelf=0, carrier 표식 제거, ellen_recovered 방출. carrier 를 투표하지
+    // 않으면 brokenAge 만 누진하며 가치 상실 상태를 유지한다(자동 회복 없음 — 원문 충실).
     if ((pl.counters?.brokenSelf ?? 0) > 0) {
-      if ((pl.counters.brokenAge ?? 0) === 0) {
-        pl.counters.brokenAge = 1;
-      } else {
+      const carrierTag = pl.tags.find((t) => t.startsWith("soulCarrier_"));
+      const carrierId = carrierTag ? carrierTag.slice("soulCarrier_".length) : null;
+      if (carrierId && pl.lastVoteTarget === carrierId) {
         pl.counters.brokenSelf = 0;
         pl.counters.brokenAge = 0;
         pl.counters.selfRecovered = 1;
+        pl.tags = pl.tags.filter((t) => !t.startsWith("soulCarrier_"));
         events.push({ type: "ellen_recovered", payload: { user_id: pl.userId } });
+      } else {
+        pl.counters.brokenAge = (pl.counters.brokenAge ?? 0) + 1;
       }
     }
   }
@@ -608,9 +613,9 @@ export function tallyEliminationVotes(
       skipped += 1;
       continue;
     }
-    // 엘런 해체된 퍼즐(canon "자아 망가진 동안 투표 가치 상실"): brokenSelf 보유자(엘런 한정)는
-    // 그 라운드 투표가치 0. selfRecovered 후엔 정상 — 해체 윈도(2밤) 동안만.
-    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+    // 비치지 않는 자아(canon "자아 망가진 동안 투표 가치 상실"): brokenSelf 보유자(엘런이 해체한
+    // 임의의 대상)는 그 라운드 투표가치 0. 회복(carrier 투표) 후엔 정상 — 해체 윈도 동안만.
+    if ((actor.counters?.brokenSelf ?? 0) > 0) {
       skipped += 1;
       continue;
     }
@@ -702,8 +707,8 @@ export function tallySuspicionVotes(
       continue;
     }
 
-    // 엘런 해체된 퍼즐: brokenSelf 보유자는 의심가치도 0.
-    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+    // 비치지 않는 자아: brokenSelf 보유자(엘런이 해체한 임의의 대상)는 의심가치도 0.
+    if ((actor.counters?.brokenSelf ?? 0) > 0) {
       skipped += 1;
       continue;
     }
@@ -1029,6 +1034,30 @@ function applyEffect(
   }
   if (effect.skipIfSourceCounter && (_source.counters?.[effect.skipIfSourceCounter.key] ?? 0) >= effect.skipIfSourceCounter.min) {
     return;
+  }
+  // 전역 카운터 게이트(엘런 박해 변경효과 "누군가 자아를 되찾으면"): 어떤 살아있는 플레이어든
+  // counters[key]≥min 이면 onlyIf 통과 / skipIf 건너뜀. 자해 전환 트리거를 전역으로 본다.
+  if (effect.onlyIfAnyPlayerCounter) {
+    const { key, min } = effect.onlyIfAnyPlayerCounter;
+    const any = Object.values(_state.players).some((p) => p.alive && (p.counters?.[key] ?? 0) >= min);
+    if (!any) return;
+  }
+  if (effect.skipIfAnyPlayerCounter) {
+    const { key, min } = effect.skipIfAnyPlayerCounter;
+    const any = Object.values(_state.players).some((p) => p.alive && (p.counters?.[key] ?? 0) >= min);
+    if (any) return;
+  }
+  // 전역 태그 게이트(대악마 감시 "낙인 적용자가 존재하면"): 어떤 살아있는 플레이어든 태그 보유 시
+  // onlyIf 통과 / skipIf 건너뜀.
+  if (effect.onlyIfAnyPlayerTag) {
+    const tag = effect.onlyIfAnyPlayerTag;
+    const any = Object.values(_state.players).some((p) => p.alive && p.tags.includes(tag));
+    if (!any) return;
+  }
+  if (effect.skipIfAnyPlayerTag) {
+    const tag = effect.skipIfAnyPlayerTag;
+    const any = Object.values(_state.players).some((p) => p.alive && p.tags.includes(tag));
+    if (any) return;
   }
   // 태그 게이트(미즐렛 고급 와인 디저트 유/무): 대상 태그로 분기.
   if (effect.onlyIfTargetTag && !target.tags.includes(effect.onlyIfTargetTag)) {
@@ -1417,6 +1446,36 @@ function applyEffect(
       // '타락', 아니면 '결백'으로 시전자(아서)에게 통지. 진영 무관 — counters.tainted 로만 가린다.
       const verdict = (target.counters?.tainted ?? 0) > 0 ? "tainted" : "innocent";
       events.push({ type: "verdict_revealed", payload: { user_id: target.userId, by: _source.userId, verdict } });
+      break;
+    }
+    case "Shatter": {
+      // 비치지 않는 자아(엘런 원문 타깃화): *대상(타인)*의 자아를 망가뜨린다. 한 대상은 재차 불가
+      // (everShattered 표식 — skipIfTargetTag 로 사전 게이트하지만 이중 가드). 효과:
+      //  ① brokenSelf=1 → 2밤 투표·의심·능력 가치 상실(tally/action gate 가 brokenSelf 로 적용).
+      //  ② everShattered 표식(한 대상 1회 제한).
+      //  ③ 자아 이전: 생존자 중 *행사 투표가치 최고*(대상 제외)인 carrier 를 찾아 soulCarrier_<id>
+      //     표식을 대상에 남긴다. 망가진 대상이 carrier 를 투표하면 다음 아침 회복(carrier-vote 루프).
+      if (target.tags.includes("everShattered")) break;
+      target.counters.brokenSelf = (target.counters.brokenSelf ?? 0) + 1;
+      target.counters.brokenAge = 0;
+      target.tags.push("everShattered");
+      // carrier = 생존자(대상 제외) 중 행사 투표가치 최고. 동률은 userId 사전순으로 결정적 선택.
+      let carrier: PlayerState | null = null;
+      let bestVote = -Infinity;
+      for (const p of Object.values(_state.players)) {
+        if (!p.alive || p.userId === target.userId) continue;
+        const v = (p.baseVoteValue || 1) + (p.bonusVoteValue || 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0);
+        if (v > bestVote || (v === bestVote && carrier && p.userId < carrier.userId)) {
+          bestVote = v;
+          carrier = p;
+        }
+      }
+      if (carrier) {
+        // 기존 soulCarrier_* 표식 제거 후 새 carrier 표식(대상당 단일).
+        target.tags = target.tags.filter((t) => !t.startsWith("soulCarrier_"));
+        target.tags.push(`soulCarrier_${carrier.userId}`);
+      }
+      events.push({ type: "soul_shattered", payload: { user_id: target.userId, by: _source.userId, carrier: carrier?.userId ?? null } });
       break;
     }
   }
