@@ -63,6 +63,12 @@ export type WinConditionResult = {
   winner: "angels" | "demons" | "neutral" | null;
   aliveAngels: number;
   aliveDemons: number;
+  // 건너뛰기 조력자 패배 조항(로잔느 〈능력2〉, 원문 "게임 종료 시까지 '건너뛰기'를 남긴 채
+  // 승리했다면 조력자(helper)를 패배로 판정"): 로잔느가 백일몽으로 단독 승리(winner='neutral')
+  // 하면서 '건너뛰기'(rosanne_skip)를 끝내 쓰지 않았으면 true. 결과 페이로드에서 조력자(helper
+  // 진영, actualFaction='helper' 또는 currentRole 조력자 풀)를 패배로 표기하는 데 쓴다 — 별도
+  // 게임 상태 변경 없음(로잔느 단독승은 이미 모두의 패배지만, 조력자 패배를 명시 기록).
+  rosanneSkipUnusedHelperDefeat?: boolean;
 };
 
 // 파스아(중립) 단독 승리 임계 — *생존* 교세가 ceil(인원/3) 이상 (최소 3).
@@ -117,10 +123,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.voteBias = 0;
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
+      counters.tookDemonEffectThisNight = 0; // 감시소 봉쇄 입력(로마즈) — 그 밤 한정 표식 리셋.
+      counters.detainedThisNight = 0; // 투표 구금 발동 표식(로마즈 self) — 그 밤 한정 리셋.
       counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
       // 연속 포교 제한(파스아): 포교한 밤에 1 로 세팅 → 다음 밤 submission 을 match-action
       // 이 거부. 매 밤 1 씩 감소시켜 한 밤 건너 다시 가능하게 한다(리셋 아닌 카운트다운).
       if (counters.convertCooldown) counters.convertCooldown = Math.max(0, counters.convertCooldown - 1);
+      // 감시소 봉쇄(로마즈 패시브): 구금된 밤에 천사팀이 악마효과를 받으면 set → '다음 하루' 동안만
+      // 구금 불가. 매 밤 시작에 1 씩 감소(카운트다운) — 다음 밤 구금 hook 이 0 보다 크면 건너뛴다.
+      if (counters.romazWardenBlocked) counters.romazWardenBlocked = Math.max(0, counters.romazWardenBlocked - 1);
       // 로잔느 백일몽: 밤 해소(=아침 도래)마다 dreamMorning +1(7 도달 시 checkWinCondition 단독승)
       // + 만들어가는 미래 충전(futureCharge). 생존 중에만 누적(canon 충전조건 v1 근사 — 하루 경과).
       if (newState.players[userId].currentRole === "rosanne" && newState.players[userId].alive) {
@@ -196,11 +207,34 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 투표 구금(로마즈, 원문 "로마즈의 투표로 밤 동안 구금"): 액션 루프(priority 1~)보다 *먼저* 돌아,
+  // 살아있는 로마즈가 직전에 투표한 대상(lastVoteTarget)이 용의자(romazSuspect)면 그 밤 구금
+  // (silencedNights +1). 색출 제출 여부와 무관 — 투표 자체가 구금을 구동한다. 신념 봉인
+  // (convictionBlocked) 또는 감시소 봉쇄(romazWardenBlocked) 중이면 건너뛴다. 구금이 실제로 걸린
+  // 로마즈에는 detainedThisNight=1 표식 — 아래 감시소 봉쇄 후처리(romazWardenBlocked 트리거)의 입력.
+  applyRomazVoteDetain(newState.players, events);
+
   for (const action of sortedActions) {
     const sourcePlayer = newState.players[action.sourceUserId];
     const targetPlayer = action.targetUserId ? newState.players[action.targetUserId] : null;
 
-    if (!sourcePlayer?.alive) continue;
+    // 쿠키(미즐렛 디저트 선물, 원문 "대상이 탈락해도 그 밤 능력 발동"): 평소엔 탈락한 시전자의
+    // 액션은 막히지만('cookie' 표식 보유자는 우회해 그 밤 1회 발동한다(이미 탈락자도 가장 가까운
+    // 밤 활동 참여). 표식은 발동 시도 시 소비한다 — 직업 하드코딩 없이 표식만으로 죽음-게이트 우회.
+    if (!sourcePlayer?.alive) {
+      if (sourcePlayer && sourcePlayer.tags.includes("cookie")) {
+        sourcePlayer.tags = sourcePlayer.tags.filter((t) => t !== "cookie");
+        events.push({ type: "cookie_act", userId: sourcePlayer.userId });
+        // 표식 소비 후 아래 게이트는 그대로 통과시키되, 이후 effect 적용은 정상 진행한다.
+      } else {
+        continue;
+      }
+    }
+
+    // 푸딩 무시 불가(미즐렛 디저트 선물, 원문 "단일 대상 지정 시 '무시 불가' 버프"): 'pudding' 표식
+    // 보유 시전자의 능력은 봉인(Silence)·지목(Suspected) 차단을 한 번 우회한다. 표식은 우회에 쓰일
+    // 때 소비. 직업 하드코딩 없이 표식만으로 게이트를 뚫는다(무시 불가).
+    const puddingImmune = !!sourcePlayer && sourcePlayer.tags.includes("pudding");
 
     // 건너뛰기(로잔느 SkipNight): priority 0 의 건너뛰기가 먼저 발동해 nightSkipped 를 세우면, 그
     // 뒤(priority 높은) 모든 액션은 이 가드에서 일괄 취소된다. 건너뛰기 자신은 effect 처리 시점에
@@ -210,17 +244,22 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       continue;
     }
 
-    if (sourcePlayer.tags.includes(TAG_SUSPECTED)) {
+    if (sourcePlayer.tags.includes(TAG_SUSPECTED) && !puddingImmune) {
       events.push({ type: "action_blocked_suspected", userId: sourcePlayer.userId });
       continue;
     }
 
     // 봉인(세이카 초신성·팬텀 어둠이 내린 도시): 그 밤 능력 발동 불가. 봉인 액션이 priority 1
     // (가장 먼저)이라 대상의 능력보다 앞서 silencedNights 가 세팅된다. 밤 종료 시 0으로 리셋.
-    // silencedPermanent(세이카 재적용): 매 밤 지속 — 리셋되지 않아 영구 봉인.
-    if ((sourcePlayer.counters?.silencedNights ?? 0) > 0 || (sourcePlayer.counters?.silencedPermanent ?? 0) > 0) {
+    // silencedPermanent(세이카 재적용): 매 밤 지속 — 리셋되지 않아 영구 봉인. 푸딩 무시 불가는 우회.
+    if (((sourcePlayer.counters?.silencedNights ?? 0) > 0 || (sourcePlayer.counters?.silencedPermanent ?? 0) > 0) && !puddingImmune) {
       events.push({ type: "action_blocked_silenced", userId: sourcePlayer.userId });
       continue;
+    }
+    // 푸딩 표식 소비: 봉인/지목 우회에 쓰였으면 1회 소비(무시 불가는 다음 능력엔 자동 안 붙음).
+    if (puddingImmune && (sourcePlayer.tags.includes(TAG_SUSPECTED) || (sourcePlayer.counters?.silencedNights ?? 0) > 0 || (sourcePlayer.counters?.silencedPermanent ?? 0) > 0)) {
+      sourcePlayer.tags = sourcePlayer.tags.filter((t) => t !== "pudding");
+      events.push({ type: "pudding_ignore_immune", userId: sourcePlayer.userId });
     }
     // 엘런 해체된 퍼즐(canon "자아 망가진 동안 능력 가치 상실"): brokenSelf 보유자는 능력 발동
     // 불가. 봉인과 달리 캐스터 자신의 자아 해체 — 그 밤 종료 시 자동 리셋 X (resolveNightActions
@@ -466,6 +505,10 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       }
     }
 
+    // 쿠키/푸딩(미즐렛 디저트 선물)은 *지속* 버프 — 표식은 실제 발동에 쓰일 때만 소비한다(아래
+    // 쿠키 죽음-게이트 우회·푸딩 무시불가 우회 경로). 그 밤 안 썼으면 다음 밤까지 유지되므로
+    // 종료 정리 대상이 아니다(원문 "대상이 탈락해도 그 밤 능력 발동"은 미래 밤의 죽음까지 포함).
+    // dessert 태그(채팅 회로·와인 페널티 분기)도 지속이라 건드리지 않는다.
     player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED && tag !== "noticeSuppressed");
     // 봉인은 같은 밤 한정 — 종료 시 해제. 가인 급습의 noticeSuppressed 표식도 그 밤 한정(canon
     // "다음 아침까지" 의 backend 접근면) — 다음 밤 시작 전에 해제돼야 통지 차단이 한 라운드만 유효.
@@ -582,12 +625,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   }
 
   // 미즐렛 디저트 회로(canon "디저트 제공받은 대상 ... 미즐렛과 밤 동안 대화"): 디저트 선물
-  // (mizlet_dessert) 발동 시 대상에게 dessert_received 이벤트 — UI/Discord 가 채팅 회로(미즐렛-대상)
+  // (쿠키/푸딩) 발동 시 대상에게 dessert_received 이벤트 — UI/Discord 가 채팅 회로(미즐렛-대상)
   // 를 연다. 고급 와인(mizlet_wine) 발동 시 그 밤 dessert 태그 보유한 생존자 전원에 dessert_chat_open
   // 이벤트 — 와인 회식으로 일괄 채팅. 두 이벤트 모두 backend 신호만, 채팅 인프라는 별도.
   for (const a of sortedActions) {
-    if (a.actionType === "mizlet_dessert" && a.targetUserId) {
-      events.push({ type: "dessert_received", payload: { user_id: a.targetUserId, by: a.sourceUserId } });
+    if ((a.actionType === "mizlet_cookie" || a.actionType === "mizlet_pudding") && a.targetUserId) {
+      events.push({ type: "dessert_received", payload: { user_id: a.targetUserId, by: a.sourceUserId, variant: a.actionType === "mizlet_cookie" ? "cookie" : "pudding" } });
     }
   }
   const wineFiredBy = sortedActions.filter((a) => a.actionType === "mizlet_wine").map((a) => a.sourceUserId);
@@ -710,7 +753,41 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     events.push({ type: "rainer_savage_roar", payload: { user_id: r.userId, targets: clawTargets, countBonus: r.counters.countBonus } });
   }
 
+  // 감시소 봉쇄(로마즈 패시브, 원문 "용의자 구금된 밤에 천사팀이 악마로부터 효과를 받으면 다음
+  // 하루 누구도 구금 불가"): 이 밤 로마즈 구금이 실제 발동(detainedThisNight)했고 + 살아있는 천사팀
+  // 누군가가 악마-출처 부정효과를 받았으면(tookDemonEffectThisNight) 로마즈 romazWardenBlocked=2 →
+  // 다음 밤 시작에 1 차감되어 그 다음 밤 구금 hook 이 건너뛴다(딱 '다음 하루'만 봉쇄, 카운트다운).
+  const anyAngelTookDemonEffect = Object.values(newState.players).some(
+    (p) => p.alive && p.actualFaction === "angel" && (p.counters?.tookDemonEffectThisNight ?? 0) > 0,
+  );
+  if (anyAngelTookDemonEffect) {
+    for (const rz of Object.values(newState.players)) {
+      if (rz.alive && rz.currentRole === "romaz" && (rz.counters?.detainedThisNight ?? 0) > 0) {
+        rz.counters.romazWardenBlocked = 2;
+        events.push({ type: "romaz_warden_blocked", payload: { user_id: rz.userId } });
+      }
+    }
+  }
+
   return { newState, events };
+}
+
+// 투표 구금(로마즈 패시브, 원문 "로마즈의 투표로 밤 동안 구금"): 살아있는 로마즈가 직전에 *투표*한
+// 대상(lastVoteTarget)이 용의자(romazSuspect 표식)면 그 밤 구금(silencedNights +1). 색출 제출 여부와
+// 무관 — 투표 substrate 가 구금을 구동한다. 신념 봉인(convictionBlocked) 또는 감시소 봉쇄
+// (romazWardenBlocked, 카운트다운 중) 이면 건너뛴다. 액션 루프(priority 1~)보다 *먼저* 돌아 대상 능력
+// 발동 전에 봉인이 선다. 구금이 실제로 걸린 로마즈는 detainedThisNight=1(감시소 봉쇄 후처리 입력).
+export function applyRomazVoteDetain(players: Record<string, PlayerState>, events: unknown[]): void {
+  for (const rz of Object.values(players)) {
+    if (!rz.alive || rz.currentRole !== "romaz") continue;
+    if ((rz.counters?.convictionBlocked ?? 0) > 0) continue;
+    if ((rz.counters?.romazWardenBlocked ?? 0) > 0) continue;
+    const vt = rz.lastVoteTarget ? players[rz.lastVoteTarget] : null;
+    if (!vt || !vt.alive || !vt.tags.includes("romazSuspect")) continue;
+    vt.counters.silencedNights = (vt.counters.silencedNights ?? 0) + 1;
+    rz.counters.detainedThisNight = 1;
+    events.push({ type: "romaz_vote_detained", payload: { user_id: vt.userId, by: rz.userId } });
+  }
 }
 
 // 위용(아서 패시브): '셋 이상 벨 수 있게 되면'(잔불 대검 충전 emberCharge ≥ 3) 발동 — 해오름
@@ -787,6 +864,21 @@ export function tallyEliminationVotes(
   for (const p of Object.values(players)) {
     const bias = (p.counters?.voteBias ?? 0) + (p.counters?.persecuteBias ?? 0);
     if (p.alive && bias > 0) tallies[p.userId] = (tallies[p.userId] || 0) + bias;
+  }
+
+  // 르상티망 받는가치 다운사이드(로잔느 만들어가는 미래, 원문 "'원한'을 적용받는 생존자 1명당
+  // 로잔느가 투표에서 *받는* 가치가 1 증가 — 대신 아침이 한 번 더"): 생존 'wonhan' 보유자 수를
+  // 세어 그만큼 로잔느의 받는-표에 가산한다. 표식(wonhan)에서 매 집계 재계산 — 보유자가
+  // 처형/탈락해 줄면 받는가치도 자동으로 줄어 일관 유지(별도 카운터 동기화 불필요). 로잔느
+  // 생존 중에만 의미(죽으면 처형 후보 아님). dreamMorning+1 의 업사이드는 resolveNightActions 가
+  // rosanne_resentment 발동 시 부여 — 이 다운사이드와 짝.
+  const wonhanCount = Object.values(players).filter((p) => p.alive && p.tags.includes("wonhan")).length;
+  if (wonhanCount > 0) {
+    for (const p of Object.values(players)) {
+      if (p.alive && p.currentRole === "rosanne") {
+        tallies[p.userId] = (tallies[p.userId] || 0) + wonhanCount;
+      }
+    }
   }
 
   let candidateUserId: string | null = null;
@@ -1030,8 +1122,13 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
   const rosanneWinner = Object.values(players).find(
     (p) => p.currentRole === "rosanne" && p.alive && (p.counters?.dreamMorning ?? 0) >= 7,
   );
+  // 건너뛰기 조력자 패배 조항(원문): 로잔느가 백일몽으로 승리하면서 '건너뛰기'를 끝내 안 썼는지.
+  // maxUses 가 발동 시 counters.used_rosanne_skip 를 1 로 세우므로, 미사용 = 0/부재. 로잔느 승리가
+  // 아닐 때는 키 자체를 넣지 않는다(undefined) — 기존 결과 deepStrictEqual 회귀 방지(로잔느 win 한정).
+  let rosanneSkipUnusedHelperDefeat: boolean | undefined = undefined;
   if (rosanneWinner) {
     winner = "neutral";
+    rosanneSkipUnusedHelperDefeat = (rosanneWinner.counters?.used_rosanne_skip ?? 0) === 0;
   } else if (pasuaAlive && (pasuaFlock + 1) >= pasuaWinThreshold(totalPlayers)) {
     winner = "neutral";
   } else if (aliveDemonKillers === 0) {
@@ -1044,7 +1141,13 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     winner = "demons";
   }
 
-  return { winner, aliveAngels, aliveDemons };
+  return {
+    winner,
+    aliveAngels,
+    aliveDemons,
+    // 로잔느 승리일 때만 키를 넣는다(undefined 면 생략) — 기존 결과 deepStrictEqual 안정.
+    ...(rosanneSkipUnusedHelperDefeat !== undefined ? { rosanneSkipUnusedHelperDefeat } : {}),
+  };
 }
 
 // 최대 일수 도달 시 강제 종착 (M2-5 교착 안전망 — gomdori-rules.gameLength.maxDays).
@@ -1214,6 +1317,13 @@ function applyEffect(
     // 리셋 X). 세이카 Absorb 가 이 카운터로 '악마팀 효과 3개+' 를 출처 정확히 판정한다.
     if (_source.actualFaction === "demon" && ABSORBABLE_DEBUFF_TYPES.has(effect.type)) {
       target.counters.demonDebuffs = (target.counters.demonDebuffs ?? 0) + 1;
+    }
+    // 감시소 봉쇄 입력(로마즈 패시브): 악마(actualFaction='demon')가 *천사*에게 부정 효과를 가하면
+    // 그 천사에 tookDemonEffectThisNight=1 표식(그 밤 한정 — 매 밤 시작에 0 리셋). 후처리가 "구금된
+    // 밤에 천사팀이 악마효과 수령"을 이 표식으로 검출해 romazWardenBlocked 를 켠다. Kill/Corrupt 등
+    // 비흡수 부정효과도 포함하므로 demonDebuffs(흡수 한정)보다 넓다.
+    if (_source.actualFaction === "demon" && target.actualFaction === "angel") {
+      target.counters.tookDemonEffectThisNight = 1;
     }
   }
   switch (effect.type) {

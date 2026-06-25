@@ -159,9 +159,15 @@ export const CORE_ROLES: RoleDefinition[] = [
     //   구금(Silence, priority 1 게이트 — 그 밤 능력·효과 차단) + 전원 통지(silenced 이벤트).
     // 〈능력2〉신념 = 용의자(romazSuspect)였던 대상 1명 탈락(Kill, 무시불가). 이 탈락자가
     //   천사팀이면 로마즈 convictionBlocked=1(이후 구금 불가) — '신념 봉인 + 구금 불가'의 코어.
-    // ※ 후속(defer): 평시 '로마즈 투표로 용의자 밤 구금'(투표 회로 의존)·'천사팀이 악마효과를
-    //   받은 밤 다음 하루 구금 불가' 엣지 절은 entangled — 코어(지목+조사통지+조사장3 무조건
-    //   구금+신념)만 구현하고 vote-driven 구금/passive 절은 후속으로 남긴다.
+    // 〈투표 구금〉(원문 "로마즈의 투표로 밤 동안 구금"): 로마즈가 직전에 *투표*한 대상(VoteTarget
+    //   substrate)이 용의자(romazSuspect 표식)면 그 밤 구금(Silence). 색출이 진영·조사장에 묶이는
+    //   것과 달리, 투표-구동 구금은 진영 무관(용의자면 누구든) — 단 신념 봉인(convictionBlocked)·
+    //   감시소 봉쇄(romazWardenBlocked) 시엔 막힌다.
+    // 〈감시소 봉쇄〉(원문 패시브 "용의자 구금된 밤에 천사팀이 악마로부터 효과를 받으면 다음 하루
+    //   누구도 구금 불가"): engine 후처리가 그 밤 로마즈 구금이 실제 발동(romaz_ward_detain) +
+    //   천사팀이 악마-출처 부정효과 수령(demonDebuffs 증가)을 검출하면 romazWardenBlocked=1 →
+    //   다음 밤 시작에 1 차감(다음 하루만 봉쇄, 카운트다운).
+    // ※ 후속(defer): 없음(투표 구금·감시소 봉쇄 모두 구현). 색출당 구금 통지의 Discord plumbing 만 별도.
     id: "romaz",
     name: "로마즈",
     faction: "angel",
@@ -181,6 +187,10 @@ export const CORE_ROLES: RoleDefinition[] = [
             { type: "AddTag", target: "Target", tag: "romazSuspect", duration: "1_DAY" },
             // 조사장 1장 획득(색출당 +1). 3장 모이면 무조건 구금 게이트 충족.
             { type: "GrantCount", target: "self", tag: "clueWarrant", amount: 1 },
+            // ※ 투표 구금(원문 "로마즈의 투표로 밤 동안 구금")은 effect 가 아니라 engine 의 사전 hook
+            //   (applyRomazVoteDetain)이 처리한다 — priority 1 액션 루프보다 *먼저* 돌아 VoteTarget
+            //   용의자를 silencedNights 로 구금하므로, 색출 제출 여부와 무관하게 직전 투표가 구금을
+            //   구동한다. 봉인/봉쇄 게이트도 거기서 함께 본다(skipIfSourceCounter 단일 제약 회피).
             // 조사장 3장 + 악마팀 대상 → 조건 무시 구금(Silence). 천사팀 차단(actualFaction)·
             // 조사장 부족 차단(source clueWarrant<3). 구금은 priority 1 라 대상 능력보다 먼저.
             {
@@ -539,8 +549,25 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "mizlet_revive", name: "디저트 선물(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
-        // 디저트 선물(v2, 생존자 버프): 쿠키/푸딩 — 그 밤 보호 + 디저트 태그. 다수복귀 패시브는 후속.
-        { id: "mizlet_dessert", name: "디저트 선물", targetType: "SINGLE_ALIVE", priority: 3, effects: [{ type: "Protect", target: "Target", duration: "1_NIGHT" }, { type: "AddTag", target: "Target", tag: "dessert" }] },
+        // 디저트 선물 — 쿠키(원문 [천사]15): 그 밤 보호 + 디저트 태그 + 'cookie' 표식. 쿠키 핵심 절은
+        // "대상이 탈락해도 그 밤 능력 발동" — cookie 표식 보유자는 *나중에* 탈락해도 그 밤 액션이 엔진
+        // 루프의 source-alive 게이트를 우회한다(아래 cookie-act). 표식은 발동 시 소비, 지속(미사용 시
+        // 잔존). '이미 탈락자에게 직접 쿠키 → 가장 가까운 밤 활동 참여' 하위 절은 사망자 대상 지정
+        // 시스템(헬렌 remembered 식)과 얽혀 후속(코어 = 보유 중 사망해도 그 밤 발동).
+        { id: "mizlet_cookie", name: "디저트 선물(쿠키)", targetType: "SINGLE_ALIVE", priority: 3, effects: [
+          { type: "Protect", target: "Target", duration: "1_NIGHT" },
+          { type: "AddTag", target: "Target", tag: "dessert" },
+          { type: "AddTag", target: "Target", tag: "cookie" },
+        ] },
+        // 디저트 선물 — 푸딩(원문 [천사]15): 그 밤 보호 + 디저트 태그 + 'pudding' 표식. 푸딩 핵심 절은
+        // "능력으로 단일 대상 지정 시 '무시 불가' 버프" — pudding 표식 보유자의 단일 대상 능력은 봉인/
+        // 지목(Silence·Suspected) 게이트를 한 번 우회한다(무시 불가). '탈락 시 탈락 시점을 밤으로 조정'
+        // 절은 사망 기록 타이밍을 매치 전역에서 바꿔 아침/낮 흐름과 얽히므로 후속(defer + note).
+        { id: "mizlet_pudding", name: "디저트 선물(푸딩)", targetType: "SINGLE_ALIVE", priority: 3, effects: [
+          { type: "Protect", target: "Target", duration: "1_NIGHT" },
+          { type: "AddTag", target: "Target", tag: "dessert" },
+          { type: "AddTag", target: "Target", tag: "pudding" },
+        ] },
         // 고급 와인(v2, 1회): 전원 부정효과 제거(Cleanse All). 디저트 미제공자(태그 없음)는 투표가치
         // -1(skipIfTargetTag: dessert). 디저트 받은 자는 정화만(대화는 후속). 1회 — 누적 -1 남용 방지.
         { id: "mizlet_wine", name: "고급 와인", targetType: "NONE", priority: 5, maxUses: 1, effects: [
