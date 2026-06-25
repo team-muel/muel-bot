@@ -27,6 +27,15 @@ type EngineState = Record<string, unknown> & {
   // substrate: 직전 처형 투표·의심 투표의 voter→target 맵(레이스 없이 match 레벨 1회 기록).
   voteTargets?: Record<string, string>;
   suspectTargets?: Record<string, string>;
+  // 건너뛰기 다음-밤 리플레이(로잔느 SkipNight): 이번 밤 건너뛰기로 취소된 액션을 직렬화해 담는다.
+  // 다음 밤 시작에 actionStack 앞에 prepend 후 비운다(소비).
+  deferredNightActions?: Array<{
+    sourceUserId: string;
+    targetUserId: string | null;
+    targetUserIds?: string[];
+    actionType: string;
+    priority: number;
+  }>;
   verdict?: {
     candidateUserId: string | null;
     tallies: Record<string, number>;
@@ -571,6 +580,39 @@ Deno.serve((req: Request) => {
                 : 5,
           }));
 
+          // 건너뛰기 다음-밤 리플레이(로잔느 SkipNight, 원문 "모든 효과와 통지를 다음 밤으로 넘김"):
+          // 직전 밤 건너뛰기로 미뤄진 액션을 이 밤 actionStack 앞에 prepend 하고, engine_state 에서
+          // 비운다(소비 — 이중 리플레이 방지). prepend 한 액션은 직렬화 시 저장된 자기 priority 를
+          // 유지하므로 resolveNightActions 의 정렬이 원래 순서를 복원한다. 대상이 이미 탈락/소멸했으면
+          // 액션 루프의 대상-생존 가드가 자연 무효화(추가 가드 불필요). 단 출처(시전자)가 죽었으면 그
+          // 액션은 못 발동(source-alive 게이트) — 통지만 잃는 근사(action-replay 코어).
+          const deferred = engineState.deferredNightActions;
+          if (Array.isArray(deferred) && deferred.length > 0) {
+            state.actionStack = [
+              ...deferred.map((d) => ({
+                sourceUserId: d.sourceUserId,
+                targetUserId: d.targetUserId,
+                targetUserIds: d.targetUserIds,
+                actionType: d.actionType,
+                priority: d.priority,
+              })),
+              ...state.actionStack,
+            ];
+            // 소비: engine_state 에서 제거(이번 밤 해소 종료 시 write 가 ...engineState 로 carry 하지
+            // 않도록). 새 건너뛰기가 이 밤 또 발생하면 (a) write 가 newState.deferredNightActions 로 재설정.
+            const { deferredNightActions: _consumed, ...rest } = engineState;
+            engineState = rest as EngineState;
+            requireNoError(
+              await supabase.from("match_events").insert({
+                match_id: matchId,
+                phase_id: phase.id,
+                event_type: "deferred_actions_replayed",
+                visibility: "public",
+                payload: { count: deferred.length },
+              }),
+            );
+          }
+
           const { newState, events } = resolveNightActions(state);
 
           for (const [userId, playerState] of Object.entries(newState.players)) {
@@ -615,12 +657,31 @@ Deno.serve((req: Request) => {
             );
           }
 
+          // 건너뛰기 다음-밤 리플레이(로잔느 SkipNight, 원문 "모든 효과와 통지를 다음 밤으로 넘김"):
+          // 이번 밤 건너뛰기로 취소된 액션(newState.deferredNightActions)을 matches.engine_state 에
+          // 영속화한다. 다음 밤 시작에 actionStack 앞에 prepend 후 비운다(소비). 없으면 키 생략.
+          const deferredToPersist = (newState as { deferredNightActions?: unknown }).deferredNightActions;
           requireNoError(
             await supabase
               .from("matches")
-              .update({ engine_state: { ...engineState, modifiers: newState.modifiers } })
+              .update({
+                engine_state: {
+                  ...engineState,
+                  modifiers: newState.modifiers,
+                  ...(Array.isArray(deferredToPersist) && deferredToPersist.length > 0
+                    ? { deferredNightActions: deferredToPersist }
+                    : {}),
+                },
+              })
               .eq("id", matchId),
           );
+          engineState = {
+            ...engineState,
+            modifiers: newState.modifiers,
+            ...(Array.isArray(deferredToPersist) && deferredToPersist.length > 0
+              ? { deferredNightActions: deferredToPersist }
+              : {}),
+          } as EngineState;
 
           // 타락(루나) 후속 처리 (vault canon §28): corrupted 가 된 자는 새 진영의
           // 동료 정체를 인지한다. circleKnown=true 로 영속화해 frontend 뷰가 demon
@@ -747,6 +808,27 @@ Deno.serve((req: Request) => {
 
         const state = playerStateFromRows(matchId, "night", phase.phase_number, players);
         const suspicion = tallySuspicionVotes(actionRowsToInputs(actions), state.players);
+
+        // 누적 받는-의심 영속(suspicionReceived): 이번 의심 집계에서 각 대상이 받은 의심을 그
+        // 대상의 counters.suspicionReceived 에 누적한다 — 루나 달이 차오른다(원문 [조력자]5)가
+        // 발동 시점의 "의심받은 만큼"을 영구 투표가치로 환산하는 데 쓰는 단일 출처. 지속 누적
+        // (라운드 리셋 X). 의심 면역(suspicionImmune)이면 tally 에서 이미 제외돼 0 가산.
+        for (const [uid, total] of Object.entries(suspicion.tallies)) {
+          if (!total || total <= 0) continue;
+          const dbp = players.find((p) => p.user_id === uid);
+          if (!dbp) continue;
+          const es = (dbp.engine_state ?? {}) as Record<string, unknown>;
+          const counters = { ...((es.counters ?? {}) as Record<string, number>) };
+          counters.suspicionReceived = (counters.suspicionReceived ?? 0) + total;
+          requireNoError(
+            await supabase
+              .from("match_players")
+              .update({ engine_state: { ...es, counters } })
+              .eq("match_id", matchId)
+              .eq("user_id", uid),
+          );
+          dbp.engine_state = { ...es, counters };
+        }
 
         if (suspicion.candidateUserId) {
           const target = players.find((player) => player.user_id === suspicion.candidateUserId);
@@ -1253,9 +1335,19 @@ Deno.serve((req: Request) => {
             // 표식이 사라지면 morning hook 의 재부활 루프에 더는 들어오지 않아 영구 탈락한다.
             const candTags = Array.isArray(candidateEngineState.tags) ? (candidateEngineState.tags as string[]) : [];
             const wasManifest = candTags.includes("manifestMemory");
+            // 푸딩 탈락 시점 밤 조정(미즐렛 디저트 선물 푸딩, 원문 [천사]15 "탈락했을 때 탈락 시점을
+            // 밤으로 조정"): 'pudding' 표식 보유자가 처형(투표)으로 탈락하면 기록되는 탈락 사유를
+            // night_kill 로 조정한다 — 탈락 자체는 동일(이미 처형 확정), 사망 *시점/사유*만 밤으로 본다.
+            // 표식은 조정에 쓰이면 1회 소비(다음 탈락엔 재적용 안 됨). 바운디드 — 탈락 흐름 불변.
+            const hasPudding = candTags.includes("pudding");
+            const eliminatedCause = hasPudding ? "night_kill" : "vote";
+            const tagsAfter = candTags
+              .filter((t) => !(wasManifest && t === "manifestMemory"))
+              .filter((t) => !(hasPudding && t === "pudding"));
+            const needEngineWrite = wasManifest || hasPudding;
             const nextEngine = wasManifest
-              ? { ...candidateEngineState, tags: candTags.filter((t) => t !== "manifestMemory"), counters: { ...candidateCounters, manifestRevived: 0, manifestSpent: 1 } }
-              : candidateEngineState;
+              ? { ...candidateEngineState, tags: tagsAfter, counters: { ...candidateCounters, manifestRevived: 0, manifestSpent: 1 } }
+              : { ...candidateEngineState, tags: tagsAfter };
             requireNoError(
               await supabase
                 .from("match_players")
@@ -1263,12 +1355,17 @@ Deno.serve((req: Request) => {
                   alive: false,
                   eliminated_at: endedAt,
                   eliminated_phase_number: phase.phase_number,
-                  eliminated_cause: "vote",
-                  ...(wasManifest ? { engine_state: nextEngine } : {}),
+                  eliminated_cause: eliminatedCause,
+                  ...(needEngineWrite ? { engine_state: nextEngine } : {}),
                 })
                 .eq("match_id", matchId)
                 .eq("user_id", candidateUserId),
             );
+            if (hasPudding) {
+              requireNoError(
+                await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "pudding_death_shifted", visibility: "public", payload: { user_id: candidateUserId } }),
+              );
+            }
             if (wasManifest) {
               requireNoError(
                 await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "manifest_dispelled", visibility: "public", payload: { user_id: candidateUserId } }),

@@ -1,4 +1,4 @@
-import type { ActiveAbility, Effect, MatchState, PlayerState } from "./types.ts";
+import type { ActionPayload, ActiveAbility, Effect, MatchState, PlayerState } from "./types.ts";
 import { ANGEL_ROLES, CORE_ROLES, isDemonKillerRole } from "./roles.ts";
 
 const TAG_PROTECTED = "protected";
@@ -99,6 +99,10 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
 
   const sortedActions = [...newState.actionStack].sort((a, b) => a.priority - b.priority);
   newState.actionStack = [];
+
+  // 건너뛰기 다음-밤 리플레이(로잔느 SkipNight): 이번 밤 건너뛰기로 취소되는 액션을 직렬화해 모은다.
+  // 액션 루프의 nightSkipped 가드가 채우고, 해소 종료 시 newState.deferredNightActions 로 내보낸다.
+  const deferredNightActions: ActionPayload[] = [];
 
   // 소명(하브레터스): 보호가 실제 공격을 막았을 때 시전자에게 줄 보상 예약(targetUserId → 시전자/카운터).
   const saveRewards: Record<string, { source: string; counter: string; amount: number }> = {};
@@ -239,8 +243,21 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 건너뛰기(로잔느 SkipNight): priority 0 의 건너뛰기가 먼저 발동해 nightSkipped 를 세우면, 그
     // 뒤(priority 높은) 모든 액션은 이 가드에서 일괄 취소된다. 건너뛰기 자신은 effect 처리 시점에
     // 플래그를 세우므로(가드보다 뒤) 영향받지 않는다 — 직업 하드코딩 없이 플래그만으로 전역 취소.
+    // 다음-밤 리플레이(원문 "모든 효과와 통지를 다음 밤으로 넘김"): 취소되는 액션을 그대로 직렬화해
+    // deferredNightActions 에 모은다(phase-advance 가 다음 밤 actionStack 에 prepend). 단 무한 연기를
+    // 막기 위해 SkipNight(rosanne_skip)는 연기 집합에서 제외 — 다음 밤 또 전부 미루는 루프 차단.
     if ((newState.modifiers?.nightSkipped ?? 0) > 0) {
-      events.push({ type: "action_skipped_night", userId: sourcePlayer.userId });
+      const isSkip = action.actionType === "rosanne_skip";
+      if (!isSkip) {
+        deferredNightActions.push({
+          sourceUserId: action.sourceUserId,
+          targetUserId: action.targetUserId,
+          targetUserIds: action.targetUserIds,
+          actionType: action.actionType,
+          priority: action.priority,
+        });
+      }
+      events.push({ type: "action_deferred_night", userId: sourcePlayer.userId, actionType: action.actionType });
       continue;
     }
 
@@ -369,7 +386,8 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
           const t = newState.players[tid];
           if (!t) continue;
           // 'remembered' 탈락자(헬렌 황금빛 수면) 우회: allowRememberedDead 이면 탈락 + remembered 보유 시 통과.
-          const allowDead = ability.allowRememberedDead && t.tags.includes("remembered");
+          // 임의 탈락자 우회(미즐렛 쿠키): allowDeadTarget 이면 표식 무관하게 탈락 대상 통과.
+          const allowDead = (ability.allowRememberedDead && t.tags.includes("remembered")) || ability.allowDeadTarget;
           if (!t.alive && ability.targetType !== "SINGLE_DEAD" && !allowDead) continue;
           recordCast(sourcePlayer.userId, t.userId);
           applyEffect(newState, sourcePlayer, t, effect, events);
@@ -406,7 +424,25 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
     if (action.actionType === "luna_moonrise") {
       newState.modifiers.moonriseRule = 1;
-      events.push({ type: "moonrise_triggered", payload: { user_id: sourcePlayer.userId } });
+      // 달이 차오른다 추가 효과(원문 [조력자]5 "루나가 의심받은 만큼 투표가치로 환산되어 영구히
+      // 증가하고, 효과가 유지되는 동안 의심받지 않는다"): 발동 시점의 루나 누적 받는-의심을 영구
+      // 투표가치(voteWeightBonus)로 환산하고, 의심 면역 표식(suspicionImmune)을 부여한다.
+      //  - 받는-의심 = 누적 받은 의심(suspicionReceived, night_suspect 가 영속) + 그 라운드 색출
+      //    가산(suspicionBias, 로마즈) + 기본 의심가치(suspicionValue). 모두 0 이상만 합산(음수 무시).
+      //    suspicionReceived 가 받은 표 기반 누적이라 핵심 — 색출/기본은 보조 가산.
+      //  - voteWeightBonus 는 tallyEliminationVotes·tallyVerdictVotes 가 합산하는 영구 가치(루루
+      //    매료 양도와 같은 카운터) — '영구히 증가' 충족. 0 환산이면 가산/표식 모두 생략(no-op 안전).
+      //  - suspicionImmune 태그는 tallySuspicionVotes 가 읽어 그 보유자를 의심 집계에서 제외한다
+      //    ('효과 유지 동안 의심받지 않는다'). 루나 생존 + moonriseRule 유지 동안 영속(달이 차오른
+      //    동안). 표식이라 Cleanse 대상 아님(지속 — 원문 '효과가 유지되는 동안').
+      const susReceived = Math.max(0, sourcePlayer.counters?.suspicionReceived ?? 0)
+        + Math.max(0, sourcePlayer.counters?.suspicionBias ?? 0)
+        + Math.max(0, sourcePlayer.suspicionValue ?? 0);
+      if (susReceived > 0) {
+        sourcePlayer.counters.voteWeightBonus = (sourcePlayer.counters.voteWeightBonus ?? 0) + susReceived;
+      }
+      if (!sourcePlayer.tags.includes("suspicionImmune")) sourcePlayer.tags.push("suspicionImmune");
+      events.push({ type: "moonrise_triggered", payload: { user_id: sourcePlayer.userId, suspicionConverted: susReceived } });
     }
     // 소명 예약(하브레터스): onSaveGrantSelf 를 가진 보호 능력이 대상에 걸렸으면, 그 대상이
     // 이 밤 실제 공격을 막았을 때(아래 death 해소의 attack_prevented) 시전자에게 보상한다.
@@ -733,13 +769,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
-  // 거친 포효(라이너 〈패시브〉수호신 백호, 원문 [천사]13): '강한 의지'(willCount)가 2회 누적되면
-  // 즉시 자동 발동한다 — 천사팀 카운트 -1(countBonus), willCount 2 소비, 즉시 2명에게 백호 발톱
-  // (clawed 표식). 공격당한(clawed) 대상은 다음 아침 행사 투표가치를 3 이상 얻으면 소멸한다(아침
-  // voteValueMod≥3 게이트 → phase-advance morning hook 이 Annihilate). 2 대상 선정은 이 밤 라이너가
-  // '강한 의지'로 지목한 대상(castOtherTargets) 중 최대 2명 — 없으면 발톱 없이 카운트/소비만(코어).
+  // 거친 포효(라이너 원문 [천사]13): '강한 의지'(willCount)가 2회 누적되면 발동 — 천사팀 카운트 -1
+  // (countBonus), willCount 2 소비, 2명에게 백호 발톱(clawed 표식). 공격당한(clawed) 대상은 다음
+  // 아침 행사 투표가치를 3 이상 얻으면 소멸한다(아침 voteValueMod≥3 게이트 → phase-advance morning
+  // hook 이 Annihilate). 원문은 '강한 의지 2회 → 2명 지목'이라 플레이어 지목 액션(rainer_roar)이
+  // 본 경로다 — 그 액션이 이 밤 제출됐으면(rainer_roar) clawed·willCount 소비·countBonus -1 을 액션
+  // 루프가 이미 처리했으므로 *자동 발동을 건너뛴다*(double-consume 방지). 미제출 시에만 이 자동
+  // 폴백이 라이너가 그 밤 '강한 의지'로 지목한 대상(castOtherTargets) 중 최대 2명을 자동으로 할퀸다.
+  const roarSubmittedBy = new Set(sortedActions.filter((a) => a.actionType === "rainer_roar").map((a) => a.sourceUserId));
   for (const r of Object.values(newState.players)) {
     if (!r.alive || r.currentRole !== "rainer") continue;
+    if (roarSubmittedBy.has(r.userId)) continue; // 플레이어 지목으로 이미 처리 — 자동 폴백 생략.
     if ((r.counters.willCount ?? 0) < 2) continue;
     r.counters.willCount = (r.counters.willCount ?? 0) - 2;
     r.counters.countBonus = (r.counters.countBonus ?? 0) - 1;
@@ -767,6 +807,13 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         events.push({ type: "romaz_warden_blocked", payload: { user_id: rz.userId } });
       }
     }
+  }
+
+  // 건너뛰기 다음-밤 리플레이 출력(로잔느 SkipNight): 이번 밤 건너뛰기로 취소된 액션을 newState 에
+  // 실어 보낸다. phase-advance 가 matches.engine_state.deferredNightActions 로 영속화하고 다음 밤
+  // actionStack 앞에 prepend 한 뒤 비운다(소비). 빈 집합이면 필드를 생략(기존 결과 호환).
+  if (deferredNightActions.length > 0) {
+    newState.deferredNightActions = deferredNightActions;
   }
 
   return { newState, events };
@@ -928,6 +975,13 @@ export function tallySuspicionVotes(
       continue;
     }
 
+    // 의심 면역(루나 달이 차오른다, 원문 "효과가 유지되는 동안 의심받지 않는다"): suspicionImmune
+    // 표식 보유 대상은 받는-의심 집계에서 제외한다 — 이 대상을 향한 의심표는 무효(skipped).
+    if (target.tags.includes("suspicionImmune")) {
+      skipped += 1;
+      continue;
+    }
+
     // 비치지 않는 자아: brokenSelf 보유자(엘런이 해체한 임의의 대상)는 의심가치도 0.
     if ((actor.counters?.brokenSelf ?? 0) > 0) {
       skipped += 1;
@@ -943,7 +997,9 @@ export function tallySuspicionVotes(
   }
 
   // 받는-의심 가산 (로마즈 용의자 +의심가치). counters.suspicionBias 보유 생존자에 가산.
+  // 단 의심 면역(suspicionImmune) 보유자는 색출 가산도 무효(루나 달이 차오른다).
   for (const p of Object.values(players)) {
+    if (p.tags.includes("suspicionImmune")) continue;
     const bias = p.counters?.suspicionBias ?? 0;
     if (p.alive && bias > 0) tallies[p.userId] = (tallies[p.userId] || 0) + bias;
   }

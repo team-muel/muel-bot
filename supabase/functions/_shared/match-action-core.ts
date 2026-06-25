@@ -192,7 +192,8 @@ export async function submitMatchAction(
         if (!targetState) throw badRequest("invalid_target", "대상을 찾을 수 없습니다.");
         const targetRole = effectiveRole(targetState);
         const targetTags = ((targetState.engine_state as { tags?: string[] } | null)?.tags ?? []);
-        const allowRememberedDead = ability.allowRememberedDead && targetTags.includes("remembered");
+        // 임의 탈락자 허용(미즐렛 쿠키 allowDeadTarget) 또는 추억된 탈락자(헬렌 allowRememberedDead).
+        const allowRememberedDead = (ability.allowRememberedDead && targetTags.includes("remembered")) || ability.allowDeadTarget;
         if (ability.targetType === "SINGLE_DEAD") {
           if (targetState.alive) throw badRequest("invalid_target", "부활은 탈락한 대상에게만 사용할 수 있습니다.");
           // 부활 딜레이(canon 미즐렛 — 즉시 복귀가 아니라 예측 가능한 메커니즘): 탈락 직후
