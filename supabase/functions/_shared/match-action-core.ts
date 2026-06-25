@@ -286,6 +286,32 @@ export async function submitMatchAction(
     }
   }
 
+  // 용의자 색출(로마즈): 조사장(clueWarrant) 보유(≥1) 시 색출이 "용의자가 악마인지 통지" 효과를
+  // 더한다(원문 [천사]2). police 와 같은 판정 경로 — 사탄의 마 per-target/전역 우선, 변신·정밀조사
+  // 미적용(로마즈는 정밀조사 풀 아님). 조사장은 발동 후 GrantCount 로 +1(이번 색출 효과는 직전까지
+  // 누적분 기준이므로 제출 시점의 clueWarrant 로 통지 여부를 가른다 — 첫 색출은 통지 X, 이후 통지 O).
+  if (actionType === "romaz_suspect" && targetUserId) {
+    const warrants = (player.engine_state as { counters?: { clueWarrant?: number } } | null)?.counters?.clueWarrant ?? 0;
+    if (warrants >= 1) {
+      const { data: target } = await supabase
+        .from("match_players")
+        .select("role, engine_state")
+        .eq("match_id", matchId)
+        .eq("user_id", targetUserId)
+        .single();
+      if (target) {
+        const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
+        if (await isAngelTeamVoteFullySuppressed(supabase, matchId)) {
+          investigationResult = "demon";
+        } else if (isTargetVoteSuppressed(target.engine_state as { bonusVoteValue?: number; counters?: Record<string, number> } | null)) {
+          investigationResult = "demon";
+        } else {
+          investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
+        }
+      }
+    }
+  }
+
   // police 조사 즉시 결과
   if (actionType === "police_investigate" && targetUserId) {
     const { data: target } = await supabase

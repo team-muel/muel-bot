@@ -690,6 +690,26 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 거친 포효(라이너 〈패시브〉수호신 백호, 원문 [천사]13): '강한 의지'(willCount)가 2회 누적되면
+  // 즉시 자동 발동한다 — 천사팀 카운트 -1(countBonus), willCount 2 소비, 즉시 2명에게 백호 발톱
+  // (clawed 표식). 공격당한(clawed) 대상은 다음 아침 행사 투표가치를 3 이상 얻으면 소멸한다(아침
+  // voteValueMod≥3 게이트 → phase-advance morning hook 이 Annihilate). 2 대상 선정은 이 밤 라이너가
+  // '강한 의지'로 지목한 대상(castOtherTargets) 중 최대 2명 — 없으면 발톱 없이 카운트/소비만(코어).
+  for (const r of Object.values(newState.players)) {
+    if (!r.alive || r.currentRole !== "rainer") continue;
+    if ((r.counters.willCount ?? 0) < 2) continue;
+    r.counters.willCount = (r.counters.willCount ?? 0) - 2;
+    r.counters.countBonus = (r.counters.countBonus ?? 0) - 1;
+    const clawTargets = Array.from(castOtherTargets[r.userId] ?? [])
+      .filter((id) => id !== r.userId && newState.players[id]?.alive)
+      .slice(0, 2);
+    for (const tid of clawTargets) {
+      const t = newState.players[tid];
+      if (!t.tags.includes("clawed")) t.tags.push("clawed");
+    }
+    events.push({ type: "rainer_savage_roar", payload: { user_id: r.userId, targets: clawTargets, countBonus: r.counters.countBonus } });
+  }
+
   return { newState, events };
 }
 
@@ -1421,9 +1441,12 @@ function applyEffect(
     case "GrantCount": {
       // 소속 카운트 +amount(지속). 기본은 countBonus(생존 가산, 우노 투쟁). effect.tag 로
       // 카운터를 지정하면 그쪽에 가산 — 라이너 백호는 deadCountBonus(생존 무관 지속).
+      // selfPenalty(로마즈 신념): 게이트(onlyFactions/onlyIfTargetTag)는 *대상*으로 평가하되
+      // 카운트는 *시전자*에게 가산 — "용의자(천사)를 신념으로 처단하면 로마즈 자신이 구금 봉인".
+      const gcWho = effect.selfPenalty ? _source : target;
       const countKey = effect.tag ?? "countBonus";
-      target.counters[countKey] = (target.counters[countKey] ?? 0) + (effect.amount ?? 1);
-      events.push({ type: "count_granted", payload: { user_id: target.userId, amount: effect.amount ?? 1, counter: countKey } });
+      gcWho.counters[countKey] = (gcWho.counters[countKey] ?? 0) + (effect.amount ?? 1);
+      events.push({ type: "count_granted", payload: { user_id: gcWho.userId, amount: effect.amount ?? 1, counter: countKey } });
       break;
     }
     case "Charge": {

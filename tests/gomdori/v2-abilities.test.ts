@@ -1528,9 +1528,9 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
   assert.ok(newState.players.t.tags.includes("mephistoBrand"), "낙인 — 대상 mephistoBrand 표식");
 }
 
-// --- 우노 명예(투표가치 +10): 사탄의 마(-1)를 뚫고 우노의 표가 살아남는 천사 표 경로 ---
+// --- 우노 명예(투표가치 +5, 원문 [천사]6): 사탄의 마(-1)를 뚫고 우노의 표가 살아남는 천사 표 경로 ---
 {
-  const uno = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } }; // 배정 시 명예 주입
+  const uno = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 5 } }; // 배정 시 명예 주입(원문 +5)
   const state = emptyState(
     {
       demon: player("demon", "demon", "demon"),
@@ -1540,8 +1540,8 @@ assert.match(rainerMigration, /'rainer_summon'/, "마이그레이션 action_type
     [{ sourceUserId: "demon", targetUserId: "a1", actionType: "demon_kill", priority: 4 }],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.uno.counters.voteValueMod, 9, "사탄의 마 적용 후 우노 명예 10-1=9 잔존");
-  // 우노 표=1+9=10, 일반 천사 표=max(0,1-1)=0 → 우노가 악마를 처형대로 보낼 수 있다(천사 표 경로).
+  assert.equal(newState.players.uno.counters.voteValueMod, 4, "사탄의 마 적용 후 우노 명예 5-1=4 잔존");
+  // 우노 표=1+4=5, 일반 천사 표=max(0,1-1)=0 → 우노가 악마를 처형대로 보낼 수 있다(천사 표 경로).
   const vote = tallyEliminationVotes(
     [
       { actorUserId: "uno", targetUserId: "demon" },
@@ -1936,11 +1936,11 @@ assert.match(phaseAdvSrc, /shieldFromGain = 1/, "가인 보호막 부여 시 shi
 
 // --- 해가 저문다 tally: dawnRule 시 능력 보너스(voteValueMod>0, prowess) 부호 반전 ---
 {
-  // 우노 명예 voteValueMod=+10 → dawnRule 시 -10. 1+(-10)=음수→Max(0,)=0(skip 처리).
-  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } };
+  // 우노 명예 voteValueMod=+5 → dawnRule 시 -5. 1+(-5)=음수→Max(0,)=0(skip 처리).
+  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 5 } };
   const t = player("t", "citizen", "angel");
   const normal = tallyEliminationVotes([{ actorUserId: "uno", targetUserId: "t" }], { uno, t });
-  assert.equal(normal.tallies["t"], 11, "평시 — 우노 1+10=11");
+  assert.equal(normal.tallies["t"], 6, "평시 — 우노 1+5=6");
   const dawn = tallyEliminationVotes([{ actorUserId: "uno", targetUserId: "t" }], { uno, t }, { dawnRule: 1 });
   assert.equal(dawn.tallies["t"], undefined, "dawnRule — 우노 표 무력화(0)");
   assert.equal(dawn.skipped, 1, "dawnRule — 우노 표 skipped");
@@ -2171,7 +2171,7 @@ assert.match(roles, /id: "daeakma_brand"[\s\S]*?type: "AddTag", target: "Target"
 }
 {
   // 천사가 양수 voteValueMod 보유면 영역 X.
-  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 10 } };
+  const uno: PlayerState = { ...player("uno", "uno", "angel"), counters: { voteValueMod: 5 } };
   const demon: PlayerState = player("demon", "demon", "demon");
   const r = resolveNightActions(emptyState({ uno, demon }, []));
   assert.ok(!r.events.some((e: any) => e.type === "satanic_realm_treated"), "양수 vote — 영역 발동 X");
@@ -2392,11 +2392,113 @@ assert.match(luruMig, /'luru_mute'/, "마이그레이션 — 루루 무투");
   };
   const r = resolveNightActions(state);
   assert.equal(r.newState.players.a.alive, false, "a 처치");
-  // 관찰 +1 + 사망 +2 = willCount 3.
-  assert.equal(r.newState.players.rainer.counters.willCount, 3, "willCount = 관찰 +1 + 사망 +2");
+  // 관찰 +1 + 사망 +2 = willCount 3 → 거친 포효 자동 발동(2 소비) → willCount 1.
+  assert.equal(r.newState.players.rainer.counters.willCount, 1, "willCount = (관찰 +1 + 사망 +2) - 거친 포효 소비 2");
   assert.ok(r.events.some((e: any) => e.type === "rainer_will_surge"), "rainer_will_surge 이벤트");
+  assert.ok(r.events.some((e: any) => e.type === "rainer_savage_roar"), "거친 포효 자동 발동 이벤트");
   assert.ok(!r.newState.players.a.tags.includes("observedByRainer"), "observedByRainer 표식 소비");
 }
+
+// --- 라이너 거친 포효: willCount 2 누적 시 자동 발동 — countBonus -1 + 이 밤 지목 대상 clawed ---
+{
+  // 강한 의지 1회로 willCount 1 → 부족(발동 X). 두 밤째 다른 대상 관찰로 2 도달 시 발동.
+  const rainer: PlayerState = { ...player("rainer", "rainer", "angel"), counters: { willCount: 1 } };
+  const r = resolveNightActions(emptyState(
+    { rainer, foe: player("foe", "citizen", "angel") },
+    [{ sourceUserId: "rainer", targetUserId: "foe", actionType: "rainer_resolve", priority: 5 }],
+  ));
+  // willCount 1 + 관찰 +1 = 2 → 거친 포효 발동(2 소비 → 0), countBonus -1, foe 에 clawed.
+  assert.equal(r.newState.players.rainer.counters.willCount, 0, "거친 포효 — willCount 2 소비");
+  assert.equal(r.newState.players.rainer.counters.countBonus, -1, "거친 포효 — 천사팀 카운트 -1");
+  assert.ok(r.newState.players.foe.tags.includes("clawed"), "거친 포효 — 이 밤 지목 대상에 백호 발톱(clawed)");
+  assert.ok(r.events.some((e: any) => e.type === "rainer_savage_roar"), "거친 포효 이벤트");
+}
+
+// --- 라이너 거친 포효: willCount 1 미만이면 발동 안 함 ---
+{
+  const rainer: PlayerState = { ...player("rainer", "rainer", "angel"), counters: { willCount: 0 } };
+  const r = resolveNightActions(emptyState({ rainer }, []));
+  assert.equal(r.newState.players.rainer.counters.countBonus ?? 0, 0, "willCount 미달 — 거친 포효 미발동");
+  assert.ok(!r.events.some((e: any) => e.type === "rainer_savage_roar"), "거친 포효 미발동");
+}
+
+// --- 로마즈 용의자 색출: 표식(romazSuspect) + 조사장(clueWarrant) +1 + 받는표/의심 가산 ---
+{
+  const romaz: PlayerState = player("romaz", "romaz", "angel");
+  const r = resolveNightActions(emptyState(
+    { romaz, victim: player("victim", "citizen", "angel") },
+    [{ sourceUserId: "romaz", targetUserId: "victim", actionType: "romaz_suspect", priority: 1 }],
+  ));
+  assert.equal(r.newState.players.victim.counters.voteBias, 5, "용의자 색출 — 받는 표 +5");
+  assert.equal(r.newState.players.victim.counters.suspicionBias, 10, "용의자 색출 — 받는 의심 +10");
+  assert.ok(r.newState.players.victim.tags.includes("romazSuspect"), "용의자 표식(신념 사정권)");
+  assert.equal(r.newState.players.romaz.counters.clueWarrant, 1, "조사장 +1");
+}
+
+// --- 로마즈 조사장 3장 + 악마팀 대상 → 무조건 구금(Silence, 능력 차단) ---
+{
+  const romaz: PlayerState = { ...player("romaz", "romaz", "angel"), counters: { clueWarrant: 3 } };
+  const r = resolveNightActions(emptyState(
+    { romaz, demon: player("demon", "demon", "demon"), prey: player("prey", "citizen", "angel") },
+    [
+      { sourceUserId: "romaz", targetUserId: "demon", actionType: "romaz_suspect", priority: 1 },
+      { sourceUserId: "demon", targetUserId: "prey", actionType: "demon_kill", priority: 4 },
+    ],
+  ));
+  assert.equal(r.newState.players.prey.alive, true, "조사장 3 — 악마 구금되어 처치 무력화");
+  assert.ok(r.events.some((e: any) => e.type === "action_blocked_silenced" && e.userId === "demon"), "구금(봉인) 차단 이벤트");
+}
+
+// --- 로마즈 조사장 3장이어도 천사팀 대상은 구금 안 됨(원문 '악마팀일 때') ---
+{
+  const romaz: PlayerState = { ...player("romaz", "romaz", "angel"), counters: { clueWarrant: 3 } };
+  const r = resolveNightActions(emptyState(
+    { romaz, ally: player("ally", "citizen", "angel") },
+    [{ sourceUserId: "romaz", targetUserId: "ally", actionType: "romaz_suspect", priority: 1 }],
+  ));
+  assert.equal(r.newState.players.ally.counters.silencedNights ?? 0, 0, "천사팀 용의자는 구금 X");
+}
+
+// --- 로마즈 신념: 용의자(romazSuspect)였던 악마 처단(Kill), 봉인 안 됨 ---
+{
+  const romaz: PlayerState = player("romaz", "romaz", "angel");
+  const demon: PlayerState = { ...player("demon", "demon", "demon"), tags: ["romazSuspect"] };
+  const r = resolveNightActions(emptyState(
+    { romaz, demon },
+    [{ sourceUserId: "romaz", targetUserId: "demon", actionType: "romaz_conviction", priority: 4 }],
+  ));
+  assert.equal(r.newState.players.demon.alive, false, "신념 — 용의자였던 악마 처단");
+  assert.equal(r.newState.players.romaz.counters.convictionBlocked ?? 0, 0, "악마 처단은 봉인 안 됨");
+}
+
+// --- 로마즈 신념: 용의자였던 천사 처단 시 로마즈 convictionBlocked(이후 구금 봉인, selfPenalty) ---
+{
+  const romaz: PlayerState = player("romaz", "romaz", "angel");
+  const ally: PlayerState = { ...player("ally", "citizen", "angel"), tags: ["romazSuspect"] };
+  const r = resolveNightActions(emptyState(
+    { romaz, ally },
+    [{ sourceUserId: "romaz", targetUserId: "ally", actionType: "romaz_conviction", priority: 4 }],
+  ));
+  assert.equal(r.newState.players.ally.alive, false, "신념 — 용의자였던 천사도 처단(무시불가)");
+  assert.equal(r.newState.players.romaz.counters.convictionBlocked, 1, "동료 처단 → 로마즈 신념 봉인");
+}
+
+// --- 로마즈 신념: 용의자 표식 없는 대상은 처단 불가(onlyIfTargetTag 게이트) ---
+{
+  const romaz: PlayerState = player("romaz", "romaz", "angel");
+  const r = resolveNightActions(emptyState(
+    { romaz, stranger: player("stranger", "demon", "demon") },
+    [{ sourceUserId: "romaz", targetUserId: "stranger", actionType: "romaz_conviction", priority: 4 }],
+  ));
+  assert.equal(r.newState.players.stranger.markedForDeath, false, "용의자 표식 없으면 신념 무효");
+}
+
+// 로마즈 v2 — 계약 정규식.
+assert.match(roles, /id: "romaz_suspect"[\s\S]*?tag: "romazSuspect"/, "로마즈 용의자 표식");
+assert.match(roles, /id: "romaz_suspect"[\s\S]*?tag: "clueWarrant"/, "로마즈 조사장 충전");
+assert.match(roles, /id: "romaz_conviction"[\s\S]*?type: "Kill"[\s\S]*?onlyIfTargetTag: "romazSuspect"/, "로마즈 신념 — 용의자 사정권 처단");
+const romazMig = readFileSync("supabase/migrations/20260625170000_gomdori_romaz_conviction.sql", "utf8");
+assert.match(romazMig, /'romaz_conviction'/, "마이그레이션 — 신념");
 
 // --- 라이너 그날의 저항: 1회 self — deadCountBonus +1 + willCount +1 ---
 {
@@ -2414,8 +2516,12 @@ assert.match(luruMig, /'luru_mute'/, "마이그레이션 — 루루 무투");
 assert.match(roles, /id: "rainer_resolve"[\s\S]*?noConsecutiveTarget: true/, "라이너 강한 의지 — 연속 지목 금지");
 assert.match(roles, /id: "rainer_resolve"[\s\S]*?tag: "observedByRainer"/, "라이너 강한 의지 — observed 표식");
 assert.match(roles, /id: "rainer_resistance"[\s\S]*?maxUses: 1/, "라이너 그날의 저항 — 1회 제한");
+assert.match(engineSrc, /rainer_savage_roar/, "엔진 — 거친 포효 자동 발동");
+assert.match(engineSrc, /tags\.push\("clawed"\)/, "엔진 — 백호 발톱(clawed) 표식");
+assert.match(phaseAdvSrc, /savage_roar_annihilation/, "phase-advance — 거친 포효 아침 소멸 hook");
+assert.match(phaseAdvSrc, /clawed[\s\S]*?voteValueMod[\s\S]*?>= 3/, "phase-advance — 발톱 대상 투표가치 3 게이트");
 const rainerMig = readFileSync("supabase/migrations/20260618160000_gomdori_rainer_v2.sql", "utf8");
 assert.match(rainerMig, /'rainer_resolve'/, "마이그레이션 — 강한 의지");
 assert.match(rainerMig, /'rainer_resistance'/, "마이그레이션 — 그날의 저항");
 
-console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체/사탄의마전역/임종선언/소명쿨다운/역추리/헬렌추억/미즐렛회로/루루무투/라이너의지) checks passed");
+console.log("Gomdori v2 abilities (봉인/부활/변환/신앙/백호/사탄의마/우노명예/군인의사명/아서단죄/말렌혼령/소명/팬텀봉인/영면/침묵의밤/엘런누진/말렌마비/신출귀몰/가인급습/가인보호막만료/루나분기/엘런해체/사탄의마전역/임종선언/소명쿨다운/역추리/헬렌추억/미즐렛회로/루루무투/라이너의지/로마즈조사장/로마즈신념) checks passed");
