@@ -133,6 +133,29 @@ export const CORE_ROLES: RoleDefinition[] = [
             { type: "GrantCount", target: "self", tag: "willCount", amount: 1 },
           ],
         },
+        // 거친 포효(원문 [천사]13, 플레이어 지목): '강한 의지'가 2회 누적(willCount≥2)되었을 때만
+        // 발동 — 2명을 직접 지목해 백호 발톱(clawed 표식)을 건다. 공격당한 대상은 *다음 아침* 행사
+        // 투표가치를 3 이상 얻으면 소멸(phase-advance morning hook, voteValueMod≥3 → Annihilate).
+        // requiresCounter 로 willCount≥2 게이트 + 2 소비. AddTag(clawed) 2인 지목. countBonus -1
+        // (canon 천사팀 카운트 -1)은 engine 후처리(rainer_roar 제출 시 자동 트리거에서 처리)로 둔다 —
+        // 즉 발동 성공의 부수효과(카운트 -1)는 자동 경로와 공유하고, 본 액션은 *지목*(clawed)을 담당.
+        // ※ 원문 타이밍 변경(즉시 자동 → 다음 밤 플레이어 지목): 과거 willCount≥2 즉시 자동 발동이
+        //   라이너 자신이 그 밤 지목한 대상을 자동으로 할퀴었으나, 원문은 '강한 의지 2회 → 2명 지목'
+        //   이므로 플레이어가 명시 지목하는 액션으로 승격. 자동 경로는 미제출 시 폴백으로 유지.
+        {
+          id: "rainer_roar",
+          name: "거친 포효",
+          targetType: "SINGLE_ALIVE",
+          priority: 5,
+          excludeSelf: true,
+          targetCount: 2,
+          requiresCounter: { key: "willCount", min: 2, consumeAmount: 2 },
+          effects: [
+            { type: "AddTag", target: "Target", tag: "clawed" },
+            // 천사팀 카운트 -1(canon): 지목 발동 성공 시 라이너 자신의 countBonus -1.
+            { type: "GrantCount", target: "self", amount: -1 },
+          ],
+        },
         // 그날의 저항(v2, 1회, 첫 밤 불가): 백호 한 마리 추가 소환 — 즉시 deadCountBonus +1
         // (백호 추가 한 마리). 효과 종료 시 -1 + 강한 의지 +1 의 canon 단계는 후속 — 본 PR 은
         // 단순 1회 즉시 보너스로 근사. 첫 밤 차단은 gomdori-rules.firstNight.skipsAbilities 가 처리.
@@ -552,9 +575,10 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 디저트 선물 — 쿠키(원문 [천사]15): 그 밤 보호 + 디저트 태그 + 'cookie' 표식. 쿠키 핵심 절은
         // "대상이 탈락해도 그 밤 능력 발동" — cookie 표식 보유자는 *나중에* 탈락해도 그 밤 액션이 엔진
         // 루프의 source-alive 게이트를 우회한다(아래 cookie-act). 표식은 발동 시 소비, 지속(미사용 시
-        // 잔존). '이미 탈락자에게 직접 쿠키 → 가장 가까운 밤 활동 참여' 하위 절은 사망자 대상 지정
-        // 시스템(헬렌 remembered 식)과 얽혀 후속(코어 = 보유 중 사망해도 그 밤 발동).
-        { id: "mizlet_cookie", name: "디저트 선물(쿠키)", targetType: "SINGLE_ALIVE", priority: 3, effects: [
+        // 잔존). '이미 탈락자인 경우 가장 가까운 밤에 하는 모든 활동에 참여'(원문) — allowDeadTarget 로
+        // 탈락자 직접 지정 허용. 쿠키를 받은 탈락자는 cookie 표식으로 그 밤 죽음-게이트를 우회해
+        // 자신의 액션을 발동한다(같은 밤 priority 3 쿠키가 대상의 액션보다 먼저 처리되면 표식이 선다).
+        { id: "mizlet_cookie", name: "디저트 선물(쿠키)", targetType: "SINGLE_ALIVE", priority: 3, allowDeadTarget: true, effects: [
           { type: "Protect", target: "Target", duration: "1_NIGHT" },
           { type: "AddTag", target: "Target", tag: "dessert" },
           { type: "AddTag", target: "Target", tag: "cookie" },

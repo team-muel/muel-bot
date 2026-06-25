@@ -34,6 +34,11 @@ export interface MatchState {
   players: Record<string, PlayerState>;
   actionStack: ActionPayload[];
   modifiers: Record<string, number>;
+  // 건너뛰기 다음-밤 리플레이(로잔느 SkipNight, 원문 "이번 밤에 발동한 모든 효과와 통지를 전부
+  // 다음 밤으로 넘겨버립니다"): 이번 밤 건너뛰기로 취소된 액션들을 직렬화해 담는다. phase-advance
+  // 가 matches.engine_state.deferredNightActions 로 영속화하고, 다음 밤 시작에 actionStack 앞에
+  // prepend 한 뒤 비운다(소비). 무한 연기 방지를 위해 SkipNight(rosanne_skip)는 이 집합에서 제외.
+  deferredNightActions?: ActionPayload[];
 }
 
 export interface ActionPayload {
@@ -185,6 +190,11 @@ export interface ActiveAbility {
   // targetType SINGLE_ALIVE 이어도 target 이 사망 상태이면서 'remembered' 태그를 보유하면
   // 대상 검증·엔진 적용 모두 통과. Sleep 적용 시 자동 부활(canon "수면으로 깨면 복귀").
   allowRememberedDead?: boolean;
+  // 임의 탈락자 허용(미즐렛 쿠키, canon "이미 탈락자인 경우 가장 가까운 밤에 하는 모든 활동에
+  // 참여"): targetType SINGLE_ALIVE 이어도 target 이 사망 상태면 표식(remembered 무관) 없이 통과.
+  // 쿠키를 받은 탈락자는 'cookie' 표식으로 그 밤 죽음-게이트를 우회해 자신의 액션을 발동한다
+  // (engine 의 cookie-act 경로). allowRememberedDead 와 달리 표식 전제가 없다(임의 탈락자 대상).
+  allowDeadTarget?: boolean;
   // 대상 직업/진영 제한(ADR-006 S2) — 파스아 포교·루나 타락 등 역할집합 기반 제한을
   // 선언형으로. match-action 이 제네릭하게 사전검증(엔진 applyEffect 도 이중 가드).
   // excludeRoleSets: 명명 집합("demonKiller"=처치자 풀, "helper"=조력자 풀).
