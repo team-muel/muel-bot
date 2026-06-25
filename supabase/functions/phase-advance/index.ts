@@ -864,6 +864,36 @@ Deno.serve((req: Request) => {
           if (manifestTouched) players = await loadPlayers(supabase, matchId);
         }
 
+        // 백호 발톱(라이너 거친 포효, 원문 [천사]13): 거친 포효로 공격당한(clawed) 대상이 다음
+        // 아침까지 행사 투표가치를 3 이상 얻으면(voteValueMod≥3) 소멸한다. 매 아침 표식 보유
+        // 생존자를 검사 — 임계 미달이면 표식 유지(다음 아침 재검사), 도달하면 소멸(annihilated=1,
+        // 부활 불가) + 표식 제거. manifestMemory 루프와 같은 bounded morning-hook 패턴.
+        {
+          let clawTouched = false;
+          for (const p of players) {
+            if (!p.alive) continue;
+            const es = (p.engine_state ?? {}) as Record<string, unknown>;
+            const tags = Array.isArray(es.tags) ? (es.tags as string[]) : [];
+            if (!tags.includes("clawed")) continue;
+            const counters = { ...((es.counters ?? {}) as Record<string, number>) };
+            if ((counters.voteValueMod ?? 0) >= 3) {
+              const nextEs = { ...es, tags: tags.filter((t) => t !== "clawed"), counters: { ...counters, annihilated: 1 } };
+              requireNoError(
+                await supabase
+                  .from("match_players")
+                  .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "savage_roar", engine_state: nextEs })
+                  .eq("match_id", matchId)
+                  .eq("user_id", p.user_id),
+              );
+              requireNoError(
+                await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "savage_roar_annihilation", visibility: "public", payload: { user_id: p.user_id } }),
+              );
+              clawTouched = true;
+            }
+          }
+          if (clawTouched) players = await loadPlayers(supabase, matchId);
+        }
+
         // 일식(팬텀, vault canon "다음 아침을 밤으로 변경, 대신 아침이 오면 팬텀 소멸"):
         // 2단계 모델 — 캐스트 라운드의 아침을 건너뛰고 추가 밤을 삽입 → 그 추가 밤이
         // 끝나고 오는 정상 아침에 팬텀 소멸. counter eclipse=1 (캐스트 그 밤) →

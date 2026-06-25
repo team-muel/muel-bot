@@ -51,12 +51,14 @@ export const GOMDORI_CODEX: CodexEntry[] = [
   // ===== 천사 =====
   {
     id: "romaz", name: "로마즈", faction: "angel", title: "용의자 색출 경찰", slot: "천사-2",
-    summary: "매일 밤 용의자를 지목해 다음 투표에서 그 대상의 무게를 키운다.",
+    summary: "매일 밤 용의자를 지목해 무게를 키우고, 조사장으로 악마를 색출해 신념으로 처단한다.",
     abilities: [
-      { kind: "능력", name: "용의자 색출", text: "대상에게 +5 투표가치 / +10 의심가치를 받는 표로 가산합니다. 다음 집계에 반영됩니다.", actionType: "romaz_suspect", status: "live" },
+      { kind: "패시브", name: "정의로운 경찰", text: "용의자로 지목한 대상은 +5 투표가치 / +10 의심가치를 받는 표로 가산합니다.", status: "live" },
+      { kind: "능력", name: "용의자 색출", text: "대상을 하루 '용의자'로 지목하고 조사장 1장을 얻습니다. 조사장을 가진 채 색출하면 용의자가 악마인지 통지받습니다. 조사장 3장이면 용의자가 악마팀일 때 조건을 무시하고 구금(능력·효과 차단)합니다.", actionType: "romaz_suspect", status: "live" },
+      { kind: "능력2", name: "신념", text: "용의자로 지목됐던 대상 중 1명을 탈락시킵니다(무시 불가). 이 탈락자가 천사팀이면 신념이 봉인되고 이후 구금할 수 없게 됩니다. 1회성입니다.", actionType: "romaz_conviction", status: "live" },
     ],
-    v1: "구현됨. romaz_suspect → ModifyReceivedVote(+5)/ModifyReceivedSuspicion(+10). 라운드별 voteBias/suspicionBias 로 초기화(연속 누적 방지).",
-    v2: "다단계: 조사장/신념 등 후속 시트 능력. 현 v1 시그니처 유지.",
+    v1: "구현됨. romaz_suspect → ModifyReceivedVote(+5)/ModifyReceivedSuspicion(+10) + 용의자 표식(romazSuspect, 1일) + 조사장(clueWarrant) +1 + 조사 통지(source clueWarrant≥1 이면 match-action-core 가 악마 여부 investigationResult 반환) + 조사장 3장+악마팀 대상 무조건 구금(Silence, priority 1). romaz_conviction(신념 1회): 용의자였던 대상 Kill(onlyIfTargetTag romazSuspect) + 천사팀 처단 시 로마즈 convictionBlocked(selfPenalty, 이후 구금 봉인).",
+    v2: "용의자 색출(조사장+통지+무조건 구금)·신념 코어 라이브. 평시 '로마즈 투표로 용의자 밤 구금'(투표 회로 의존)·'천사팀이 악마효과 받은 밤 다음 하루 구금 불가' 패시브 절은 후속(entangled).",
     vault: "Universes/BoW/Characters/로마즈.md",
   },
   {
@@ -64,11 +66,12 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "수호신 백호를 불러 천사팀 카운트를 늘려 마을을 지킨다.",
     abilities: [
       { kind: "패시브", name: "수호신 백호", text: "백호 소환 시 천사팀 카운트 +3을 얻고, 탈락 뒤에도 사후 지속 +3을 남깁니다. 1회성입니다.", actionType: "rainer_summon", status: "live" },
+      { kind: "패시브", name: "거친 포효", text: "'강한 의지'를 2회 받으면 즉시 자동 발동합니다 — 천사팀 카운트 -1, 그 밤 지목한 대상 중 2명에게 백호 발톱을 새깁니다. 발톱이 새겨진 대상은 다음 아침 투표가치를 3 이상 얻으면 소멸합니다.", status: "live" },
       { kind: "능력", name: "강한 의지", text: "대상을 관찰하고 강한 의지 +1을 얻습니다(같은 대상 연속 지목 불가). 관찰 대상이 그 밤 탈락하면 강한 의지 +2가 추가됩니다.", actionType: "rainer_resolve", status: "live" },
       { kind: "능력2", name: "그날의 저항", text: "백호 한 마리를 추가 소환합니다 — 천사팀 카운트 +1 + 강한 의지 +1. 1회성이며 첫 밤에는 발동되지 않습니다.", actionType: "rainer_resistance", status: "live" },
     ],
     v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +3 / deadCountBonus +3 획득. rainer_resolve(강한 의지 v2): SINGLE_ALIVE, noConsecutiveTarget(같은 대상 연속 지목 불가). AddTag observedByRainer + self willCount +1. 관찰 대상이 그 밤 탈락하면 engine 후처리가 라이너 willCount +2 (canon '대상 탈락 시 강한 의지 +2') + rainer_will_surge 이벤트, 표식 1회 소비. rainer_resistance(그날의 저항 v2, 1회): SELF — deadCountBonus +1 + willCount +1 (백호 한 마리 추가 소환 근사 + 강한 의지 +1).",
-    v2: "백호 소환·강한 의지(관찰+사망 +2)·그날의 저항(1회) 코어 라이브. 거친 포효(willCount 2 자동 발동 → 멀티타깃 markedForDeath + voteValueMod 3 게이트 소멸)·그날의 저항의 카운트 -1 / 정확한 백호 1밤 임시 메커닉은 후속.",
+    v2: "백호 소환·강한 의지(관찰+사망 +2)·그날의 저항(1회)·거친 포효(willCount 2 자동 발동 → countBonus -1 + 이 밤 지목 대상 최대 2명 clawed → 다음 아침 voteValueMod≥3 소멸, phase-advance morning hook) 코어 라이브. 정확한 2타깃 선정(이 밤 강한 의지 대상)·그날의 저항의 카운트 -1 / 정확한 백호 1밤 임시 메커닉은 근사/후속.",
     vault: "Universes/BoW/Characters/라이너.md",
   },
   {
@@ -125,11 +128,12 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "uno", name: "우노", faction: "angel", title: "명예의 군인", slot: "천사-6",
     summary: "군인의 사명과 명예. 살아있는 한 천사팀 카운트를 더한다.",
     abilities: [
+      { kind: "패시브", name: "명예", text: "우노는 살아있는 한 천사팀 카운트 +5와 행사 투표가치 +5를 갖습니다. 이 투표가치는 사탄의 마(-1)를 뚫고 살아남아, 악마가 투표를 독점해도 우노만은 표를 행사할 수 있습니다.", status: "live" },
       { kind: "패시브", name: "군인의 사명", text: "투쟁 2회로 충전된 대상은 악마 효과 1회를 제거합니다.", status: "live" },
-      { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1과 사명 충전 +1을 부여합니다. 우노는 명예로 천사팀 카운트 +1과 투표가치 +10을 갖습니다 — 이 투표가치는 사탄의 마(-1)를 뚫고 살아남아, 악마가 투표를 독점해도 우노만은 표를 행사할 수 있습니다.", actionType: "uno_struggle", status: "live" },
+      { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1과 사명 충전 +1을 부여합니다.", actionType: "uno_struggle", status: "live" },
       { kind: "능력2", name: "용맹함", text: "자신을 정화하고 전원에게 투쟁을 발동합니다. 우노가 투표한 대상은 사망 기록과 소속이 공개·처형되고, 천사를 죽이면 우노가 다음 밤 봉인됩니다. 1회성입니다.", actionType: "uno_valor", status: "live" },
     ],
-    v1: "구현됨. 명예 countBonus +1 + 투표가치 +10(배정 — 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁: GrantCount + missionCharge 1, 2스택이면 악마 효과 1회 제거) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁/missionCharge + 투표대상 소속 공개/처형 + 천사 살해 시 우노 다음 밤 봉인).",
+    v1: "구현됨. 명예 countBonus +5 + 투표가치 +5(배정 — 원문 [천사]6, 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁: GrantCount + missionCharge 1, 2스택이면 악마 효과 1회 제거) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁/missionCharge + 투표대상 소속 공개/처형 + 천사 살해 시 우노 다음 밤 봉인).",
     v2: "군인의 사명, 투쟁, 용맹함 전원 효과, 소속 공개, 명예 실추까지 핵심 라이브.",
     vault: "Universes/BoW/Characters/우노.md",
   },

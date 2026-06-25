@@ -49,7 +49,7 @@ assert.match(matchStart, /pendingSelection: \{ kind: "demon", pool: DEMON_KILLER
 assert.match(matchStart, /pendingSelection: \{ kind: "helper", pool: HELPER_ROLES \}/, "조력자 슬롯 선택 대기");
 assert.match(matchStart, /shuffle\(ANGEL_ROLES\)\.slice\(0, angelSlots\)/, "천사 distinct 추첨");
 assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지 않는다");
-assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 1/, "우노 명예 카운트 주입");
+assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 5/, "우노 명예 카운트 주입(원문 +5)");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
 assert.ok(!/role === "rainer"/.test(matchStart), "라이너 배정 자동 카운트 주입 폐지(소환으로 획득)");
 // 로잔느(독립 중립 솔로): 파스아와 상호배타로 스폰 + 중립 카드로 추가. 처치 풀엔 없다.

@@ -118,8 +118,9 @@ export const CORE_ROLES: RoleDefinition[] = [
         },
         // 강한 의지(v2, canon): 대상 관찰 + 시전자 willCount +1. 같은 대상 연속 지목 불가
         // (noConsecutiveTarget). 관찰 대상이 그 밤 탈락하면 라이너 deathHook 이 willCount +2
-        // 추가(observedByRainer 표식 → engine 후처리). willCount 2 누적이 거친 포효 발동 트리거
-        // 의 토대(거친 포효 자체는 후속 — 멀티타깃 markedForDeath + voteValueMod 게이트 복합).
+        // 추가(observedByRainer 표식 → engine 후처리). willCount 2 누적 시 engine 후처리가
+        // 〈거친 포효〉를 즉시 자동 발동한다(countBonus -1 + 이 밤 지목 대상 최대 2명 clawed 표식
+        // → 다음 아침 voteValueMod≥3 이면 소멸, phase-advance morning hook).
         {
           id: "rainer_resolve",
           name: "강한 의지",
@@ -150,7 +151,17 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 로마즈: 용의자 색출 = 대상에게 +5 투표가치 / +10 의심가치(받는-표 가산).
+    // 로마즈(천사-2): 정의로운 경찰. 〈패시브〉지목 대상에 +5 투표가치 / +10 의심가치(유지).
+    // 〈능력〉용의자 색출 = 대상을 하루 '용의자'로 지목(romazSuspect 표식 = 신념의 사정권) +
+    //   조사장(clueWarrant) 1장 획득. 조사장 보유(≥1) 시 색출이 "용의자가 악마인지 통지"
+    //   효과를 더한다(match-action-core 가 source clueWarrant≥1 이면 investigationResult 반환,
+    //   police 와 같은 경로). 조사장 3장(clueWarrant≥3) + 대상이 악마팀이면 조건 무시하고
+    //   구금(Silence, priority 1 게이트 — 그 밤 능력·효과 차단) + 전원 통지(silenced 이벤트).
+    // 〈능력2〉신념 = 용의자(romazSuspect)였던 대상 1명 탈락(Kill, 무시불가). 이 탈락자가
+    //   천사팀이면 로마즈 convictionBlocked=1(이후 구금 불가) — '신념 봉인 + 구금 불가'의 코어.
+    // ※ 후속(defer): 평시 '로마즈 투표로 용의자 밤 구금'(투표 회로 의존)·'천사팀이 악마효과를
+    //   받은 밤 다음 하루 구금 불가' 엣지 절은 entangled — 코어(지목+조사통지+조사장3 무조건
+    //   구금+신념)만 구현하고 vote-driven 구금/passive 절은 후속으로 남긴다.
     id: "romaz",
     name: "로마즈",
     faction: "angel",
@@ -161,10 +172,41 @@ export const CORE_ROLES: RoleDefinition[] = [
           id: "romaz_suspect",
           name: "용의자 색출",
           targetType: "SINGLE_ALIVE",
-          priority: 5,
+          priority: 1, // 구금(Silence)이 대상 능력보다 먼저 처리되도록 priority 1.
+          excludeSelf: true,
           effects: [
             { type: "ModifyReceivedVote", target: "Target", amount: 5 },
             { type: "ModifyReceivedSuspicion", target: "Target", amount: 10 },
+            // 용의자 지목(하루) — 신념(romaz_conviction)의 사정권 표식.
+            { type: "AddTag", target: "Target", tag: "romazSuspect", duration: "1_DAY" },
+            // 조사장 1장 획득(색출당 +1). 3장 모이면 무조건 구금 게이트 충족.
+            { type: "GrantCount", target: "self", tag: "clueWarrant", amount: 1 },
+            // 조사장 3장 + 악마팀 대상 → 조건 무시 구금(Silence). 천사팀 차단(actualFaction)·
+            // 조사장 부족 차단(source clueWarrant<3). 구금은 priority 1 라 대상 능력보다 먼저.
+            {
+              type: "Silence",
+              target: "Target",
+              onlyFactions: ["demon"],
+              onlyIfSourceCounter: { key: "clueWarrant", min: 3 },
+              // 신념이 천사팀을 처단해 봉인(convictionBlocked)되면 이후 구금 불가(원문 능력2 봉인 절).
+              skipIfSourceCounter: { key: "convictionBlocked", min: 1 },
+            },
+          ],
+        },
+        // 신념(능력2, 무시불가): 용의자(romazSuspect)였던 대상 1명 탈락. 천사팀이면 로마즈
+        // convictionBlocked=1(이후 구금 봉인). onlyIfTargetTag 로 사정권(전·현 용의자)만 허용.
+        {
+          id: "romaz_conviction",
+          name: "신념",
+          targetType: "SINGLE_ALIVE",
+          priority: 4,
+          excludeSelf: true,
+          maxUses: 1,
+          effects: [
+            { type: "Kill", target: "Target", onlyIfTargetTag: "romazSuspect" },
+            // 천사팀(동료) 처단 시 신념 봉인 + 구금 불가(convictionBlocked). 게이트(진영·표식)는
+            // *대상*으로 평가하되(onlyFactions/onlyIfTargetTag) 카운트는 selfPenalty 로 *로마즈*에게.
+            { type: "GrantCount", target: "Target", tag: "convictionBlocked", amount: 1, onlyIfTargetTag: "romazSuspect", onlyFactions: ["angel"], selfPenalty: true },
           ],
         },
       ],
@@ -534,7 +576,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     },
   },
   {
-    // 우노(천사-6): 명예(배정 시 자기 countBonus +1) + 투쟁 = 대상 소속 카운트 +1(v2).
+    // 우노(천사-6): 명예(배정 시 자기 countBonus +5 / voteValueMod +5, 원문 [천사]6) + 투쟁 = 대상 소속 카운트 +1(v2).
     id: "uno",
     name: "우노",
     faction: "angel",
