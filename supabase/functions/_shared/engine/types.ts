@@ -82,7 +82,22 @@ export interface Effect {
   //   효과 면역 근사) + deduce_hit. 빗나가면 deduce_miss. 악마측 역추리(하브 탈락)는 후속(양방향 서브게임).
   // SummonCorpse(말렌 신출귀몰): 혼령 표식(haunted)을 수거해 다음 밤 corpsePending → deadCountBonus
   //   로 시체를 소환한다. 시체는 현재 악마팀 사망 무관 카운트 보너스로 표현된다.
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse";
+  // Shatter(엘런 비치지 않는 자아, 원문 타깃화): *대상(타인)*의 자아를 망가뜨린다 — brokenSelf=1
+  //   (2밤 가치 상실) + everShattered 표식(한 대상 1회) + 자아가 생존자 중 *행사 투표가치 최고*
+  //   대상(carrier, 대상 제외)에게 이전(soulCarrier_<carrierUserId> 표식). 망가진 대상이 carrier 를
+  //   투표하면 다음 아침 회복(selfRecovered) — resolveNightActions 의 carrier-vote 회복 루프가 처리.
+  // LinkFate(로잔느 라포르): 2인 지정 — 처형·탈락·소멸을 공유. 지정 대상끼리 rapportLink_<상대id>
+  //   표식으로 묶고, 한쪽이 죽으면(밤 탈락·소멸·처형) 죽음 해소 경로가 상대도 같은 운명으로 전파.
+  //   멀티타깃을 한 번에 묶어야 해서 engine 의 효과 루프가 LinkFate 만 별도 처리(applyEffect no-op).
+  // Manifest(로잔느 외현기억): 탈락자 1인 지정 — 다음 아침 부활 → 그 날 처형(아침 끝). 대상에
+  //   manifestMemory 표식을 남긴다. phase-advance morning hook 이 표식 보유 탈락자를 1회 부활시키고
+  //   (manifestRevived), 투표로 '한 번 더' 처형되면 효과 상실(표식 제거 = 영구 탈락). engine 은
+  //   표식만 세팅(applyEffect Manifest case) — 부활/재처형 루프는 phase-advance 가 bounded 로 처리.
+  // SkipNight(로잔느 건너뛰기, self·priority 0·1회): 이 밤 발동한 *다른* 모든 효과를 취소한다.
+  //   modifiers.nightSkipped=1 을 세워, priority 0 이라 가장 먼저 처리된 뒤 후속 액션들이 액션
+  //   루프 상단 가드에서 일괄 건너뛰어진다(봉인류 전역 취소 근사). canon "다음 밤으로 넘김"의 진짜
+  //   replay 와 "잔여 채 승리 시 조력자 패배" win 조항은 후속(현재는 그 밤 취소만).
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush" | "Shatter" | "LinkFate" | "Manifest" | "SkipNight";
   // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
   demonAmount?: number;
   // 태그 게이트(미즐렛 고급 와인): 대상에게 tag 가 있으면(onlyIfTargetTag) / 없으면(skipIfTargetTag 는
@@ -100,6 +115,9 @@ export interface Effect {
   // 시점에 actualFaction 이 목록에 들면 markedForDeath 를 세우지 않는다(클린 — 처치
   // 프리미티브 재사용, 직업 하드코딩 금지).
   immuneFactions?: Faction[];
+  // Kill 전용: 부활 불가 처치(로건 '전부 괜찮을 거야' 파멸 2중첩 소멸). markedForDeath 와 함께
+  // counters.annihilated=1 을 세워 미즐렛/헬렌/소생 계열의 부활 게이트를 막는다(canon '소멸').
+  annihilate?: boolean;
   // 진영 게이트(아서 단죄 결백/타락 판정). 대상 actualFaction 이 이 목록에 없으면 이 효과
   // 자체를 건너뛴다(immuneFactions 의 역 — "해당 진영에만 적용"). 한 능력에 진영별로 다른
   // 효과를 붙여 분기(예: 단죄 = 악마팀이면 Annihilate / 천사·중립이면 Protect)한다.
@@ -114,6 +132,17 @@ export interface Effect {
   // 붙여 시전자 상태에 따라 다른 효과(예: 위선 = 평시 연기 / 전환후 처치)를 고른다.
   onlyIfSourceCounter?: { key: string; min: number };
   skipIfSourceCounter?: { key: string; min: number };
+  // 전역 카운터 게이트(엘런 박해 변경효과): *어떤* 살아있는 플레이어든 counters[key] 가 min 이상
+  // 이면(onlyIfAnyPlayerCounter) / 이상이면 건너뜀(skipIfAnyPlayerCounter). 원문 "*누군가* 자아를
+  // 되찾으면 박해자가 자해 박해로 전환" — 엘런이 타인을 해체하므로 selfRecovered 는 그 대상에게
+  // 붙는다. 자해 전환 트리거를 시전자(엘런) 아닌 전역(생존자 누군가의 selfRecovered)으로 본다.
+  onlyIfAnyPlayerCounter?: { key: string; min: number };
+  skipIfAnyPlayerCounter?: { key: string; min: number };
+  // 전역 태그 게이트(대악마 감시): *어떤* 살아있는 플레이어든 이 태그를 보유하면 onlyIf 통과 /
+  // skipIf 건너뜀. 원문 "만악의 근원 발동 시 *낙인 적용자가 존재하면* 감시 추가" — 처치(demon_kill)
+  // 가 self voteCountBonus +1(다음 아침 2표)을 mephistoBrand 보유자 존재 시에만 부여한다.
+  onlyIfAnyPlayerTag?: string;
+  skipIfAnyPlayerTag?: string;
   // 홀수날 한정(엘런 박해자: 홀수날에만 발동). state.dayCount 가 홀수일 때만 적용한다.
   oddDayOnly?: boolean;
   // 자기 처벌(우노 명예 실추): 게이트(onlyFactions 등)는 *대상*으로 평가하되 효과는 *시전자*에게

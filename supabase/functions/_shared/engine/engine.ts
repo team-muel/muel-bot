@@ -67,12 +67,11 @@ export type WinConditionResult = {
 
 // 파스아(중립) 단독 승리 임계 — *생존* 교세가 ceil(인원/3) 이상 (최소 3).
 // 2026-06-11 P0-C 튜닝(후속 ALL 지시): 기존 "누적 전향 고정 3"은 시뮬에서 중립승
-// 35~70%(인원 단조 증가)로 지배적이었다. 후보 4안 비교(sim:balance --rule) 결과
-// scale-alive(인원 비례 임계 + 생존 교세)가 16~34%로 유일하게 비지배 + 단조성
-// 파괴 + "전향자 처형 = 교세 차감" 카운터플레이 성립. 8~9인=3, 10~12인=4.
-// 측정 근거: docs/gomdori-gameplay-verification.md §6.
-export function pasuaWinThreshold(totalPlayers: number): number {
-  return Math.max(3, Math.ceil(totalPlayers / 3));
+// 원문([중립] 구원자): "파스아 팀이 4명 이상이면 즉시 승리." → 고정 임계 4(인원 무관).
+// (과거 scale-alive max(3,ceil(인원/3)) 튜닝은 5인 가정 시절 산물 — 원문 우선으로 폐기.
+// 8~12인 실게임에서 4명 고정은 원문 그대로. 밸런스 재튜닝은 후속 측정 루프로.)
+export function pasuaWinThreshold(_totalPlayers: number): number {
+  return 4;
 }
 
 export function getRoleDefinition(roleId: string) {
@@ -98,6 +97,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 소명(하브레터스): 보호가 실제 공격을 막았을 때 시전자에게 줄 보상 예약(targetUserId → 시전자/카운터).
   const saveRewards: Record<string, { source: string; counter: string; amount: number }> = {};
 
+  // 조망(로잔느 〈특수 패시브〉 전역 시전비용, canon "타인에게 능력을 적용한 플레이어는 투표가치 1
+  // 감소, 지정 수만큼 추가 감소 — 단 1 미만으로는 안 내려감"): 로잔느 생존 중에만 활성. 시전자별로
+  // 그 밤 *타인에게* 효과를 적용한 distinct 대상 수를 모았다가, 이 밤 해소가 끝난 뒤 한 번에
+  // voteValueMod 를 차감한다(직업 하드코딩은 로잔느-생존 게이트뿐 — 비용은 전 직업 공통). All/
+  // AllOthers/Target/substrate 모든 경로의 applyEffect 호출 지점에서 source≠target 일 때 기록한다.
+  const castOtherTargets: Record<string, Set<string>> = {};
+  const recordCast = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    (castOtherTargets[sourceId] ??= new Set()).add(targetId);
+  };
+
   // GAME-2: voteBias/suspicionBias are per-round boosts (romaz). Clear last
   // round's leftover before applying this night's effects so suspecting the same
   // target on consecutive nights cannot accumulate an unbeatable bias.
@@ -111,6 +121,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // 연속 포교 제한(파스아): 포교한 밤에 1 로 세팅 → 다음 밤 submission 을 match-action
       // 이 거부. 매 밤 1 씩 감소시켜 한 밤 건너 다시 가능하게 한다(리셋 아닌 카운트다운).
       if (counters.convertCooldown) counters.convertCooldown = Math.max(0, counters.convertCooldown - 1);
+      // 로잔느 백일몽: 밤 해소(=아침 도래)마다 dreamMorning +1(7 도달 시 checkWinCondition 단독승)
+      // + 만들어가는 미래 충전(futureCharge). 생존 중에만 누적(canon 충전조건 v1 근사 — 하루 경과).
+      if (newState.players[userId].currentRole === "rosanne" && newState.players[userId].alive) {
+        counters.dreamMorning = (counters.dreamMorning ?? 0) + 1;
+        counters.futureCharge = (counters.futureCharge ?? 0) + 1;
+      }
       // 악몽 지연 (vault canon 팬텀): 지정한 그 밤(N)이 아니라 *다음* 밤(N+1)이 와야
       // 대상이 '악몽' 상태가 되고, 그 다음 아침(D N+2)에 탈락한다. 지정 시점엔
       // nightmarePending 만 세우고, 다음 밤 시작(여기)에서 nightmare 로 옮긴다.
@@ -153,23 +169,29 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 다음 밤(N+1) 시작인 여기에서 만료된다. 그 밤 재지정 시 아래 action 루프가 다시 부여.
     const pl = newState.players[userId];
     if (pl.tags.includes("dawnrise")) pl.tags = pl.tags.filter((t) => t !== "dawnrise");
-    // 가인 약간의 위선(DelayAction) 지연 승격: 지정 밤(N)에 delayPending 예약 → 다음 밤(N+1)
+    // DelayAction 지연 승격(범용 substrate): 지정 밤(N)에 delayPending 예약 → 다음 밤(N+1)
     // 시작인 여기에서 TAG_DELAYED 로 옮겨 대상의 그 밤 능력 발동을 한 밤 미룬다(소멸 아닌 연기).
+    // (가인 위선은 원문 충실화로 Silence='그 밤 취소'를 쓰므로 더 이상 이 경로를 쓰지 않는다.)
     if (pl.counters?.delayPending && pl.counters.delayPending > 0) {
       pl.counters.delayPending = 0;
       if (!pl.tags.includes(TAG_DELAYED)) pl.tags.push(TAG_DELAYED);
     }
-    // 엘런 해체된 퍼즐 상태 머신(canon "해체된 퍼즐"): shatter 발동 밤 brokenSelf=1, brokenAge=0 →
-    // 다음 밤(여기) age 1 → 그 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1). 2밤 동안 가치
-    // 상실(tally/action gate)·회복 후 변경효과(자해 박해) 영구 전환. selfRecovered 영속.
+    // 비치지 않는 자아 회복(canon "망가진 대상이 carrier 를 투표하면 다음 아침 회복"): 자아가
+    // 망가진(brokenSelf>0) 대상이 자신에게 부여된 soulCarrier_<carrierUserId> 표식의 carrier 를
+    // *직전에 투표*(lastVoteTarget)했으면 회복한다 — selfRecovered=1(영속, 엘런 박해 자해 전환
+    // 전역 트리거), brokenSelf=0, carrier 표식 제거, ellen_recovered 방출. carrier 를 투표하지
+    // 않으면 brokenAge 만 누진하며 가치 상실 상태를 유지한다(자동 회복 없음 — 원문 충실).
     if ((pl.counters?.brokenSelf ?? 0) > 0) {
-      if ((pl.counters.brokenAge ?? 0) === 0) {
-        pl.counters.brokenAge = 1;
-      } else {
+      const carrierTag = pl.tags.find((t) => t.startsWith("soulCarrier_"));
+      const carrierId = carrierTag ? carrierTag.slice("soulCarrier_".length) : null;
+      if (carrierId && pl.lastVoteTarget === carrierId) {
         pl.counters.brokenSelf = 0;
         pl.counters.brokenAge = 0;
         pl.counters.selfRecovered = 1;
+        pl.tags = pl.tags.filter((t) => !t.startsWith("soulCarrier_"));
         events.push({ type: "ellen_recovered", payload: { user_id: pl.userId } });
+      } else {
+        pl.counters.brokenAge = (pl.counters.brokenAge ?? 0) + 1;
       }
     }
   }
@@ -179,6 +201,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     const targetPlayer = action.targetUserId ? newState.players[action.targetUserId] : null;
 
     if (!sourcePlayer?.alive) continue;
+
+    // 건너뛰기(로잔느 SkipNight): priority 0 의 건너뛰기가 먼저 발동해 nightSkipped 를 세우면, 그
+    // 뒤(priority 높은) 모든 액션은 이 가드에서 일괄 취소된다. 건너뛰기 자신은 effect 처리 시점에
+    // 플래그를 세우므로(가드보다 뒤) 영향받지 않는다 — 직업 하드코딩 없이 플래그만으로 전역 취소.
+    if ((newState.modifiers?.nightSkipped ?? 0) > 0) {
+      events.push({ type: "action_skipped_night", userId: sourcePlayer.userId });
+      continue;
+    }
 
     if (sourcePlayer.tags.includes(TAG_SUSPECTED)) {
       events.push({ type: "action_blocked_suspected", userId: sourcePlayer.userId });
@@ -248,11 +278,33 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
 
     for (const effect of ability.effects) {
+      // LinkFate(로잔느 라포르 〈능력〉, 2인 지정 — 처형·탈락·소멸을 공유): 멀티타깃을 한 번에
+      // 묶어야 하므로 per-target applyEffect 가 아니라 여기서 직접 처리한다. 지정된 각 대상에
+      // 서로를 가리키는 rapportLink_<상대id> 표식을 붙인다(쌍방). 죽음 해소 경로가 이 표식을
+      // 읽어 한쪽이 markedForDeath/annihilated 되면 상대도 같은 운명으로 전파한다.
+      if (effect.type === "LinkFate") {
+        const maxN = effectiveTargetCount(ability, sourcePlayer, newState.dayCount);
+        const ids = (action.targetUserIds && action.targetUserIds.length)
+          ? action.targetUserIds.slice(0, Math.max(2, maxN))
+          : (action.targetUserId ? [action.targetUserId] : []);
+        const live = ids.filter((id) => newState.players[id]?.alive);
+        if (live.length >= 2) {
+          for (const a of live) {
+            for (const b of live) {
+              if (a === b) continue;
+              const tag = `rapportLink_${b}`;
+              if (!newState.players[a].tags.includes(tag)) newState.players[a].tags.push(tag);
+            }
+          }
+          events.push({ type: "rapport_linked", payload: { user_id: sourcePlayer.userId, targets: live } });
+        }
+        continue;
+      }
       // All: 전원 대상(대악마 압도적 존재감·우노 용맹함). 생존자 전체에 적용(source 포함 여부는
       // 효과 의미에 맡김 — 봉인/투표가치 등은 전원 의도). 단일 타깃 해소와 분리.
       if (effect.target === "All") {
         for (const other of Object.values(newState.players)) {
-          if (other.alive) applyEffect(newState, sourcePlayer, other, effect, events);
+          if (other.alive) { recordCast(sourcePlayer.userId, other.userId); applyEffect(newState, sourcePlayer, other, effect, events); }
         }
         continue;
       }
@@ -260,6 +312,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       if (effect.target === "AllOthers") {
         for (const other of Object.values(newState.players)) {
           if (other.alive && other.userId !== sourcePlayer.userId) {
+            recordCast(sourcePlayer.userId, other.userId);
             applyEffect(newState, sourcePlayer, other, effect, events);
           }
         }
@@ -279,6 +332,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
           // 'remembered' 탈락자(헬렌 황금빛 수면) 우회: allowRememberedDead 이면 탈락 + remembered 보유 시 통과.
           const allowDead = ability.allowRememberedDead && t.tags.includes("remembered");
           if (!t.alive && ability.targetType !== "SINGLE_DEAD" && !allowDead) continue;
+          recordCast(sourcePlayer.userId, t.userId);
           applyEffect(newState, sourcePlayer, t, effect, events);
         }
         continue;
@@ -293,6 +347,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       if (!target) continue;
       if (!target.alive && ability.targetType !== "SINGLE_DEAD") continue;
 
+      recordCast(sourcePlayer.userId, target.userId);
       applyEffect(newState, sourcePlayer, target, effect, events);
     }
 
@@ -318,6 +373,28 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 이 밤 실제 공격을 막았을 때(아래 death 해소의 attack_prevented) 시전자에게 보상한다.
     if (ability.onSaveGrantSelf && targetPlayer) {
       saveRewards[targetPlayer.userId] = { source: sourcePlayer.userId, ...ability.onSaveGrantSelf };
+    }
+  }
+
+  // 조망 비용 적용(로잔느 생존 게이트): 이 밤 타인에게 능력을 적용한 시전자마다 행사 투표가치를
+  // distinct 타인 대상 수만큼 차감(voteValueMod -= n). 단 '이 효과로 1 미만으로는 안 내려감'(canon)
+  // — 비용 적용 후 행사 투표가치(base+bonus+voteWeightBonus+voteValueMod)가 1 이상이 되도록 clamp.
+  // 비용은 전 직업 공통(직업 하드코딩 없음); 로잔느-생존만이 활성 게이트다.
+  const rosanneAliveForGaze = Object.values(newState.players).some(
+    (p) => p.alive && p.currentRole === "rosanne",
+  );
+  if (rosanneAliveForGaze) {
+    for (const [sourceId, targets] of Object.entries(castOtherTargets)) {
+      const src = newState.players[sourceId];
+      if (!src?.alive || targets.size === 0) continue;
+      const effBefore = (src.baseVoteValue || 1) + (src.bonusVoteValue || 0) + (src.counters?.voteWeightBonus ?? 0) + (src.counters?.voteValueMod ?? 0);
+      // 1 미만으로 못 내려가게 — 적용 가능한 최대 차감 = effBefore-1 (음수면 0).
+      const maxCut = Math.max(0, effBefore - 1);
+      const cut = Math.min(targets.size, maxCut);
+      if (cut > 0) {
+        src.counters.voteValueMod = (src.counters.voteValueMod ?? 0) - cut;
+        events.push({ type: "gaze_cost", payload: { user_id: sourceId, amount: -cut, targets: targets.size } });
+      }
     }
   }
 
@@ -360,14 +437,16 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
         player.alive = false;
         player.markedForDeath = false;
         events.push({ type: "player_died", payload: { user_id: player.userId } });
-        // 약간의 위선(가인) 전환: '위선' 표식이 걸린 대상이 밤에 탈락하면(악마 살해 경로) 가인의
-        // 다음 위선이 *탈락 효과*로 변한다(hypocrisyKillReady). canon "대상이 악마에 의해 탈락하면
-        // 다음 위선이 대상을 탈락시키는 효과로 변경". 출처 특정 없이 생존 가인에게 부여(보통 1명).
-        if (player.tags.includes("hypocrisy")) {
-          for (const g of Object.values(newState.players)) {
-            if (g.alive && g.currentRole === "gain") g.counters.hypocrisyKillReady = 1;
+        // 포교 충전(파스아, 원문 "포교 대상 사망 시 1회 충전"): 전향자(currentRole 'converted')가
+        // 그 밤 탈락하면 생존 파스아의 포교 사용 횟수(used_pasua_convert)를 1 되돌린다(floor 0).
+        // 출처 특정 없이 생존 파스아 전원(보통 1명). 투표 처형 경로 충전은 phase-advance 후속.
+        if (player.currentRole === "converted") {
+          for (const ps of Object.values(newState.players)) {
+            if (ps.alive && ps.currentRole === "pasua" && (ps.counters.used_pasua_convert ?? 0) > 0) {
+              ps.counters.used_pasua_convert = Math.max(0, ps.counters.used_pasua_convert - 1);
+              events.push({ type: "pasua_convert_recharged", payload: { user_id: ps.userId } });
+            }
           }
-          player.tags = player.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비(영구 재발동 방지)
         }
         // 잠입 수사(도르단) 불심검문: 관찰('infiltrated' 표식) 대상이 그 밤 탈락하면 도르단은
         // 그 밤 받은 부정 효과(상태이상)를 모두 무시 — retroactive 정화(canon "그 밤 모든 부정 효과
@@ -393,10 +472,58 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
-  // 가인 진실을 가리는 암흑(canon "두 번째 밤 종료 시 패시브 삭제"): 가인이 부여한 demon 보호막
-  // (shield + shieldFromGain 마커)을 두 번째 밤 종료 시 만료. 가인 생존 여부와 무관(패시브 자체가
-  // 시간 만료 — vault canon). 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
-  if (newState.dayCount === 2) {
+  // 라포르 운명 공유(로잔느 LinkFate): 이 밤 탈락한 자가 rapportLink_<상대id> 표식을 가졌으면
+  // 아직 살아있는 상대도 같은 운명으로 전파(탈락 + 소멸 여부 승계). 연쇄(A↔B↔C)는 fixpoint
+  // 까지 반복. 표식은 소비해 무한 재전파를 막는다. 밤 탈락 경로 전용 — 투표/처형 전파는 후속.
+  {
+    let propagated = true;
+    while (propagated) {
+      propagated = false;
+      for (const dead of Object.values(newState.players)) {
+        if (dead.alive) continue;
+        const linkTags = dead.tags.filter((t) => t.startsWith("rapportLink_"));
+        if (linkTags.length === 0) continue;
+        const annihilated = (dead.counters?.annihilated ?? 0) > 0;
+        for (const lt of linkTags) {
+          const partnerId = lt.slice("rapportLink_".length);
+          const partner = newState.players[partnerId];
+          // 표식 소비(양방향): 죽은 쪽에서 제거.
+          dead.tags = dead.tags.filter((t) => t !== lt);
+          if (partner && partner.alive) {
+            partner.alive = false;
+            if (annihilated) partner.counters.annihilated = 1;
+            // 상대 쪽 표식도 정리(쌍방 소비 — 죽은 자를 다시 가리키지 않게).
+            partner.tags = partner.tags.filter((t) => t !== `rapportLink_${dead.userId}`);
+            events.push({ type: "rapport_fate_shared", payload: { user_id: partner.userId, by: dead.userId, annihilated } });
+            propagated = true;
+          }
+        }
+      }
+    }
+  }
+
+  // 약간의 위선(가인) 강화 트리거(원문 "악마가 대상을 투표했었다면 다음 위선이 봉인으로 강화"):
+  // 그 밤 위선을 받은 대상('hypocrisy' 표식)을 검사 — 생존 악마(actualFaction='demon')의 직전
+  // 투표 대상(lastVoteTarget)이 그 대상이면 생존 가인의 hypocrisySealReady 를 켠다(다음 위선 = 봉인
+  // 강화). 출처 특정 없이 생존 가인 전원에게 부여(보통 1명). 표식은 검사 후 소비(영구 재발동 방지).
+  for (const p of Object.values(newState.players)) {
+    if (!p.tags.includes("hypocrisy")) continue;
+    const demonVoted = Object.values(newState.players).some(
+      (d) => d.alive && d.actualFaction === "demon" && d.lastVoteTarget === p.userId,
+    );
+    if (demonVoted) {
+      for (const g of Object.values(newState.players)) {
+        if (g.alive && g.currentRole === "gain") g.counters.hypocrisySealReady = 1;
+      }
+      events.push({ type: "hypocrisy_seal_armed", payload: { user_id: p.userId } });
+    }
+    p.tags = p.tags.filter((t) => t !== "hypocrisy"); // 표식 1회 소비
+  }
+
+  // 가인 진실을 가리는 암흑(원문 "세 번째 밤 종료 시 패시브 삭제"): 가인이 부여한 demon 보호막
+  // (shield + shieldFromGain 마커)을 세 번째 밤 종료 시 만료. 가인 생존 여부와 무관(패시브 자체가
+  // 시간 만료 — 원문). 아서 자기 보호막(shieldFromGain 없음)은 영향 없음.
+  if (newState.dayCount === 3) {
     for (const p of Object.values(newState.players)) {
       if ((p.counters?.shieldFromGain ?? 0) > 0) {
         if ((p.counters.shield ?? 0) > 0) p.counters.shield = 0;
@@ -411,6 +538,19 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   if ((newState.modifiers.moonriseRule ?? 0) > 0) {
     newState.modifiers.moonriseRule = 0;
   }
+  // 건너뛰기는 그 밤 한정(canon "이번 밤") — 이 밤 해소가 끝나면 플래그를 내려 다음 밤이 정상 발동.
+  if ((newState.modifiers.nightSkipped ?? 0) > 0) {
+    newState.modifiers.nightSkipped = 0;
+  }
+
+  // 백일몽 modifier(로잔느, canon "백일몽 동안 토론 1분 + 무투(찬반) 행사 불가"): 로잔느 생존
+  // 여부를 modifier 로 영속화한다 — phase-advance 가 day 진입 시 토론을 60초로 캡하고, verdict
+  // 집계 전 로잔느의 찬반 투표를 무효화한다(루나 dawnRule 등 modifier 패턴 재사용). 로잔느가
+  // 죽으면 0 으로 내려 자동 해제(매 밤 재평가 — 일방향 아님).
+  const rosanneAliveForDream = Object.values(newState.players).some(
+    (p) => p.alive && p.currentRole === "rosanne",
+  );
+  newState.modifiers.rosanneDream = rosanneAliveForDream ? 1 : 0;
 
   // 여명의 기사(패시브): 결백한(tainted 0) 천사팀의 누적 탈락을 반영. 탈락 1명당 아서 '잔불 대검'
   // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
@@ -582,9 +722,9 @@ export function tallyEliminationVotes(
       skipped += 1;
       continue;
     }
-    // 엘런 해체된 퍼즐(canon "자아 망가진 동안 투표 가치 상실"): brokenSelf 보유자(엘런 한정)는
-    // 그 라운드 투표가치 0. selfRecovered 후엔 정상 — 해체 윈도(2밤) 동안만.
-    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+    // 비치지 않는 자아(canon "자아 망가진 동안 투표 가치 상실"): brokenSelf 보유자(엘런이 해체한
+    // 임의의 대상)는 그 라운드 투표가치 0. 회복(carrier 투표) 후엔 정상 — 해체 윈도 동안만.
+    if ((actor.counters?.brokenSelf ?? 0) > 0) {
       skipped += 1;
       continue;
     }
@@ -676,8 +816,8 @@ export function tallySuspicionVotes(
       continue;
     }
 
-    // 엘런 해체된 퍼즐: brokenSelf 보유자는 의심가치도 0.
-    if (actor.currentRole === "ellen" && (actor.counters?.brokenSelf ?? 0) > 0) {
+    // 비치지 않는 자아: brokenSelf 보유자(엘런이 해체한 임의의 대상)는 의심가치도 0.
+    if ((actor.counters?.brokenSelf ?? 0) > 0) {
       skipped += 1;
       continue;
     }
@@ -802,7 +942,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   // 파스아 본인은 'pasua'. 둘 다 중립이라 천사/악마 버킷엔 잡히지 않는다(bucket=null).
   let pasuaAlive = false;
   let pasuaFlock = 0;
-  // 생존 '악마 본체'(처치자 풀: demon/phantom/malen/besto). 빙의·사탄의 마 transient flip 과
+  // 생존 '악마 본체'(처치자 풀: demon/phantom/malen). 빙의·사탄의 마 transient flip 과
   // 무관하게 currentRole 기준 — 빙의된 천사나 타락자(corrupted)는 본체가 아니다.
   let aliveDemonKillers = 0;
   for (const player of Object.values(players)) {
@@ -814,12 +954,18 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   // 사탄의 마 전역 취급(대악마): 살아있는 대악마 + 천사팀 전원 vote 0 이면 transient 로 천사를
   // 악마 카운트로 합산. 대악마 사망 시 자동 해제(영속 X — 카운트가 일관 유지된다).
   const realmActive = isSatanicRealmActive(players);
+  // per-target 취급(canon "이 -1 효과로 *그 대상* 투표가치가 0이 되면 그 대상의 취급이 악마"):
+  // 전역(전원 0)이 아니어도, 대악마 생존 중엔 *개별* 천사의 행사 투표가치가 0 이하면 그 한 명만
+  // 악마 카운트로 합산한다. 전역 경로의 strict superset — realmActive 면 전원이 이 조건도 만족.
+  const daeakmaAliveForBrand = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
 
   for (const player of Object.values(players)) {
     // 빙의(말렌): 그 라운드 악마팀으로 카운트.
     const possessed = (player.counters?.possessed ?? 0) > 0;
-    // 사탄의 마 전역 취급: 영역 활성 + 천사 → demon 으로 transient flip.
-    const satanicTreated = realmActive && player.actualFaction === "angel";
+    // 사탄의 마 취급: 영역 활성(전원 0) 또는 대악마 생존 중 개별 천사 vote 0 이하 → demon 으로 transient flip.
+    const ownVoteSuppressed = daeakmaAliveForBrand &&
+      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0)) <= 0;
+    const satanicTreated = (realmActive || ownVoteSuppressed) && player.actualFaction === "angel";
     const faction = possessed || satanicTreated ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
       faction === "demon" || faction === "helper"
@@ -855,10 +1001,18 @@ export function checkWinCondition(players: Record<string, PlayerState>): WinCond
     countTeams(players);
 
   // 파스아 단독 승리는 "즉시 승리"(canon 구원자 패시브) — 천사/악마 판정보다 우선.
-  // 파스아 생존 + *생존* 교세가 인원 비례 임계(pasuaWinThreshold) 이상이면 중립 승리.
+  // 파스아 생존 + *생존* 파스아 팀(교주 본인 + 전향자)이 임계(pasuaWinThreshold=원문 4명) 이상이면
+  // 중립 승리. 원문 "파스아 팀이 4명 이상" → 팀 크기 = pasuaFlock(생존 전향자) + 1(교주 본인).
   const totalPlayers = Object.keys(players).length;
   let winner: "angels" | "demons" | "neutral" | null = null;
-  if (pasuaAlive && pasuaFlock >= pasuaWinThreshold(totalPlayers)) {
+  // 로잔느 백일몽(canon): 생존 + 아침 7번 도달 → 즉시 단독 승리. 파스아 우선승과 동급으로
+  // 진영 판정보다 먼저 본다(독립 솔로). dreamMorning 은 resolveNightActions 가 매 아침 누적.
+  const rosanneWinner = Object.values(players).find(
+    (p) => p.currentRole === "rosanne" && p.alive && (p.counters?.dreamMorning ?? 0) >= 7,
+  );
+  if (rosanneWinner) {
+    winner = "neutral";
+  } else if (pasuaAlive && (pasuaFlock + 1) >= pasuaWinThreshold(totalPlayers)) {
     winner = "neutral";
   } else if (aliveDemonKillers === 0) {
     // 악마 본체(처치자)가 전멸하면 즉시 악마 진영 패배 — 조력자(가인·루나·로건·엘런)나
@@ -990,6 +1144,30 @@ function applyEffect(
   if (effect.skipIfSourceCounter && (_source.counters?.[effect.skipIfSourceCounter.key] ?? 0) >= effect.skipIfSourceCounter.min) {
     return;
   }
+  // 전역 카운터 게이트(엘런 박해 변경효과 "누군가 자아를 되찾으면"): 어떤 살아있는 플레이어든
+  // counters[key]≥min 이면 onlyIf 통과 / skipIf 건너뜀. 자해 전환 트리거를 전역으로 본다.
+  if (effect.onlyIfAnyPlayerCounter) {
+    const { key, min } = effect.onlyIfAnyPlayerCounter;
+    const any = Object.values(_state.players).some((p) => p.alive && (p.counters?.[key] ?? 0) >= min);
+    if (!any) return;
+  }
+  if (effect.skipIfAnyPlayerCounter) {
+    const { key, min } = effect.skipIfAnyPlayerCounter;
+    const any = Object.values(_state.players).some((p) => p.alive && (p.counters?.[key] ?? 0) >= min);
+    if (any) return;
+  }
+  // 전역 태그 게이트(대악마 감시 "낙인 적용자가 존재하면"): 어떤 살아있는 플레이어든 태그 보유 시
+  // onlyIf 통과 / skipIf 건너뜀.
+  if (effect.onlyIfAnyPlayerTag) {
+    const tag = effect.onlyIfAnyPlayerTag;
+    const any = Object.values(_state.players).some((p) => p.alive && p.tags.includes(tag));
+    if (!any) return;
+  }
+  if (effect.skipIfAnyPlayerTag) {
+    const tag = effect.skipIfAnyPlayerTag;
+    const any = Object.values(_state.players).some((p) => p.alive && p.tags.includes(tag));
+    if (any) return;
+  }
   // 태그 게이트(미즐렛 고급 와인 디저트 유/무): 대상 태그로 분기.
   if (effect.onlyIfTargetTag && !target.tags.includes(effect.onlyIfTargetTag)) {
     return;
@@ -1027,6 +1205,11 @@ function applyEffect(
         break;
       }
       target.markedForDeath = true;
+      // 부활 불가 처치(effect.annihilate — 로건 파멸 2중첩 소멸): counters.annihilated 로 소생 차단.
+      if (effect.annihilate) {
+        target.counters.annihilated = 1;
+        events.push({ type: "annihilated", payload: { user_id: target.userId } });
+      }
       // 달이 차오른다 cascade(canon "악마가 달빛 부여 대상 지목 시 달빛 부여 모두에게 같은 효과"):
       // moonriseRule 활성 + 시전자 actualFaction='demon' + 대상이 moonlit 태그 보유 → 그 밤 한정
       // 으로 모든 살아있는 moonlit 대상에 같은 처치(markedForDeath) cascade. 같은 효과(immune
@@ -1124,6 +1307,16 @@ function applyEffect(
       // tally(처형/판결)에서 voteValueMod 로 합산. 라운드 리셋 X(누적).
       target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) + (effect.amount ?? 0);
       events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
+      break;
+    case "VoteCrush":
+      // 증오(로잔느): 대상 행사 투표가치 -1. 기본 1 기준으로 0 이하가 되면 즉시 처형(canon
+      // "투표가치가 0이 되면 즉시 처형"). v1 근사 — 명예 등 다른 보정 무시, 1+voteValueMod 기준.
+      target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) - 1;
+      events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: -1 } });
+      if (1 + (target.counters.voteValueMod ?? 0) <= 0) {
+        target.markedForDeath = true;
+        events.push({ type: "hatred_execution", payload: { user_id: target.userId } });
+      }
       break;
     case "ChangeFaction":
       // 포교(파스아): 천사 + 조력자(가인)만 전향 가능. 악마(currentRole 'demon')·이미
@@ -1362,6 +1555,63 @@ function applyEffect(
       // '타락', 아니면 '결백'으로 시전자(아서)에게 통지. 진영 무관 — counters.tainted 로만 가린다.
       const verdict = (target.counters?.tainted ?? 0) > 0 ? "tainted" : "innocent";
       events.push({ type: "verdict_revealed", payload: { user_id: target.userId, by: _source.userId, verdict } });
+      break;
+    }
+    case "Shatter": {
+      // 비치지 않는 자아(엘런 원문 타깃화): *대상(타인)*의 자아를 망가뜨린다. 한 대상은 재차 불가
+      // (everShattered 표식 — skipIfTargetTag 로 사전 게이트하지만 이중 가드). 효과:
+      //  ① brokenSelf=1 → 2밤 투표·의심·능력 가치 상실(tally/action gate 가 brokenSelf 로 적용).
+      //  ② everShattered 표식(한 대상 1회 제한).
+      //  ③ 자아 이전: 생존자 중 *행사 투표가치 최고*(대상 제외)인 carrier 를 찾아 soulCarrier_<id>
+      //     표식을 대상에 남긴다. 망가진 대상이 carrier 를 투표하면 다음 아침 회복(carrier-vote 루프).
+      if (target.tags.includes("everShattered")) break;
+      target.counters.brokenSelf = (target.counters.brokenSelf ?? 0) + 1;
+      target.counters.brokenAge = 0;
+      target.tags.push("everShattered");
+      // carrier = 생존자(대상 제외) 중 행사 투표가치 최고. 동률은 userId 사전순으로 결정적 선택.
+      let carrier: PlayerState | null = null;
+      let bestVote = -Infinity;
+      for (const p of Object.values(_state.players)) {
+        if (!p.alive || p.userId === target.userId) continue;
+        const v = (p.baseVoteValue || 1) + (p.bonusVoteValue || 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0);
+        if (v > bestVote || (v === bestVote && carrier && p.userId < carrier.userId)) {
+          bestVote = v;
+          carrier = p;
+        }
+      }
+      if (carrier) {
+        // 기존 soulCarrier_* 표식 제거 후 새 carrier 표식(대상당 단일).
+        target.tags = target.tags.filter((t) => !t.startsWith("soulCarrier_"));
+        target.tags.push(`soulCarrier_${carrier.userId}`);
+      }
+      events.push({ type: "soul_shattered", payload: { user_id: target.userId, by: _source.userId, carrier: carrier?.userId ?? null } });
+      break;
+    }
+    case "Manifest": {
+      // 외현기억(로잔느, 탈락자 1인 지정): 대상에 manifestMemory 표식을 남긴다. 부활/재처형 루프는
+      // phase-advance morning hook 이 bounded 로 처리(다음 아침 1회 부활 + 투표 재처형 시 효과 상실).
+      // 이미 표식 보유 시 중복 부여 안 함. 소멸(annihilated)된 대상은 부활 불가라 대상 제외.
+      if ((target.counters?.annihilated ?? 0) > 0) {
+        events.push({ type: "manifest_blocked_annihilated", payload: { user_id: target.userId } });
+        break;
+      }
+      // 재지정 불가(canon "효과 상실 후 재지정 불가"): 투표 재처형으로 효과를 잃은 대상(manifestSpent).
+      if ((target.counters?.manifestSpent ?? 0) > 0) {
+        events.push({ type: "manifest_blocked_spent", payload: { user_id: target.userId } });
+        break;
+      }
+      if (!target.tags.includes("manifestMemory")) {
+        target.tags.push("manifestMemory");
+        events.push({ type: "manifest_marked", payload: { user_id: target.userId, by: _source.userId } });
+      }
+      break;
+    }
+    case "SkipNight": {
+      // 건너뛰기(로잔느, self·priority 0·1회): 이 밤의 *다른* 모든 효과를 취소한다(modifiers.nightSkipped).
+      // priority 0 이라 가장 먼저 처리되고, 이후 액션들이 루프 상단 가드에서 일괄 건너뛰어진다. canon
+      // "다음 밤으로 넘김" 진짜 replay 와 "잔여 채 승리 시 조력자 패배"는 후속 — 현재는 그 밤 취소만.
+      _state.modifiers.nightSkipped = 1;
+      events.push({ type: "night_skipped", payload: { user_id: _source.userId } });
       break;
     }
   }

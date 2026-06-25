@@ -300,7 +300,7 @@ async function actForAi(
       return target ? await submit(actionType, target) : false;
     }
     // 처치류는 아군(악마 진영)을 피한다(전략·합법성).
-    const killLike = ["demon_kill", "phantom_nightmare", "malen_release", "besto_hidden", "pasua_faith", "arthur_judge"].includes(actionType);
+    const killLike = ["demon_kill", "phantom_nightmare", "malen_release", "pasua_faith", "arthur_judge"].includes(actionType);
     let candidates = aliveOthers;
     if (killLike && effectiveFaction(ai) === "demon") {
       const nonAllies = aliveOthers.filter((p) => effectiveFaction(p) !== "demon");

@@ -97,14 +97,12 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
   assert.equal(newState.players.demon.actualFaction, "demon", "악마 진영은 유지된다");
 }
 
-// --- 2. 승리 판정: *생존* 교세가 인원 비례 임계 이상 + 파스아 생존 → 중립 즉시 승리 ---
-// P0-C 튜닝 (2026-06-11, 후속 ALL): 임계 = max(3, ceil(인원/3)), 교세 = 생존 전향자만.
-// 근거: docs/gomdori-gameplay-verification.md §6 (후보 4안 시뮬 비교 — scale-alive 채택).
+// --- 2. 승리 판정(원문): 파스아 팀(교주 본인 + 생존 전향자)이 4명 이상 + 파스아 생존 → 중립 즉시 승리 ---
+// 원문([중립] 구원자): "파스아 팀이 4명 이상이면 즉시 승리." → 고정 임계 4(인원 무관, 과거 scale-alive
+// max(3,ceil(인원/3)) 튜닝 폐기). 팀 = pasuaFlock(생존 전향자) + 1(교주). 즉 생존 전향 3명 + 교주 = 4.
 {
-  assert.equal(pasuaWinThreshold(8), 3, "8인 임계 3");
-  assert.equal(pasuaWinThreshold(9), 3, "9인 임계 3");
-  assert.equal(pasuaWinThreshold(10), 4, "10인 임계 4");
-  assert.equal(pasuaWinThreshold(12), 4, "12인 임계 4");
+  assert.equal(pasuaWinThreshold(8), 4, "임계 4 고정(인원 무관)");
+  assert.equal(pasuaWinThreshold(12), 4, "임계 4 고정(인원 무관)");
 
   const base = {
     pasua: player("pasua", "pasua", "neutral"),
@@ -115,22 +113,22 @@ function player(userId: string, role: string, faction: Faction): PlayerState {
     angel: player("angel", "citizen", "angel"),
   };
 
-  // 6인 픽스처 → 임계 max(3, ceil(6/3)=2) = 3.
+  // 파스아 팀 = 교주(1) + 생존 전향자 3 = 4 ≥ 4 → 중립 승리.
   const win = checkWinCondition(base);
-  assert.equal(win.winner, "neutral", "생존 전향 3명 + 파스아 생존 → 중립 승리");
+  assert.equal(win.winner, "neutral", "교주 + 생존 전향 3명(팀 4) → 중립 승리");
 
-  // 파스아가 죽으면(교주 사망) 교세가 임계여도 즉시 승리 없음.
+  // 파스아가 죽으면(교주 사망) 팀이 임계여도 즉시 승리 없음.
   const pasuaDead = { ...base, pasua: { ...base.pasua, alive: false } };
   assert.notEqual(checkWinCondition(pasuaDead).winner, "neutral", "파스아 사망 시 중립 승리 불가");
 
-  // 전향 2명(임계 미만)이면 파스아 승리 아님 — 일반 천사/악마 판정으로.
+  // 전향 2명(팀 3, 임계 미만)이면 파스아 승리 아님 — 일반 천사/악마 판정으로.
   const twoFlock = { ...base };
   delete (twoFlock as Record<string, unknown>).c3;
-  assert.notEqual(checkWinCondition(twoFlock).winner, "neutral", "전향 2명이면 중립 승리 아님");
+  assert.notEqual(checkWinCondition(twoFlock).winner, "neutral", "교주 + 전향 2명(팀 3)이면 중립 승리 아님");
 
-  // 전향자가 처형/살해되면 교세에서 빠진다 — 카운터플레이 (생존 교세 규칙).
+  // 전향자가 처형/살해되면 교세에서 빠진다 — 카운터플레이 (생존 교세 규칙). 팀 4→3.
   const oneDead = { ...base, c3: { ...base.c3, alive: false } };
-  assert.notEqual(checkWinCondition(oneDead).winner, "neutral", "전향자 사망 = 교세 차감 → 임계 미달");
+  assert.notEqual(checkWinCondition(oneDead).winner, "neutral", "전향자 사망 = 팀 3 → 임계 미달");
 }
 
 // 전향자/파스아는 천사·악마 카운트에서 빠진다(중립 버킷 제외) — 악마 패리티 영향.

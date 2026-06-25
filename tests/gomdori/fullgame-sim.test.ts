@@ -112,7 +112,10 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
   assert.equal(winnerOf(s), "demons", "카운트 패리티 → 악마 승리");
 }
 
-// ===== 시나리오 3: 중립(파스아) 승리 — 누적 전향 3 (천사/악마보다 우선) =====
+// ===== 시나리오 3: 중립(파스아) 승리 — 파스아 팀 4명(원문, 천사/악마보다 우선) =====
+// 원문: 포교는 2회 제한(maxUses 2) + 전향 대상 사망 시 1회 충전, 승리는 '파스아 팀(교주 + 전향자)
+// 4명 이상'. 포교 2회로는 생존 전향자 2명(팀 3)까지만 — 팀 4는 더 긴 게임의 누적 결과다. 여기서는
+// 승리 *조건*(팀 4 → 중립 우선승)과 maxUses 게이트(3회째 거부)를 함께 검증한다.
 {
   const s = makeState([
     player("p", "pasua", "neutral"),
@@ -122,15 +125,21 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
     player("a3", "citizen", "angel"),
     player("a4", "citizen", "angel"),
   ]);
-  // 파스아가 3밤에 걸쳐 a1,a2,a3 전향(악마는 idle). 전향마다 천사 수 감소.
+  // 포교 2회: a1, a2 전향(악마 idle). 팀 = 교주 + 전향 2 = 3 < 4 → 아직 승자 없음.
   runNight(s, [{ src: "p", actionType: "pasua_convert", target: "a1" }]);
-  assert.equal(winnerOf(s), null, "전향 1 — 아직 승자 없음");
+  assert.equal(winnerOf(s), null, "전향 1(팀 2) — 아직 승자 없음");
   runNight(s, [{ src: "p", actionType: "pasua_convert", target: "a2" }]);
-  assert.equal(winnerOf(s), null, "전향 2 — 아직 승자 없음");
+  assert.equal(s.players.a2.currentRole, "converted", "a2 전향(포교 2회째)");
+  assert.equal(winnerOf(s), null, "전향 2(팀 3) — 임계(4) 미달, 승자 없음");
+  // 3회째 포교는 maxUses 2 로 거부 — a3 는 전향되지 않는다(원문 '2회 제한').
   runNight(s, [{ src: "p", actionType: "pasua_convert", target: "a3" }]);
-  // 전향 3 달성 시점에 demonCount(1)>=angelCount(1) 도 성립하지만 파스아 우선 → 중립 승리.
-  assert.equal(s.players.a3.currentRole, "converted", "a3 전향");
-  assert.equal(winnerOf(s), "neutral", "전향 3 + 파스아 생존 → 중립 단독 승리(우선)");
+  assert.notEqual(s.players.a3.currentRole, "converted", "3회째 포교 — maxUses 거부(전향 안 됨)");
+  assert.equal(winnerOf(s), null, "포교 한계 — 팀 3 유지, 중립 승리 없음");
+  // 승리 조건 검증: 전향자 1명을 더 주입해 팀 4(교주 + 전향 3) → 중립 우선승.
+  s.players.a3.currentRole = "converted";
+  s.players.a3.actualFaction = "neutral";
+  s.players.a3.treatedAsFaction = "neutral";
+  assert.equal(winnerOf(s), "neutral", "파스아 팀 4(교주 + 전향 3) → 중립 단독 승리(우선)");
 }
 
 // ===== 시나리오 4: 최대 일수 안전망 — 우세 판정 (M2-5, P0-B 교착 방지) =====

@@ -56,16 +56,28 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 4,
           excludeSelf: true,
-          // 사탄의 마(canon): 처치 발동 시 자신을 제외한 전원의 행사 투표가치 -1(지속 누적,
-          // tally 의 voteValueMod). 의도된 설계 — 마을은 곧 표로 악마를 처형할 수 없고(악마가
-          // 투표 독점), 천사 진영은 빠르게 식별·제거해야 한다(의심 봉인·조사·단죄 등). 기본
-          // 투표가치=1 이므로 한 번이면 전원 0 — 의도(표로는 못 이김). 천사팀 전역 0 판정은 후속.
-          effects: [{ type: "Kill", target: "Target" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }],
+          // 사탄의 마(원문): 대악마가 *능력을 성공 발동시키면* 자신 제외 전원의 행사 투표가치 -1
+          // (지속 누적, tally 의 voteValueMod). 원문은 처치뿐 아니라 모든 대악마 능력 성공 발동이
+          // 트리거 — 그래서 demon_kill·낙인·압도적 존재감·역추리 각각에 동일 -1 효과를 붙인다(능력당
+          // 1회). 기본 투표가치=1 이라 누적되면 전원 0 — 마을은 표로 악마를 처형할 수 없다(투표 독점).
+          // 원문 "이 효과로 대상 투표가치가 0이 되면 그 대상의 조사·취급이 악마로 판정"의 *per-target*
+          // 판정은 후속 — 현재는 천사팀 전원 0 → 전역 악마 취급(applySatanicRealm)으로 보수적 근사.
+          // 감시(원문 만악의 근원): 발동 시 낙인 적용자(mephistoBrand 보유)가 존재하면 대악마 자신에게
+          // voteCountBonus +1(다음 아침 2표) 부여 — 루루 무투와 같은 라이프사이클(phase-advance 가 처형
+          // tally 직후 소비). onlyIfAnyPlayerTag 로 낙인 적용자 존재 시에만 발동. "같은 대상 2표 시 무조건
+          // 반론"(강제 재심)은 verdict 반론 override 가 필요해 후속(루루 무투와 동일 blocker).
+          effects: [
+            { type: "Kill", target: "Target" },
+            { type: "ModifyVoteValue", target: "AllOthers", amount: -1 },
+            { type: "GrantCount", target: "self", tag: "voteCountBonus", amount: 1, onlyIfAnyPlayerTag: "mephistoBrand" },
+          ],
         },
-        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }] },
+        // 낙인 — 원문 사탄의 마는 '능력 성공 발동'이 트리거이므로 낙인 성공에도 전원 -1 동반. AddTag
+        // mephistoBrand: 낙인 적용자 표식(감시 게이트의 전역 조건) — '자기 직업 모르는 대상'의 backend 면.
+        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }, { type: "AddTag", target: "Target", tag: "mephistoBrand" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
         // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
-        // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인.
-        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }] },
+        // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인. 사탄의 마: 성공 시 전원 -1.
+        { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
         // 삶이 있는 곳으로(하브레터스, 악마 측 역추리): 대악마가 의심 가는 하브레터스를 지목.
         // 적중(target.currentRole==='habreterus')이면 하브 Annihilate(다음 처치, 치료 무시).
         // 빗나가면 통지만(deduce_miss). Deduce effect 가 source.actualFaction='demon' 분기로 동작.
@@ -160,25 +172,31 @@ export const CORE_ROLES: RoleDefinition[] = [
   },
   {
     // 가인: 조력자(악마팀, 조사 시 천사로 보임). 악마에 보호막 부여(배정 시 주입).
-    // 약간의 위선(v2 완성): ① 대상 직업(진영) 통지 — 악마팀을 위한 정찰(match-action-core 가
-    // investigationResult 로 즉시 반환). ② 대상에 '위선' 표식(AddTag) — 이 대상이 밤에 탈락하면
-    // (악마 살해) 가인의 hypocrisyKillReady 가 켜진다(engine death hook). ③ 평시엔 대상의 다음
-    // 능력을 한 밤 연기(DelayAction, skipIfSourceCounter=전환 안 됐을 때만). ④ 전환 상태
-    // (hypocrisyKillReady≥1)면 연기 대신 *처치*(Kill, onlyIfSourceCounter) — canon "대상이 악마에
-    // 탈락하면 다음 위선이 대상을 탈락시키는 효과로 변경". 발동 후 onFireSetCounter 로 전환 소비(0).
+    // 약간의 위선(원문 충실): "대상의 직업을 통지받고, 능력의 발동을 *취소*시킵니다. *악마가 대상을
+    // 투표했었다면* 다음 발동하는 '약간의 위선'이 능력을 *봉인*시키는 효과로 강화됩니다." 매핑:
+    // ① 대상 직업(진영) 통지 — 악마팀 정찰(match-action-core 가 investigationResult 로 즉시 반환).
+    // ② 대상 그 밤 능력 *취소* = Silence(봉인 액션이 priority 1 → 대상 능력보다 먼저 처리, 그 밤만).
+    // ③ 대상에 'hypocrisy' 표식(AddTag) — 밤 종료 시 engine 훅이 "악마가 그 대상을 투표했었나"
+    //    (alive demon 의 lastVoteTarget === 대상)를 검사해 맞으면 생존 가인의 hypocrisySealReady 를
+    //    켠다(강화 트리거 = 원문의 '악마가 대상을 투표했었다면'). ④ 강화 상태(hypocrisySealReady≥1)면
+    //    평시 Silence 대신 tag 부착 Silence → 같은 대상 재적용 시 *영구 봉인*(원문 "봉인시키는 효과로
+    //    강화"). 발동 후 onFireSetCounter 로 강화 소비(0).
     id: "gain",
     name: "가인",
     faction: "demon",
     passives: [],
     actions: {
       night: [
-        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true,
-          onFireSetCounter: { key: "hypocrisyKillReady", value: 0 },
+        // priority 1 — 봉인(Silence)이 대상의 능력보다 먼저 처리돼 그 밤 발동을 *취소*한다(원문).
+        { id: "gain_hypocrisy", name: "약간의 위선", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true,
+          onFireSetCounter: { key: "hypocrisySealReady", value: 0 },
           effects: [
-            // 전환 안 됐을 때만 표식+연기. 전환 상태면 표식 없이 즉시 처치(재발동 루프 방지).
-            { type: "AddTag", target: "Target", tag: "hypocrisy", skipIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
-            { type: "DelayAction", target: "Target", skipIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
-            { type: "Kill", target: "Target", onlyIfSourceCounter: { key: "hypocrisyKillReady", min: 1 } },
+            // 직업 통지(정찰) + 그 밤 능력 취소(Silence). hypocrisy 표식은 밤 종료 시 '악마 투표' 검사용.
+            { type: "RevealRole", target: "Target" },
+            { type: "AddTag", target: "Target", tag: "hypocrisy" },
+            // 평시: 그 밤 능력 취소(Silence). 강화 상태면 봉인 강화(tag → 재적용 시 영구).
+            { type: "Silence", target: "Target", skipIfSourceCounter: { key: "hypocrisySealReady", min: 1 } },
+            { type: "Silence", target: "Target", tag: "hypocrisySeal", onlyIfSourceCounter: { key: "hypocrisySealReady", min: 1 } },
           ] },
         // 급습(v2, 1회): 대상 능력 통지 삭제(noticeSuppressed 표식 — 그 밤 한정, engine 아침 cleanup
         // 에서 제거) + 가인 raidCharge +1 충전(canon "급습 1회 충전"). 다음 아침까지 악마와 대화는
@@ -191,10 +209,11 @@ export const CORE_ROLES: RoleDefinition[] = [
   },
   // --- W6 v1 중립 (canon §1 중립, 특수 카테고리-4 파스아) ---
   {
-    // 파스아: 사이비 교주(중립). 시그니처 = 포교(전향). 매 밤 대상 1명을 전향시켜
-    // 자기 진영(converted)으로 흡수. 누적 3명 전향 시 파스아 단독 즉시 승리(checkWinCondition).
+    // 파스아: 사이비 교주(중립). 시그니처 = 포교(전향). 대상 1명을 전향시켜
+    // 자기 진영(converted)으로 흡수. 파스아 팀 4명+ 시 단독 즉시 승리(checkWinCondition, 원문 구원자).
     // canon: 악마·중립 포교 불가 → 효과/검증에서 차단(천사 + 가인만 전향 가능).
-    // v2: 포교(전향) + 신앙(대상 탈락, 악마 면역). 연속 포교 불가(convertCooldown).
+    // v2: 포교(전향, 원문 "2회 제한 + 포교 대상 사망 시 1회 충전" = maxUses 2 + 전향자 사망 시
+    // engine 훅이 used_pasua_convert 1 차감) + 신앙(대상 탈락, 악마 면역).
     id: "pasua",
     name: "파스아",
     faction: "neutral",
@@ -207,9 +226,10 @@ export const CORE_ROLES: RoleDefinition[] = [
           targetType: "SINGLE_ALIVE",
           priority: 5,
           excludeSelf: true,
+          // 원문 "2회 제한" — maxUses 2(used_pasua_convert 로 추적). 전향자 사망 시 1회 충전(death hook).
+          maxUses: 2,
           // 천사·조력자만 전향(악마 처치자·중립 불가). 엔진 ChangeFaction 도 이중 가드.
           targetFilter: { excludeRoleSets: ["demonKiller"], excludeRoles: ["pasua", "converted"], message: "악마와 중립은 포교할 수 없습니다." },
-          onFireSetCounter: { key: "convertCooldown", value: 1 },
           effects: [{ type: "ChangeFaction", target: "Target" }],
         },
         {
@@ -299,15 +319,26 @@ export const CORE_ROLES: RoleDefinition[] = [
     deathHook: { perDeath: { counter: "soul", amount: 1 }, convert: { from: "soul", threshold: 2, to: "deadCountBonus", amount: 1 } },
   },
   {
-    // 베스토(악마-14): 히든 포지션(처치) + 변신(솔/하베스토 토글 — 조사 회피). 배후 다단계는 후속.
-    id: "besto",
-    name: "베스토",
-    faction: "demon",
+    // 로잔느(악마-5, 세헤라자드): 독립 솔로(파스아식, 조력자 없음, faction neutral). v1 코어 —
+    // 백일몽=7아침 생존 단독승(checkWinCondition + resolveNightActions dreamMorning 카운터),
+    // 증오=처형(대상 투표가치 -1, 0 도달 즉시 처형 = VoteCrush), 만들어가는 미래(르상티망 약식)=
+    // futureCharge 1 소비 + 대상 '원한' 표식 + 자기 dreamMorning +1(canon "아침이 한 번 더").
+    // 라포르·외현기억·건너뛰기·조망(전역 시전비용)·받는가치+1 다운사이드·토론1분·무투불가 = v2.
+    // 처치 풀(DEMON_KILLER_ROLES)에 없음 — match-start 가 besto 자리 대신 독립 스폰한다.
+    id: "rosanne",
+    name: "로잔느",
+    faction: "neutral",
     passives: [],
     actions: {
       night: [
-        { id: "besto_hidden", name: "히든 포지션", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Kill", target: "Target" }] },
-        { id: "besto_shift", name: "변신", targetType: "SELF", priority: 1, effects: [{ type: "Disguise", target: "self" }] },
+        { id: "rosanne_hatred", name: "증오", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "VoteCrush", target: "Target" }] },
+        { id: "rosanne_resentment", name: "만들어가는 미래", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "AddTag", target: "Target", tag: "wonhan" }, { type: "GrantCount", target: "self", tag: "dreamMorning", amount: 1 }] },
+        // 라포르(만들어가는 미래 변주, 2인 지정 — 처형·탈락·소멸을 공유). futureCharge 1 소비.
+        { id: "rosanne_rapport", name: "라포르", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetCount: 2, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "LinkFate", target: "Target" }] },
+        // 외현기억(탈락자 1인 지정 — 다음 아침 부활 후 그 날 처형, 투표 재처형 시 효과 상실). futureCharge 1 소비.
+        { id: "rosanne_manifest", name: "외현기억", targetType: "SINGLE_DEAD", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "Manifest", target: "Target" }] },
+        // 건너뛰기(self, priority 0 = 최우선, 1회): 이 밤 발동한 다른 모든 효과를 취소(SkipNight).
+        { id: "rosanne_skip", name: "건너뛰기", targetType: "SELF", priority: 0, maxUses: 1, effects: [{ type: "SkipNight", target: "self" }] },
       ],
     },
   },
@@ -358,6 +389,16 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 봉인(그 밤만)과 달리 대상이 능력을 쓸 때까지 기다렸다 무효화한다.
         // 부서진 펜던트 3+ 적용 시 지정 대상 +2(targetCountCounter: pendantTargetBonus, 패시브가 세팅).
         { id: "logen_nullify", name: "네 안에 없는 것", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, targetCount: 1, targetCountCounter: "pendantTargetBonus", effects: [{ type: "Nullify", target: "Target" }] },
+        // 전부 괜찮을 거야(원문 〈능력2〉 사용/1회): 자신 제외 전원(AllOthers) 대상.
+        //   - 펜던트/부서진 펜던트 적용자(tag "pendant" = 악마팀 처치자) → 그 밤 무적(Protect).
+        //   - 비적용자 → 파멸 1중첩(GrantCount doom +1). 파멸 2중첩 도달 시 그 자리에서 소멸
+        //     (Kill annihilate — 부활 불가). GrantCount 가 먼저 doom 을 올린 뒤 Kill 이 doom≥2 게이트로 발동.
+        { id: "logen_allwell", name: "전부 괜찮을 거야", targetType: "ALL", priority: 3, maxUses: 1,
+          effects: [
+            { type: "Protect", target: "AllOthers", onlyIfTargetTag: "pendant" },
+            { type: "GrantCount", target: "AllOthers", tag: "doom", amount: 1, skipIfTargetTag: "pendant" },
+            { type: "Kill", target: "AllOthers", annihilate: true, skipIfTargetTag: "pendant", onlyIfTargetCounter: { key: "doom", min: 2 } },
+          ] },
       ],
     },
   },
@@ -373,19 +414,34 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 표적을 처형대로 민다 — 별도 지목 없이 자기 투표를 따라간다(canon 박해자).
         // 박해(v2 누진): 직전 투표 대상의 받는-투표가치가 *지속 누적*(persecuteBias). 같은 대상을
         // 거듭 투표·박해하면 +3, +6, +9… 처형대로 점점 민다(canon 투표마다 누진). 홀수날 한정.
-        // 해체된 퍼즐 변경효과(canon "박해자 변경 — 얻은 투표가치만큼 그날 아침 자신을 투표한
-        // 것으로 적용"): selfRecovered 상태에선 VoteTarget 대신 *자신*(엘런)에게 +3 누진 자해
-        // 박해(approx). 정확한 "얻은 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
+        // 해체된 퍼즐 변경효과(canon "박해자 변경 — *누군가* 자아를 되찾으면 엘런 박해가 자해
+        // 박해로 전환"): 비치지 않는 자아가 타깃화되면서 selfRecovered 는 *해체당한 대상*에게 붙는다.
+        // 따라서 자해 전환 트리거를 전역(생존자 누군가의 selfRecovered≥1)으로 본다 — 누군가 회복하면
+        // VoteTarget 박해 대신 *자신*(엘런)에게 +3 누진 자해 박해로 영구 전환(approx). 정확한 "얻은
+        // 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
         { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [
-          { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfSourceCounter: { key: "selfRecovered", min: 1 } },
-          { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfSourceCounter: { key: "selfRecovered", min: 1 } },
+          { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
+          { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
         ] },
-        // 해체된 퍼즐(v2 능력 — 비치지 않는 자아 다단계 첫 단계): 자아를 의도적으로 해체(brokenSelf=1).
-        // 그 밤·다음 밤(brokenAge 1) 동안 투표·의심·능력 가치 모두 상실(tally 가 0 강제, 능력 차단).
-        // 다음 밤 자동 회복(brokenSelf=0, selfRecovered=1) — canon "누군가 자아를 되찾으면 박해자
-        // 효과 변경". 회복 후 박해는 자해 박해(위 자신 대상 분기)로 영구 전환. 1회 제한 — 한 번
-        // 해체하면 게임 끝까지 selfRecovered 라 박해 패턴이 바뀐다.
-        { id: "ellen_shatter", name: "해체된 퍼즐", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "brokenSelf", amount: 1 }] },
+        // 비치지 않는 자아(원문 〈능력〉 타깃화): *대상(타인)*의 자아를 망가뜨린다(Shatter). 대상은
+        // brokenSelf=1 로 2밤 동안 투표·의심·능력 가치를 모두 상실하고, 그 자아가 생존자 중 *행사
+        // 투표가치 최고*인 carrier(대상 제외)에게 이전된다(soulCarrier_<id> 표식). 망가진 대상이
+        // carrier 를 투표하면 다음 아침 회복(selfRecovered) — resolveNightActions 의 carrier-vote
+        // 회복 루프가 처리. everShattered 표식으로 한 대상은 재차 해체 불가(skipIfTargetTag). 누군가
+        // 자아를 되찾으면(selfRecovered) 엘런 박해가 자해 박해로 영구 전환(ellen_persecute 전역 게이트).
+        { id: "ellen_shatter", name: "비치지 않는 자아", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Shatter", target: "Target", skipIfTargetTag: "everShattered" }] },
+        // 혼탁해진 정의(원문 〈능력2〉 지정/2회): "대상 다음날 투표·의심·능력 소멸 + 자아 잃은 중이면
+        // 영원히 못 찾음 + 박해자 대상이면 탈락." 매핑(보수적·원문 충실):
+        //   - DelaySilence → 대상 다음 밤 봉인(능력 소멸, silencePending). 다음날 투표·의심 소멸의
+        //     정밀 매핑(받는-표/의심 0 강제)은 후속 — 현재는 능력 봉인으로 근사.
+        //   - Kill onlyIfTargetCounter persecuteBias≥1 → 이미 박해(persecuteBias)에 찍힌 대상이면 탈락
+        //     (원문 "박해자 대상이면 탈락"의 박해-표적 해석).
+        //   ('자아 잃은 중 영원히 못 찾음'은 자아-이전 시스템[비치지 않는 자아 타깃화]과 함께 후속.)
+        { id: "ellen_chaos", name: "혼탁해진 정의", targetType: "SINGLE_ALIVE", priority: 5, maxUses: 2, excludeSelf: true,
+          effects: [
+            { type: "DelaySilence", target: "Target" },
+            { type: "Kill", target: "Target", onlyIfTargetCounter: { key: "persecuteBias", min: 1 } },
+          ] },
       ],
     },
   },
@@ -590,7 +646,7 @@ export const CORE_ROLES: RoleDefinition[] = [
 // === 기본 로스터 진영 풀 / 판정 세트 (match-start·match-action·engine 공유) ===
 // 악마 처치자(살해 능력 보유). 조사·포교 차단 판정은 이 집합 기준 — 가인 등 조력자는
 // faction='demon' 이지만 처치자가 아니므로 조사 시 '천사'로 보인다(canon §1).
-export const DEMON_KILLER_ROLES = ["demon", "phantom", "malen", "besto"];
+export const DEMON_KILLER_ROLES = ["demon", "phantom", "malen"];
 // 조력자 풀(악마팀, 조사 시 천사). 가인만 보호막(배정 시 주입).
 export const HELPER_ROLES = ["gain", "luna", "logen", "ellen"];
 // 천사 풀 — match-start 가 나머지 슬롯을 여기서 distinct 추첨(대천사 미포함, off).
@@ -609,7 +665,7 @@ export function isDemonKillerRole(role?: string | null): boolean {
 //   루나·엘런               — 접선 없음
 // 악마측 오버라이드: 팬텀 "침묵의 밤" — 접선(대화) 불가, 대신 서로 정체·직업 통지만.
 export const HELPER_CONTACT: Record<string, { expiresAfterNight?: number }> = {
-  gain: { expiresAfterNight: 2 },
+  gain: { expiresAfterNight: 3 },
   logen: {},
 };
 export const CONTACT_BLOCKED_DEMONS = ["phantom"];
