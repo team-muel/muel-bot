@@ -97,6 +97,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 소명(하브레터스): 보호가 실제 공격을 막았을 때 시전자에게 줄 보상 예약(targetUserId → 시전자/카운터).
   const saveRewards: Record<string, { source: string; counter: string; amount: number }> = {};
 
+  // 조망(로잔느 〈특수 패시브〉 전역 시전비용, canon "타인에게 능력을 적용한 플레이어는 투표가치 1
+  // 감소, 지정 수만큼 추가 감소 — 단 1 미만으로는 안 내려감"): 로잔느 생존 중에만 활성. 시전자별로
+  // 그 밤 *타인에게* 효과를 적용한 distinct 대상 수를 모았다가, 이 밤 해소가 끝난 뒤 한 번에
+  // voteValueMod 를 차감한다(직업 하드코딩은 로잔느-생존 게이트뿐 — 비용은 전 직업 공통). All/
+  // AllOthers/Target/substrate 모든 경로의 applyEffect 호출 지점에서 source≠target 일 때 기록한다.
+  const castOtherTargets: Record<string, Set<string>> = {};
+  const recordCast = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    (castOtherTargets[sourceId] ??= new Set()).add(targetId);
+  };
+
   // GAME-2: voteBias/suspicionBias are per-round boosts (romaz). Clear last
   // round's leftover before applying this night's effects so suspecting the same
   // target on consecutive nights cannot accumulate an unbeatable bias.
@@ -191,6 +202,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
 
     if (!sourcePlayer?.alive) continue;
 
+    // 건너뛰기(로잔느 SkipNight): priority 0 의 건너뛰기가 먼저 발동해 nightSkipped 를 세우면, 그
+    // 뒤(priority 높은) 모든 액션은 이 가드에서 일괄 취소된다. 건너뛰기 자신은 effect 처리 시점에
+    // 플래그를 세우므로(가드보다 뒤) 영향받지 않는다 — 직업 하드코딩 없이 플래그만으로 전역 취소.
+    if ((newState.modifiers?.nightSkipped ?? 0) > 0) {
+      events.push({ type: "action_skipped_night", userId: sourcePlayer.userId });
+      continue;
+    }
+
     if (sourcePlayer.tags.includes(TAG_SUSPECTED)) {
       events.push({ type: "action_blocked_suspected", userId: sourcePlayer.userId });
       continue;
@@ -259,11 +278,33 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
 
     for (const effect of ability.effects) {
+      // LinkFate(로잔느 라포르 〈능력〉, 2인 지정 — 처형·탈락·소멸을 공유): 멀티타깃을 한 번에
+      // 묶어야 하므로 per-target applyEffect 가 아니라 여기서 직접 처리한다. 지정된 각 대상에
+      // 서로를 가리키는 rapportLink_<상대id> 표식을 붙인다(쌍방). 죽음 해소 경로가 이 표식을
+      // 읽어 한쪽이 markedForDeath/annihilated 되면 상대도 같은 운명으로 전파한다.
+      if (effect.type === "LinkFate") {
+        const maxN = effectiveTargetCount(ability, sourcePlayer, newState.dayCount);
+        const ids = (action.targetUserIds && action.targetUserIds.length)
+          ? action.targetUserIds.slice(0, Math.max(2, maxN))
+          : (action.targetUserId ? [action.targetUserId] : []);
+        const live = ids.filter((id) => newState.players[id]?.alive);
+        if (live.length >= 2) {
+          for (const a of live) {
+            for (const b of live) {
+              if (a === b) continue;
+              const tag = `rapportLink_${b}`;
+              if (!newState.players[a].tags.includes(tag)) newState.players[a].tags.push(tag);
+            }
+          }
+          events.push({ type: "rapport_linked", payload: { user_id: sourcePlayer.userId, targets: live } });
+        }
+        continue;
+      }
       // All: 전원 대상(대악마 압도적 존재감·우노 용맹함). 생존자 전체에 적용(source 포함 여부는
       // 효과 의미에 맡김 — 봉인/투표가치 등은 전원 의도). 단일 타깃 해소와 분리.
       if (effect.target === "All") {
         for (const other of Object.values(newState.players)) {
-          if (other.alive) applyEffect(newState, sourcePlayer, other, effect, events);
+          if (other.alive) { recordCast(sourcePlayer.userId, other.userId); applyEffect(newState, sourcePlayer, other, effect, events); }
         }
         continue;
       }
@@ -271,6 +312,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       if (effect.target === "AllOthers") {
         for (const other of Object.values(newState.players)) {
           if (other.alive && other.userId !== sourcePlayer.userId) {
+            recordCast(sourcePlayer.userId, other.userId);
             applyEffect(newState, sourcePlayer, other, effect, events);
           }
         }
@@ -290,6 +332,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
           // 'remembered' 탈락자(헬렌 황금빛 수면) 우회: allowRememberedDead 이면 탈락 + remembered 보유 시 통과.
           const allowDead = ability.allowRememberedDead && t.tags.includes("remembered");
           if (!t.alive && ability.targetType !== "SINGLE_DEAD" && !allowDead) continue;
+          recordCast(sourcePlayer.userId, t.userId);
           applyEffect(newState, sourcePlayer, t, effect, events);
         }
         continue;
@@ -304,6 +347,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       if (!target) continue;
       if (!target.alive && ability.targetType !== "SINGLE_DEAD") continue;
 
+      recordCast(sourcePlayer.userId, target.userId);
       applyEffect(newState, sourcePlayer, target, effect, events);
     }
 
@@ -329,6 +373,28 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 이 밤 실제 공격을 막았을 때(아래 death 해소의 attack_prevented) 시전자에게 보상한다.
     if (ability.onSaveGrantSelf && targetPlayer) {
       saveRewards[targetPlayer.userId] = { source: sourcePlayer.userId, ...ability.onSaveGrantSelf };
+    }
+  }
+
+  // 조망 비용 적용(로잔느 생존 게이트): 이 밤 타인에게 능력을 적용한 시전자마다 행사 투표가치를
+  // distinct 타인 대상 수만큼 차감(voteValueMod -= n). 단 '이 효과로 1 미만으로는 안 내려감'(canon)
+  // — 비용 적용 후 행사 투표가치(base+bonus+voteWeightBonus+voteValueMod)가 1 이상이 되도록 clamp.
+  // 비용은 전 직업 공통(직업 하드코딩 없음); 로잔느-생존만이 활성 게이트다.
+  const rosanneAliveForGaze = Object.values(newState.players).some(
+    (p) => p.alive && p.currentRole === "rosanne",
+  );
+  if (rosanneAliveForGaze) {
+    for (const [sourceId, targets] of Object.entries(castOtherTargets)) {
+      const src = newState.players[sourceId];
+      if (!src?.alive || targets.size === 0) continue;
+      const effBefore = (src.baseVoteValue || 1) + (src.bonusVoteValue || 0) + (src.counters?.voteWeightBonus ?? 0) + (src.counters?.voteValueMod ?? 0);
+      // 1 미만으로 못 내려가게 — 적용 가능한 최대 차감 = effBefore-1 (음수면 0).
+      const maxCut = Math.max(0, effBefore - 1);
+      const cut = Math.min(targets.size, maxCut);
+      if (cut > 0) {
+        src.counters.voteValueMod = (src.counters.voteValueMod ?? 0) - cut;
+        events.push({ type: "gaze_cost", payload: { user_id: sourceId, amount: -cut, targets: targets.size } });
+      }
     }
   }
 
@@ -406,6 +472,36 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
   }
 
+  // 라포르 운명 공유(로잔느 LinkFate): 이 밤 탈락한 자가 rapportLink_<상대id> 표식을 가졌으면
+  // 아직 살아있는 상대도 같은 운명으로 전파(탈락 + 소멸 여부 승계). 연쇄(A↔B↔C)는 fixpoint
+  // 까지 반복. 표식은 소비해 무한 재전파를 막는다. 밤 탈락 경로 전용 — 투표/처형 전파는 후속.
+  {
+    let propagated = true;
+    while (propagated) {
+      propagated = false;
+      for (const dead of Object.values(newState.players)) {
+        if (dead.alive) continue;
+        const linkTags = dead.tags.filter((t) => t.startsWith("rapportLink_"));
+        if (linkTags.length === 0) continue;
+        const annihilated = (dead.counters?.annihilated ?? 0) > 0;
+        for (const lt of linkTags) {
+          const partnerId = lt.slice("rapportLink_".length);
+          const partner = newState.players[partnerId];
+          // 표식 소비(양방향): 죽은 쪽에서 제거.
+          dead.tags = dead.tags.filter((t) => t !== lt);
+          if (partner && partner.alive) {
+            partner.alive = false;
+            if (annihilated) partner.counters.annihilated = 1;
+            // 상대 쪽 표식도 정리(쌍방 소비 — 죽은 자를 다시 가리키지 않게).
+            partner.tags = partner.tags.filter((t) => t !== `rapportLink_${dead.userId}`);
+            events.push({ type: "rapport_fate_shared", payload: { user_id: partner.userId, by: dead.userId, annihilated } });
+            propagated = true;
+          }
+        }
+      }
+    }
+  }
+
   // 약간의 위선(가인) 강화 트리거(원문 "악마가 대상을 투표했었다면 다음 위선이 봉인으로 강화"):
   // 그 밤 위선을 받은 대상('hypocrisy' 표식)을 검사 — 생존 악마(actualFaction='demon')의 직전
   // 투표 대상(lastVoteTarget)이 그 대상이면 생존 가인의 hypocrisySealReady 를 켠다(다음 위선 = 봉인
@@ -442,6 +538,19 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   if ((newState.modifiers.moonriseRule ?? 0) > 0) {
     newState.modifiers.moonriseRule = 0;
   }
+  // 건너뛰기는 그 밤 한정(canon "이번 밤") — 이 밤 해소가 끝나면 플래그를 내려 다음 밤이 정상 발동.
+  if ((newState.modifiers.nightSkipped ?? 0) > 0) {
+    newState.modifiers.nightSkipped = 0;
+  }
+
+  // 백일몽 modifier(로잔느, canon "백일몽 동안 토론 1분 + 무투(찬반) 행사 불가"): 로잔느 생존
+  // 여부를 modifier 로 영속화한다 — phase-advance 가 day 진입 시 토론을 60초로 캡하고, verdict
+  // 집계 전 로잔느의 찬반 투표를 무효화한다(루나 dawnRule 등 modifier 패턴 재사용). 로잔느가
+  // 죽으면 0 으로 내려 자동 해제(매 밤 재평가 — 일방향 아님).
+  const rosanneAliveForDream = Object.values(newState.players).some(
+    (p) => p.alive && p.currentRole === "rosanne",
+  );
+  newState.modifiers.rosanneDream = rosanneAliveForDream ? 1 : 0;
 
   // 여명의 기사(패시브): 결백한(tainted 0) 천사팀의 누적 탈락을 반영. 탈락 1명당 아서 '잔불 대검'
   // 충전 +1(델타만 가산해 중복 방지). 누적 3명+ 이면 아서도 탈락(동반). 투표 탈락은 phase-advance
@@ -1476,6 +1585,33 @@ function applyEffect(
         target.tags.push(`soulCarrier_${carrier.userId}`);
       }
       events.push({ type: "soul_shattered", payload: { user_id: target.userId, by: _source.userId, carrier: carrier?.userId ?? null } });
+      break;
+    }
+    case "Manifest": {
+      // 외현기억(로잔느, 탈락자 1인 지정): 대상에 manifestMemory 표식을 남긴다. 부활/재처형 루프는
+      // phase-advance morning hook 이 bounded 로 처리(다음 아침 1회 부활 + 투표 재처형 시 효과 상실).
+      // 이미 표식 보유 시 중복 부여 안 함. 소멸(annihilated)된 대상은 부활 불가라 대상 제외.
+      if ((target.counters?.annihilated ?? 0) > 0) {
+        events.push({ type: "manifest_blocked_annihilated", payload: { user_id: target.userId } });
+        break;
+      }
+      // 재지정 불가(canon "효과 상실 후 재지정 불가"): 투표 재처형으로 효과를 잃은 대상(manifestSpent).
+      if ((target.counters?.manifestSpent ?? 0) > 0) {
+        events.push({ type: "manifest_blocked_spent", payload: { user_id: target.userId } });
+        break;
+      }
+      if (!target.tags.includes("manifestMemory")) {
+        target.tags.push("manifestMemory");
+        events.push({ type: "manifest_marked", payload: { user_id: target.userId, by: _source.userId } });
+      }
+      break;
+    }
+    case "SkipNight": {
+      // 건너뛰기(로잔느, self·priority 0·1회): 이 밤의 *다른* 모든 효과를 취소한다(modifiers.nightSkipped).
+      // priority 0 이라 가장 먼저 처리되고, 이후 액션들이 루프 상단 가드에서 일괄 건너뛰어진다. canon
+      // "다음 밤으로 넘김" 진짜 replay 와 "잔여 채 승리 시 조력자 패배"는 후속 — 현재는 그 밤 취소만.
+      _state.modifiers.nightSkipped = 1;
+      events.push({ type: "night_skipped", payload: { user_id: _source.userId } });
       break;
     }
   }

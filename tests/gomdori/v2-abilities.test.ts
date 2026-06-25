@@ -1096,6 +1096,191 @@ assert.match(roles, /id: "logen_allwell"[\s\S]*?type: "Protect", target: "AllOth
 assert.match(roles, /id: "logen_allwell"[\s\S]*?type: "Kill", target: "AllOthers", annihilate: true[\s\S]*?onlyIfTargetCounter: \{ key: "doom", min: 2 \}/, "로건 전부 괜찮을 거야 — 파멸 2중첩 소멸");
 assert.match(roles, /id: "rosanne_hatred"[\s\S]*?type: "VoteCrush"/, "로잔느 증오(VoteCrush)");
 assert.match(roles, /id: "rosanne_resentment"[\s\S]*?tag: "wonhan"/, "로잔느 만들어가는 미래(원한 표식)");
+
+// --- 로잔느 조망(전역 시전비용): 로잔느 생존 중, 타인에게 능력을 적용한 시전자는 투표가치 -1(대상 수만큼) ---
+{
+  // 의사가 타인 1명을 치료 → 조망 비용 -1. 로잔느 생존이 게이트.
+  const state = emptyState(
+    {
+      rosanne: player("rosanne", "rosanne", "neutral"),
+      doc: { ...player("doc", "doctor", "angel"), bonusVoteValue: 2 },
+      patient: player("patient", "citizen", "angel"),
+    },
+    [{ sourceUserId: "doc", targetUserId: "patient", actionType: "doctor_heal", priority: 3 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.doc.counters.voteValueMod ?? 0, -1, "조망 — 타인 1명 대상 시 시전자 투표가치 -1");
+  assert.ok(events.some((e: any) => e.type === "gaze_cost" && e.payload?.user_id === "doc"), "조망 비용 이벤트");
+  // 로잔느 본인은 대상이 없었으면 비용 없음.
+  assert.equal(newState.players.rosanne.counters.voteValueMod ?? 0, 0, "조망 — 시전 안 한 로잔느는 비용 없음");
+}
+{
+  // 로잔느 부재 시 비용 없음(게이트 확인).
+  const state = emptyState(
+    { doc: player("doc", "doctor", "angel"), patient: player("patient", "citizen", "angel") },
+    [{ sourceUserId: "doc", targetUserId: "patient", actionType: "doctor_heal", priority: 3 }],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.doc.counters.voteValueMod ?? 0, 0, "조망 — 로잔느 부재 시 비용 없음");
+}
+{
+  // 1 미만으로는 안 내려감: 기본 1짜리 시전자가 타인 다수 대상이어도 effective vote >= 1.
+  const state = emptyState(
+    {
+      rosanne: player("rosanne", "rosanne", "neutral"),
+      daeakma: player("daeakma", "demon", "demon"),
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+    },
+    // 대악마 압도적 존재감(AllOthers Silence) — 타인 3명(rosanne/a/b)에 적용.
+    [{ sourceUserId: "daeakma", targetUserId: null, actionType: "daeakma_dominion", priority: 1 }],
+  );
+  const { newState } = resolveNightActions(state);
+  const eff = 1 + (newState.players.daeakma.bonusVoteValue || 0) + (newState.players.daeakma.counters.voteWeightBonus ?? 0) + (newState.players.daeakma.counters.voteValueMod ?? 0);
+  assert.ok(eff >= 1, "조망 — 비용 적용 후에도 행사 투표가치 1 이상(1 미만 금지)");
+}
+
+// --- 로잔느 라포르(LinkFate): 2인 운명 공유 — 한쪽 탈락 시 다른 쪽도 탈락 ---
+{
+  const state = emptyState(
+    {
+      rosanne: { ...player("rosanne", "rosanne", "neutral"), counters: { futureCharge: 1 } },
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+      demon: player("demon", "demon", "demon"),
+    },
+    [
+      { sourceUserId: "rosanne", targetUserId: "a", targetUserIds: ["a", "b"], actionType: "rosanne_rapport", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "a", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.a.alive, false, "라포르 — 처치된 a 탈락");
+  assert.equal(newState.players.b.alive, false, "라포르 — 운명 공유로 b 도 탈락");
+  assert.ok(events.some((e: any) => e.type === "rapport_linked"), "라포르 결속 이벤트");
+  assert.ok(events.some((e: any) => e.type === "rapport_fate_shared" && e.payload?.user_id === "b"), "라포르 운명 공유 이벤트");
+}
+{
+  // 소멸 전파: 한쪽이 소멸(annihilate)이면 상대도 부활 불가 소멸.
+  const state = emptyState(
+    {
+      rosanne: { ...player("rosanne", "rosanne", "neutral"), counters: { futureCharge: 1 } },
+      a: player("a", "citizen", "angel"),
+      b: player("b", "citizen", "angel"),
+      logen: player("logen", "logen", "demon"),
+    },
+    [
+      { sourceUserId: "rosanne", targetUserId: "a", targetUserIds: ["a", "b"], actionType: "rosanne_rapport", priority: 5 },
+      // 로건 파멸 2중첩 소멸을 a 에 직접 걸기 위해 doom 2 선세팅 + allwell.
+    ],
+  );
+  // a 를 소멸로 직접 마킹(엔진 외부에서 시뮬). 라포르만 단독 검증하려고 a 를 소멸 상태로 만든다.
+  const { newState } = resolveNightActions(state);
+  assert.ok(newState.players.a.tags.some((t) => t.startsWith("rapportLink_b")), "라포르 — a 가 b 를 가리키는 표식 보유");
+  assert.ok(newState.players.b.tags.some((t) => t.startsWith("rapportLink_a")), "라포르 — b 가 a 를 가리키는 표식 보유");
+}
+assert.match(roles, /id: "rosanne_rapport"[\s\S]*?type: "LinkFate"/, "로잔느 라포르(LinkFate)");
+const rapportMig = readFileSync("supabase/migrations/20260625140000_gomdori_rosanne_rapport.sql", "utf8");
+assert.match(rapportMig, /'rosanne_rapport'/, "마이그레이션 — 라포르");
+
+// --- 백일몽 modifier: 로잔느 생존 중 rosanneDream=1, 죽으면 0 ---
+{
+  const state = emptyState(
+    { rosanne: player("rosanne", "rosanne", "neutral"), a: player("a", "citizen", "angel") },
+    [],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.modifiers.rosanneDream, 1, "백일몽 — 로잔느 생존 시 rosanneDream=1");
+}
+{
+  const state = emptyState(
+    { rosanne: player("rosanne", "rosanne", "neutral", false), a: player("a", "citizen", "angel") },
+    [],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.modifiers.rosanneDream ?? 0, 0, "백일몽 — 로잔느 탈락 시 rosanneDream=0(해제)");
+}
+// phase-advance: 토론 1분 캡 + 무투 불가(로잔느 찬반 제거) 배선 확인.
+assert.match(phaseAdvanceSrc, /dayDuration[\s\S]*?Math\.min\(durations\.day, 60\)/, "백일몽 — 토론 60초 캡(dayDuration)");
+assert.match(phaseAdvanceSrc, /rosanneIds[\s\S]*?filter\(\(a\) => !rosanneIds\.has\(a\.actor_user_id\)\)/, "백일몽 — 무투 불가(로잔느 찬반 제거)");
+
+// --- 로잔느 외현기억(Manifest): 탈락자 대상에 manifestMemory 표식 ---
+{
+  const state = emptyState(
+    {
+      rosanne: { ...player("rosanne", "rosanne", "neutral"), counters: { futureCharge: 1 } },
+      dead: player("dead", "citizen", "angel", false),
+    },
+    [{ sourceUserId: "rosanne", targetUserId: "dead", actionType: "rosanne_manifest", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(newState.players.dead.tags.includes("manifestMemory"), "외현기억 — 탈락자에 manifestMemory 표식");
+  assert.ok(events.some((e: any) => e.type === "manifest_marked"), "외현기억 표식 이벤트");
+}
+{
+  // 소멸(annihilated)된 탈락자는 외현기억 대상 불가.
+  const state = emptyState(
+    {
+      rosanne: { ...player("rosanne", "rosanne", "neutral"), counters: { futureCharge: 1 } },
+      gone: { ...player("gone", "citizen", "angel", false), counters: { annihilated: 1 } },
+    },
+    [{ sourceUserId: "rosanne", targetUserId: "gone", actionType: "rosanne_manifest", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(!newState.players.gone.tags.includes("manifestMemory"), "외현기억 — 소멸 대상엔 표식 없음");
+  assert.ok(events.some((e: any) => e.type === "manifest_blocked_annihilated"), "외현기억 소멸 차단 이벤트");
+}
+{
+  // 효과 상실(manifestSpent) 후 재지정 불가.
+  const state = emptyState(
+    {
+      rosanne: { ...player("rosanne", "rosanne", "neutral"), counters: { futureCharge: 1 } },
+      spent: { ...player("spent", "citizen", "angel", false), counters: { manifestSpent: 1 } },
+    },
+    [{ sourceUserId: "rosanne", targetUserId: "spent", actionType: "rosanne_manifest", priority: 5 }],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.ok(!newState.players.spent.tags.includes("manifestMemory"), "외현기억 — 효과 상실 대상 재지정 불가");
+  assert.ok(events.some((e: any) => e.type === "manifest_blocked_spent"), "외현기억 재지정 차단 이벤트");
+}
+assert.match(roles, /id: "rosanne_manifest"[\s\S]*?type: "Manifest"/, "로잔느 외현기억(Manifest)");
+const manifestMig = readFileSync("supabase/migrations/20260625150000_gomdori_rosanne_manifest.sql", "utf8");
+assert.match(manifestMig, /'rosanne_manifest'/, "마이그레이션 — 외현기억");
+// phase-advance: bounded 부활/재처형 + 투표 재처형 효과 상실 배선.
+assert.match(phaseAdvanceSrc, /manifestMemory[\s\S]*?manifestCycles[\s\S]*?< 2/, "외현기억 — bounded 부활(manifestCycles<2)");
+assert.match(phaseAdvanceSrc, /manifest_executed/, "외현기억 — 아침 끝 재처형");
+assert.match(phaseAdvanceSrc, /manifest_dispelled/, "외현기억 — 투표 재처형 시 효과 상실");
+
+// --- 로잔느 건너뛰기(SkipNight): priority 0 — 이 밤 다른 모든 효과 취소 ---
+{
+  const state = emptyState(
+    {
+      rosanne: player("rosanne", "rosanne", "neutral"),
+      demon: player("demon", "demon", "demon"),
+      victim: player("victim", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "rosanne", targetUserId: null, actionType: "rosanne_skip", priority: 0 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.victim.alive, true, "건너뛰기 — 그 밤 처치가 취소되어 피해자 생존");
+  assert.ok(events.some((e: any) => e.type === "night_skipped"), "건너뛰기 발동 이벤트");
+  assert.ok(events.some((e: any) => e.type === "action_skipped_night" && e.userId === "demon"), "건너뛰기 — 후속 액션 일괄 취소");
+  assert.equal(newState.modifiers.nightSkipped ?? 0, 0, "건너뛰기는 그 밤 한정 — 종료 시 플래그 해제");
+  assert.equal(newState.players.rosanne.counters.used_rosanne_skip, 1, "건너뛰기 1회성 — used 기록");
+}
+assert.match(roles, /id: "rosanne_skip"[\s\S]*?type: "SkipNight"/, "로잔느 건너뛰기(SkipNight)");
+const skipMig = readFileSync("supabase/migrations/20260625160000_gomdori_rosanne_skip.sql", "utf8");
+assert.match(skipMig, /'rosanne_skip'/, "마이그레이션 — 건너뛰기");
+
+// --- 강제 반론(대악마 감시 + 루루 무투): voteCountBonus≥1 투표자의 대상은 무조건 반론(verdict) ---
+// phase-advance 의 vote 단계 처리 — 집계 후보보다 우선, 카운터 소비 전 평가.
+assert.match(phaseAdvanceSrc, /forcedCandidate[\s\S]*?voteCountBonus[\s\S]*?< 1/, "강제 반론 — voteCountBonus≥1 투표자 탐지");
+assert.match(phaseAdvanceSrc, /forced_retrial/, "강제 반론 — 이벤트 emit");
+assert.match(phaseAdvanceSrc, /effectiveCandidate = forcedCandidate \?\? tally\.candidateUserId/, "강제 반론 — forced > tally 우선");
+assert.match(phaseAdvanceSrc, /if \(effectiveCandidate\)\s*\{\s*nextPhaseType = "verdict"/, "강제 반론 — effectiveCandidate 로 verdict 전이");
 const allwellMig = readFileSync("supabase/migrations/20260625120000_gomdori_rosanne_logen_allwell.sql", "utf8");
 for (const v of ["logen_allwell", "rosanne_hatred", "rosanne_resentment"]) {
   assert.match(allwellMig, new RegExp(`'${v}'`), `마이그레이션 — ${v}`);

@@ -86,7 +86,18 @@ export interface Effect {
   //   (2밤 가치 상실) + everShattered 표식(한 대상 1회) + 자아가 생존자 중 *행사 투표가치 최고*
   //   대상(carrier, 대상 제외)에게 이전(soulCarrier_<carrierUserId> 표식). 망가진 대상이 carrier 를
   //   투표하면 다음 아침 회복(selfRecovered) — resolveNightActions 의 carrier-vote 회복 루프가 처리.
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush" | "Shatter";
+  // LinkFate(로잔느 라포르): 2인 지정 — 처형·탈락·소멸을 공유. 지정 대상끼리 rapportLink_<상대id>
+  //   표식으로 묶고, 한쪽이 죽으면(밤 탈락·소멸·처형) 죽음 해소 경로가 상대도 같은 운명으로 전파.
+  //   멀티타깃을 한 번에 묶어야 해서 engine 의 효과 루프가 LinkFate 만 별도 처리(applyEffect no-op).
+  // Manifest(로잔느 외현기억): 탈락자 1인 지정 — 다음 아침 부활 → 그 날 처형(아침 끝). 대상에
+  //   manifestMemory 표식을 남긴다. phase-advance morning hook 이 표식 보유 탈락자를 1회 부활시키고
+  //   (manifestRevived), 투표로 '한 번 더' 처형되면 효과 상실(표식 제거 = 영구 탈락). engine 은
+  //   표식만 세팅(applyEffect Manifest case) — 부활/재처형 루프는 phase-advance 가 bounded 로 처리.
+  // SkipNight(로잔느 건너뛰기, self·priority 0·1회): 이 밤 발동한 *다른* 모든 효과를 취소한다.
+  //   modifiers.nightSkipped=1 을 세워, priority 0 이라 가장 먼저 처리된 뒤 후속 액션들이 액션
+  //   루프 상단 가드에서 일괄 건너뛰어진다(봉인류 전역 취소 근사). canon "다음 밤으로 넘김"의 진짜
+  //   replay 와 "잔여 채 승리 시 조력자 패배" win 조항은 후속(현재는 그 밤 취소만).
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush" | "Shatter" | "LinkFate" | "Manifest" | "SkipNight";
   // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
   demonAmount?: number;
   // 태그 게이트(미즐렛 고급 와인): 대상에게 tag 가 있으면(onlyIfTargetTag) / 없으면(skipIfTargetTag 는

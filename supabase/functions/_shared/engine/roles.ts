@@ -333,6 +333,12 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         { id: "rosanne_hatred", name: "증오", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "VoteCrush", target: "Target" }] },
         { id: "rosanne_resentment", name: "만들어가는 미래", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "AddTag", target: "Target", tag: "wonhan" }, { type: "GrantCount", target: "self", tag: "dreamMorning", amount: 1 }] },
+        // 라포르(만들어가는 미래 변주, 2인 지정 — 처형·탈락·소멸을 공유). futureCharge 1 소비.
+        { id: "rosanne_rapport", name: "라포르", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetCount: 2, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "LinkFate", target: "Target" }] },
+        // 외현기억(탈락자 1인 지정 — 다음 아침 부활 후 그 날 처형, 투표 재처형 시 효과 상실). futureCharge 1 소비.
+        { id: "rosanne_manifest", name: "외현기억", targetType: "SINGLE_DEAD", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "Manifest", target: "Target" }] },
+        // 건너뛰기(self, priority 0 = 최우선, 1회): 이 밤 발동한 다른 모든 효과를 취소(SkipNight).
+        { id: "rosanne_skip", name: "건너뛰기", targetType: "SELF", priority: 0, maxUses: 1, effects: [{ type: "SkipNight", target: "self" }] },
       ],
     },
   },

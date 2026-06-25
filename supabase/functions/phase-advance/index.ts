@@ -498,6 +498,14 @@ Deno.serve((req: Request) => {
       let nextDurationSec = 0;
       let nextPhaseNumber = phase.phase_number;
 
+      // 백일몽 토론 캡(로잔느, canon "토론 1분"): 로잔느 생존 중에는 day(토론) 시간을 60초로 캡한다.
+      // 직업-생존 게이트(currentRole='rosanne')만으로 — engine modifier(rosanneDream)와 동등하되
+      // 항상 현재 players 로 재평가해 영속화 타이밍과 무관하게 정확하다. day 전이 전부가 이걸 쓴다.
+      const rosanneAliveNow = players.some(
+        (p) => p.alive && ((p.engine_state as { currentRole?: string } | null)?.currentRole ?? p.role) === "rosanne",
+      );
+      const dayDuration = () => (rosanneAliveNow ? Math.min(durations.day, 60) : durations.day);
+
       if (phase.phase_type === "role_assign") {
         // 변종 선택 마감: 미선택 폴백 + 가인→악마 보호막 재계산 + 접선 회로. 그 뒤 첫째 밤으로.
         await finalizeRoleSelection(supabase, matchId, phase.id);
@@ -524,7 +532,7 @@ Deno.serve((req: Request) => {
           );
 
           nextPhaseType = "day";
-          nextDurationSec = durations.day;
+          nextDurationSec = dayDuration();
         } else {
           const actions = requireNoError(
             await supabase
@@ -808,6 +816,54 @@ Deno.serve((req: Request) => {
         }
         if (nmEvents.length > 0) players = await loadPlayers(supabase, matchId);
 
+        // 외현기억(로잔느, canon "매 아침 부활 → 아침 끝 처형; 투표 재처형 시 효과 상실"): bounded
+        // 2단계 모델 — manifestMemory 표식 보유자를 매 아침 해소한다.
+        //   ① 표식+생존+manifestRevived(이전 아침에 부활했던 발현체) → 그 날의 끝(이 아침)에 재처형.
+        //      manifestRevived 소비. 표식은 유지 → 다음 아침 다시 부활(매 아침 부활).
+        //   ② 표식+탈락+소멸아님 + manifestCycles<2(무한 비수렴 방지 하드 바운드) → 부활
+        //      (manifestRevived=1, manifestCycles+1).
+        //   투표 재처형(verdict)이 표식을 제거하면(효과 상실) 이 루프에 더는 안 들어온다.
+        {
+          let manifestTouched = false;
+          for (const p of players) {
+            const es = (p.engine_state ?? {}) as Record<string, unknown>;
+            const tags = Array.isArray(es.tags) ? (es.tags as string[]) : [];
+            if (!tags.includes("manifestMemory")) continue;
+            const counters = { ...((es.counters ?? {}) as Record<string, number>) };
+            if (p.alive && (counters.manifestRevived ?? 0) > 0) {
+              // 발현 하루의 끝 — 재처형(아침 끝 처형). 표식 유지(다음 아침 재부활), manifestRevived 소비.
+              counters.manifestRevived = 0;
+              requireNoError(
+                await supabase
+                  .from("match_players")
+                  .update({ alive: false, eliminated_at: endedAt, eliminated_phase_number: phase.phase_number, eliminated_cause: "manifest_execution", engine_state: { ...es, counters } })
+                  .eq("match_id", matchId)
+                  .eq("user_id", p.user_id),
+              );
+              requireNoError(
+                await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "manifest_executed", visibility: "public", payload: { user_id: p.user_id } }),
+              );
+              manifestTouched = true;
+            } else if (!p.alive && (counters.annihilated ?? 0) === 0 && (counters.manifestCycles ?? 0) < 2) {
+              // 다음 아침 부활(매 아침 부활). manifestCycles 하드 바운드로 수렴 보장.
+              counters.manifestRevived = 1;
+              counters.manifestCycles = (counters.manifestCycles ?? 0) + 1;
+              requireNoError(
+                await supabase
+                  .from("match_players")
+                  .update({ alive: true, eliminated_at: null, eliminated_phase_number: null, eliminated_cause: null, engine_state: { ...es, counters } })
+                  .eq("match_id", matchId)
+                  .eq("user_id", p.user_id),
+              );
+              requireNoError(
+                await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "manifest_revived", visibility: "public", payload: { user_id: p.user_id } }),
+              );
+              manifestTouched = true;
+            }
+          }
+          if (manifestTouched) players = await loadPlayers(supabase, matchId);
+        }
+
         // 일식(팬텀, vault canon "다음 아침을 밤으로 변경, 대신 아침이 오면 팬텀 소멸"):
         // 2단계 모델 — 캐스트 라운드의 아침을 건너뛰고 추가 밤을 삽입 → 그 추가 밤이
         // 끝나고 오는 정상 아침에 팬텀 소멸. counter eclipse=1 (캐스트 그 밤) →
@@ -977,7 +1033,7 @@ Deno.serve((req: Request) => {
             requireNoError(await supabase.from("matches").update({ engine_state: engineState }).eq("id", matchId));
           }
           nextPhaseType = "day";
-          nextDurationSec = durations.day;
+          nextDurationSec = dayDuration();
         }
       } else if (phase.phase_type === "day") {
         nextPhaseType = "vote";
@@ -992,6 +1048,39 @@ Deno.serve((req: Request) => {
         ) as DbAction[];
         const state = playerStateFromRows(matchId, "vote", phase.phase_number, players, engineState.modifiers);
         const tally = tallyEliminationVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
+        // 강제 반론(대악마 감시 "같은 대상에 2표 시 무조건 반론" + 루루 무투 2표): voteCountBonus≥1 인
+        // 생존 투표자는 한 표가 가중 2표라 "같은 대상 2표"가 자동 성립 — 그 투표 대상을 집계 결과와
+        // 무관하게 최후의 반론(verdict)에 강제로 세운다. 카운터 소비 *전*에 평가(소비 후엔 0). 대상이
+        // 생존자여야 하며, 여럿이면 결정적으로 첫(actor_user_id 사전순) 하나를 택한다(직업 하드코딩 없이
+        // voteCountBonus 플래그만으로 — 감시/무투 공용). tally.candidateUserId 보다 우선.
+        let forcedCandidate: string | null = null;
+        {
+          const forcedVoters = actions
+            .filter((a) => {
+              if (!a.target_user_id) return false;
+              const voter = players.find((p) => p.user_id === a.actor_user_id);
+              if (!voter?.alive) return false;
+              const vc = ((voter.engine_state as { counters?: { voteCountBonus?: number } } | null)?.counters?.voteCountBonus ?? 0);
+              if (vc < 1) return false;
+              const target = players.find((p) => p.user_id === a.target_user_id);
+              return !!target?.alive;
+            })
+            .sort((x, y) => x.actor_user_id.localeCompare(y.actor_user_id));
+          if (forcedVoters.length > 0) {
+            forcedCandidate = forcedVoters[0].target_user_id ?? null;
+            if (forcedCandidate) {
+              requireNoError(
+                await supabase.from("match_events").insert({
+                  match_id: matchId,
+                  phase_id: phase.id,
+                  event_type: "forced_retrial",
+                  visibility: "public",
+                  payload: { candidate_user_id: forcedCandidate, by: forcedVoters[0].actor_user_id },
+                }),
+              );
+            }
+          }
+        }
         // 라운드성 투표 카운터 소비(canon "다음 아침" 1회 한정): 루루 무투(voteCountBonus) +
         // 미즐렛 고급 와인 1일 페널티(wineVotePenalty). 이 처형 투표 tally 직후 함께 해제한다.
         for (const p of players) {
@@ -1003,12 +1092,15 @@ Deno.serve((req: Request) => {
             p.engine_state = next;
           }
         }
+        // 강제 반론이 있으면 그 대상을, 없으면 집계 후보를 최후의 반론에 세운다(forced > tally).
+        const effectiveCandidate = forcedCandidate ?? tally.candidateUserId;
         const voteSummary = {
-          candidateUserId: tally.candidateUserId,
+          candidateUserId: effectiveCandidate,
           tallies: tally.tallies,
           skipped: tally.skipped,
           tie: tally.tie,
           maxVotes: tally.maxVotes,
+          forced: forcedCandidate ? true : false,
           phaseId: phase.id,
         };
 
@@ -1019,7 +1111,7 @@ Deno.serve((req: Request) => {
         }
 
         const { verdict: _previousVerdict, ...engineStateWithoutVerdict } = engineState;
-        engineState = tally.candidateUserId
+        engineState = effectiveCandidate
           ? { ...engineStateWithoutVerdict, verdict: voteSummary, voteTargets }
           : { ...engineStateWithoutVerdict, voteTargets };
 
@@ -1042,7 +1134,7 @@ Deno.serve((req: Request) => {
             }),
         );
 
-        if (tally.candidateUserId) {
+        if (effectiveCandidate) {
           nextPhaseType = "verdict";
           nextDurationSec = durations.verdict;
         } else {
@@ -1063,13 +1155,21 @@ Deno.serve((req: Request) => {
           nextPhaseNumber = transition.phaseNumber;
         }
       } else if (phase.phase_type === "verdict") {
-        const actions = requireNoError(
+        const rawVerdictActions = requireNoError(
           await supabase
             .from("match_actions")
             .select("actor_user_id, target_user_id, action_type")
             .eq("phase_id", phase.id)
             .in("action_type", ["verdict_approve", "verdict_reject"]),
         ) as DbAction[];
+        // 백일몽 무투 불가(로잔느, canon "무투(찬반) 행사 불가"): 로잔느 생존 중에는 로잔느 본인의
+        // 찬반 투표를 집계 전에 제거(무효화). 그 외 처리는 동일 — 직업-생존 게이트만으로 한정.
+        const rosanneIds = new Set(
+          players
+            .filter((p) => p.alive && ((p.engine_state as { currentRole?: string } | null)?.currentRole ?? p.role) === "rosanne")
+            .map((p) => p.user_id),
+        );
+        const actions = rawVerdictActions.filter((a) => !rosanneIds.has(a.actor_user_id));
         const state = playerStateFromRows(matchId, "verdict", phase.phase_number, players, engineState.modifiers);
         const verdict = tallyVerdictVotes(actionRowsToInputs(actions), state.players, engineState.modifiers);
         const candidateUserId = engineState.verdict?.candidateUserId || null;
@@ -1112,6 +1212,14 @@ Deno.serve((req: Request) => {
             );
           } else {
             executed = true;
+            // 외현기억 효과 상실(로잔느, canon "투표로 한 번 더 처형되면 효과 상실 + 재지정 불가"):
+            // 후보가 manifestMemory 발현체였으면 표식을 제거 + manifestSpent 마커(재지정 불가).
+            // 표식이 사라지면 morning hook 의 재부활 루프에 더는 들어오지 않아 영구 탈락한다.
+            const candTags = Array.isArray(candidateEngineState.tags) ? (candidateEngineState.tags as string[]) : [];
+            const wasManifest = candTags.includes("manifestMemory");
+            const nextEngine = wasManifest
+              ? { ...candidateEngineState, tags: candTags.filter((t) => t !== "manifestMemory"), counters: { ...candidateCounters, manifestRevived: 0, manifestSpent: 1 } }
+              : candidateEngineState;
             requireNoError(
               await supabase
                 .from("match_players")
@@ -1120,10 +1228,16 @@ Deno.serve((req: Request) => {
                   eliminated_at: endedAt,
                   eliminated_phase_number: phase.phase_number,
                   eliminated_cause: "vote",
+                  ...(wasManifest ? { engine_state: nextEngine } : {}),
                 })
                 .eq("match_id", matchId)
                 .eq("user_id", candidateUserId),
             );
+            if (wasManifest) {
+              requireNoError(
+                await supabase.from("match_events").insert({ match_id: matchId, phase_id: phase.id, event_type: "manifest_dispelled", visibility: "public", payload: { user_id: candidateUserId } }),
+              );
+            }
 
             requireNoError(
               await supabase
