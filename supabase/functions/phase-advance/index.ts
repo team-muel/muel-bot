@@ -318,6 +318,12 @@ async function finishMatchIfWon(
           alive_angels: win.aliveAngels,
           alive_demons: win.aliveDemons,
           players: revealedPlayers(players),
+          // 건너뛰기 조력자 패배 조항(로잔느, 원문): 로잔느가 '건너뛰기'를 남긴 채 백일몽 승리하면
+          // 조력자(HELPER_ROLES 진영)를 패배로 명시 기록한다. 로잔느 단독승은 본래 모두의 패배지만,
+          // 원문이 조력자 패배를 특기하므로 결과 페이로드에 helper_defeat 로 표기한다.
+          ...(win.rosanneSkipUnusedHelperDefeat
+            ? { helper_defeat: players.filter((p) => HELPER_ROLES.includes(p.role)).map((p) => p.user_id) }
+            : {}),
         },
       }),
   );
@@ -561,7 +567,7 @@ Deno.serve((req: Request) => {
             priority:
               action.actionType === "seika_supernova" || action.actionType === "phantom_seal" || action.actionType === "logen_nullify" || action.actionType === "malen_possess" || action.actionType === "daeakma_dominion" || action.actionType === "gain_hypocrisy" ? 1
                 : action.actionType === "demon_kill" || action.actionType === "phantom_nightmare" || action.actionType === "malen_release" || action.actionType === "pasua_faith" || action.actionType === "arthur_judge" ? 4
-                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "mizlet_dessert" || action.actionType === "helen_revive" || action.actionType === "helen_sleep" || action.actionType === "arthur_emberblade" || action.actionType === "logen_allwell" ? 3
+                : action.actionType === "doctor_heal" || action.actionType === "mizlet_revive" || action.actionType === "mizlet_cookie" || action.actionType === "mizlet_pudding" || action.actionType === "helen_revive" || action.actionType === "helen_sleep" || action.actionType === "arthur_emberblade" || action.actionType === "logen_allwell" ? 3
                 : 5,
           }));
 
