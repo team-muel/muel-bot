@@ -592,13 +592,13 @@ export const CORE_ROLES: RoleDefinition[] = [
           { type: "AddTag", target: "Target", tag: "dessert" },
           { type: "AddTag", target: "Target", tag: "pudding" },
         ] },
-        // 고급 와인(v2, 1회): 전원 부정효과 제거(Cleanse All). 디저트 미제공자(태그 없음)는 투표가치
-        // -1(skipIfTargetTag: dessert). 디저트 받은 자는 정화만(대화는 후속). 1회 — 누적 -1 남용 방지.
-        { id: "mizlet_wine", name: "고급 와인", targetType: "NONE", priority: 5, maxUses: 1, effects: [
-          { type: "Cleanse", target: "All" },
-          // 투표가치 -1 은 effect(영속 voteValueMod)로 주면 회복이 안 돼 전원 0 으로 깔려 처형이
-          // 영구 봉인된다(버그). resolveNightActions 의 wine 루프에서 **1일 한정** counter
-          // (wineVotePenalty)로 부여 → 다음 처형 투표 1회만 적용 후 phase-advance 가 소비/해제.
+        // 고급 와인(v2, 1회, canon 〔지정〕 단일 대상): 대상이 전날 디저트(dessert 태그) 보유 시 그 밤
+        // 받는 부정효과 제거(Cleanse onlyIfTargetTag) + 미즐렛 대화 회로. 디저트 미보유 대상은 투표가치
+        // -1(engine wine 루프 wineVotePenalty, 1일). '대상이 발동한 부정효과 제거'는 후속(defer).
+        { id: "mizlet_wine", name: "고급 와인", targetType: "SINGLE_ALIVE", priority: 5, maxUses: 1, effects: [
+          { type: "Cleanse", target: "Target", onlyIfTargetTag: "dessert" },
+          // 투표가치 -1(미디저트 대상)은 영속 voteValueMod 가 아니라 1일 counter(wineVotePenalty)로
+          // resolveNightActions wine 루프에서 부여 → 다음 처형 투표 1회만 적용 후 phase-advance 소비.
         ] },
       ],
     },

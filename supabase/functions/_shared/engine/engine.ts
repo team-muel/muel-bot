@@ -669,18 +669,17 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       events.push({ type: "dessert_received", payload: { user_id: a.targetUserId, by: a.sourceUserId, variant: a.actionType === "mizlet_cookie" ? "cookie" : "pudding" } });
     }
   }
-  const wineFiredBy = sortedActions.filter((a) => a.actionType === "mizlet_wine").map((a) => a.sourceUserId);
-  for (const sourceId of wineFiredBy) {
-    for (const p of Object.values(newState.players)) {
-      if (!p.alive) continue;
-      if (p.tags.includes("dessert")) {
-        events.push({ type: "dessert_chat_open", payload: { user_id: p.userId, mizlet: sourceId } });
-      } else {
-        // 디저트 미회식자: 다음 처형 투표 1회 한정 투표가치 -1(1일). 영속 voteValueMod 가 아니라
-        // 날짜-스코프 counter — phase-advance 가 vote tally 직후 소비(아래 voteCountBonus 와 같은 라이프사이클).
-        p.counters.wineVotePenalty = 1;
-        events.push({ type: "vote_value_modified", payload: { user_id: p.userId, amount: -1, source: "mizlet_wine", scope: "1_day" } });
-      }
+  // 고급 와인(canon 〔지정〕 단일 대상): 와인 대상이 디저트(dessert) 보유면 대화 회로(dessert_chat_open),
+  // 미보유면 다음 처형 1회 한정 투표가치 -1(wineVotePenalty, 1일). 정화는 roles.ts Cleanse(onlyIfTargetTag).
+  const wineActions = sortedActions.filter((a) => a.actionType === "mizlet_wine" && a.targetUserId);
+  for (const wa of wineActions) {
+    const wineTarget = newState.players[wa.targetUserId!];
+    if (!wineTarget || !wineTarget.alive) continue;
+    if (wineTarget.tags.includes("dessert")) {
+      events.push({ type: "dessert_chat_open", payload: { user_id: wineTarget.userId, mizlet: wa.sourceUserId } });
+    } else {
+      wineTarget.counters.wineVotePenalty = 1;
+      events.push({ type: "vote_value_modified", payload: { user_id: wineTarget.userId, amount: -1, source: "mizlet_wine", scope: "1_day" } });
     }
   }
 
