@@ -328,6 +328,27 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
   assert.equal(newState.players.dordan.counters.nightmare ?? 0, 0, "불심검문 — 도르단 부정효과 정화(악몽)");
   assert.equal(newState.players.dordan.counters.persecuteBias ?? 0, 0, "불심검문 — 도르단 부정효과 정화(박해)");
 }
+// --- 4c-2. 도르단 잠입 2차 트리거(canon "누군가를 탈락시키면"): 관찰 대상이 가해자면 불심검문(대상 생존이어도) ---
+{
+  const dordan = { ...player("dordan", "dordan", "angel"), counters: { nightmare: 1 } };
+  const state = emptyState(
+    {
+      dordan,
+      demon: player("demon", "demon", "demon"),
+      victim: player("victim", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "dordan", targetUserId: "demon", actionType: "dordan_infiltrate", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.victim.alive, false, "관찰 대상(악마)이 피해자를 탈락시킴");
+  assert.equal(newState.players.demon.alive, true, "관찰 대상은 생존");
+  assert.ok(events.some((e: any) => e.type === "stakeout_triggered" && e.payload?.user_id === "dordan"), "2차 트리거 — 불심검문 발동");
+  assert.equal(newState.players.dordan.counters.nightmare ?? 0, 0, "불심검문 — 도르단 부정효과 정화");
+  assert.ok(!newState.players.demon.tags.includes("infiltrated"), "잠입 표식 소비");
+}
 // --- 4d. 도르단 잠입: 대상 생존이면 불심검문 없음 ---
 {
   const dordan = { ...player("dordan", "dordan", "angel"), counters: { persecuteBias: 1 } };

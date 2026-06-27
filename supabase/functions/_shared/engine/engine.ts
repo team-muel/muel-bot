@@ -537,10 +537,16 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
             }
           }
         }
-        // 잠입 수사(도르단) 불심검문: 관찰('infiltrated' 표식) 대상이 그 밤 탈락하면 도르단은
-        // 그 밤 받은 부정 효과(상태이상)를 모두 무시 — retroactive 정화(canon "그 밤 모든 부정 효과
-        // 무시"). 처치 면역은 범위 밖(상태 효과 한정). 표식 1회 소비.
-        if (player.tags.includes("infiltrated")) {
+        // 잠입 수사(도르단) 불심검문 — canon "관찰 대상이 탈락하거나 누군가를 탈락시키면 발동".
+        //  (a) 관찰('infiltrated') 대상 본인이 그 밤 탈락, 또는
+        //  (b) 관찰 대상이 가해자(killedBy provenance)로서 누군가를 탈락시킴 → 2차 트리거.
+        // 발동 시 도르단은 그 밤 받은 부정 효과(상태이상)를 모두 무시(retroactive 정화). 표식 1회 소비.
+        const killerTag = player.tags.find((t) => t.startsWith("killedBy:"));
+        const killer = killerTag ? newState.players[killerTag.slice("killedBy:".length)] : null;
+        const stakeoutSubjects: Array<typeof player> = [];
+        if (player.tags.includes("infiltrated")) stakeoutSubjects.push(player);
+        if (killer && killer !== player && killer.tags.includes("infiltrated")) stakeoutSubjects.push(killer);
+        if (stakeoutSubjects.length > 0) {
           for (const d of Object.values(newState.players)) {
             if (d.alive && d.currentRole === "dordan") {
               for (const k of ["voteBias", "suspicionBias", "charmed", "possessed", "silencedNights", "nightmare", "silencedPermanent", "persecuteBias", "haunted"]) {
@@ -550,7 +556,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
               events.push({ type: "stakeout_triggered", payload: { user_id: d.userId } });
             }
           }
-          player.tags = player.tags.filter((t) => t !== "infiltrated");
+          for (const s of stakeoutSubjects) s.tags = s.tags.filter((t) => t !== "infiltrated");
         }
       }
     }
@@ -559,7 +565,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     // 쿠키 죽음-게이트 우회·푸딩 무시불가 우회 경로). 그 밤 안 썼으면 다음 밤까지 유지되므로
     // 종료 정리 대상이 아니다(원문 "대상이 탈락해도 그 밤 능력 발동"은 미래 밤의 죽음까지 포함).
     // dessert 태그(채팅 회로·와인 페널티 분기)도 지속이라 건드리지 않는다.
-    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED && tag !== "noticeSuppressed");
+    player.tags = player.tags.filter((tag) => tag !== TAG_PROTECTED && tag !== TAG_DELAYED && tag !== TAG_SUSPECTED && tag !== "noticeSuppressed" && !tag.startsWith("killedBy:"));
     // 봉인은 같은 밤 한정 — 종료 시 해제. 가인 급습의 noticeSuppressed 표식도 그 밤 한정(canon
     // "다음 아침까지" 의 backend 접근면) — 다음 밤 시작 전에 해제돼야 통지 차단이 한 라운드만 유효.
     if (player.counters?.silencedNights) player.counters.silencedNights = 0;
@@ -1429,6 +1435,10 @@ function applyEffect(
         break;
       }
       target.markedForDeath = true;
+      // 잠입 수사 provenance(도르단): 가해자 표식. 관찰('infiltrated') 대상이 처치를 성사시키면
+      // 죽음 해소에서 2차 불심검문을 발동하기 위해 피해자에 killedBy 를 남긴다 — 밤 한정(종료 정리).
+      target.tags = target.tags.filter((t) => !t.startsWith("killedBy:"));
+      target.tags.push(`killedBy:${_source.userId}`);
       // 부활 불가 처치(effect.annihilate — 로건 파멸 2중첩 소멸): counters.annihilated 로 소생 차단.
       if (effect.annihilate) {
         target.counters.annihilated = 1;
