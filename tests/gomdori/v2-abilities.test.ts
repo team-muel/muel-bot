@@ -2812,16 +2812,25 @@ assert.match(engineSrcRomaz, /applyRomazVoteDetain/, "engine — 투표 구금 h
 assert.match(engineSrcRomaz, /romazWardenBlocked = 2/, "engine — 감시소 봉쇄 set");
 assert.match(engineSrcRomaz, /tookDemonEffectThisNight/, "engine — 천사 악마효과 수령 표식");
 
-// --- 라이너 그날의 저항: 1회 self — deadCountBonus +1 + willCount +1 ---
+// --- 라이너 그날의 저항(canon [천사]13): 1밤 +3 카운트(resistCount) + 거친 포효 지목 +2(roarBonus) ---
 {
   const rainer: PlayerState = player("rainer", "rainer", "angel");
   const r = resolveNightActions(emptyState(
     { rainer },
     [{ sourceUserId: "rainer", targetUserId: null, actionType: "rainer_resistance", priority: 5 }],
   ));
-  assert.equal(r.newState.players.rainer.counters.deadCountBonus, 1, "그날의 저항 — deadCountBonus +1");
-  assert.equal(r.newState.players.rainer.counters.willCount, 1, "그날의 저항 — willCount +1");
+  assert.equal(r.newState.players.rainer.counters.resistCount, 3, "그날의 저항 — 일시 천사팀 카운트 +3");
+  assert.equal(r.newState.players.rainer.counters.roarBonus, 2, "그날의 저항 — 거친 포효 지목 +2");
   assert.equal(r.newState.players.rainer.counters.used_rainer_resistance, 1, "1회 제한 기록");
+}
+// 그날의 저항 만료(다음 밤 시작 round-reset): resistCount/roarBonus 클리어 + 천사팀 -1 + 강한 의지 지정 +1.
+{
+  const rainer: PlayerState = { ...player("rainer", "rainer", "angel"), counters: { resistCount: 3, roarBonus: 2 } };
+  const r = resolveNightActions(emptyState({ rainer }, []));
+  assert.equal(r.newState.players.rainer.counters.resistCount ?? 0, 0, "만료 — resistCount 클리어");
+  assert.equal(r.newState.players.rainer.counters.roarBonus ?? 0, 0, "만료 — roarBonus 클리어");
+  assert.equal(r.newState.players.rainer.counters.countBonus ?? 0, -1, "만료 — 천사팀 카운트 -1(영구)");
+  assert.equal(r.newState.players.rainer.counters.resolveBonus ?? 0, 1, "만료 — 강한 의지 지정 대상 +1");
 }
 
 // 라이너 v2 — 계약 정규식.

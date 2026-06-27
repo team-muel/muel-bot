@@ -136,6 +136,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // 감시소 봉쇄(로마즈 패시브): 구금된 밤에 천사팀이 악마효과를 받으면 set → '다음 하루' 동안만
       // 구금 불가. 매 밤 시작에 1 씩 감소(카운트다운) — 다음 밤 구금 hook 이 0 보다 크면 건너뛴다.
       if (counters.romazWardenBlocked) counters.romazWardenBlocked = Math.max(0, counters.romazWardenBlocked - 1);
+      // 그날의 저항(라이너) 만료: 전 라운드에 resistCount(+3,1일)·roarBonus(+2)가 섰으면 이 밤 시작에
+      // 만료 — 천사팀 카운트 -1(영구) + 강한 의지 지정 대상 +1(resolveBonus 영구), 임시분 클리어(canon).
+      if ((counters.resistCount ?? 0) > 0) {
+        counters.countBonus = (counters.countBonus ?? 0) - 1;
+        counters.resolveBonus = (counters.resolveBonus ?? 0) + 1;
+        counters.resistCount = 0;
+        counters.roarBonus = 0;
+      }
       // 로잔느 백일몽: 밤 해소(=아침 도래)마다 dreamMorning +1(7 도달 시 checkWinCondition 단독승)
       // + 만들어가는 미래 충전(futureCharge). 생존 중에만 누적(canon 충전조건 v1 근사 — 하루 경과).
       if (newState.players[userId].currentRole === "rosanne" && newState.players[userId].alive) {
@@ -1143,7 +1151,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     if (!bucket) continue;
 
     if (player.alive) {
-      const weight = 1 + (player.counters?.countBonus ?? 0);
+      const weight = 1 + (player.counters?.countBonus ?? 0) + (player.counters?.resistCount ?? 0);
       if (bucket === "demon") {
         aliveDemons += 1;
         demonCount += weight;

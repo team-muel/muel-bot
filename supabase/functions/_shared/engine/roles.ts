@@ -128,6 +128,8 @@ export const CORE_ROLES: RoleDefinition[] = [
           priority: 5,
           excludeSelf: true,
           noConsecutiveTarget: true,
+          targetCount: 1,
+          targetCountCounter: "resolveBonus", // 그날의 저항 종료 시 지정 대상 +1(canon).
           effects: [
             { type: "AddTag", target: "Target", tag: "observedByRainer" },
             { type: "GrantCount", target: "self", tag: "willCount", amount: 1 },
@@ -149,6 +151,7 @@ export const CORE_ROLES: RoleDefinition[] = [
           priority: 5,
           excludeSelf: true,
           targetCount: 2,
+          targetCountCounter: "roarBonus", // 그날의 저항 활성 시 지목 +2(canon).
           requiresCounter: { key: "willCount", min: 2, consumeAmount: 2 },
           effects: [
             { type: "AddTag", target: "Target", tag: "clawed" },
@@ -156,9 +159,10 @@ export const CORE_ROLES: RoleDefinition[] = [
             { type: "GrantCount", target: "self", amount: -1 },
           ],
         },
-        // 그날의 저항(v2, 1회, 첫 밤 불가): 백호 한 마리 추가 소환 — 즉시 deadCountBonus +1
-        // (백호 추가 한 마리). 효과 종료 시 -1 + 강한 의지 +1 의 canon 단계는 후속 — 본 PR 은
-        // 단순 1회 즉시 보너스로 근사. 첫 밤 차단은 gomdori-rules.firstNight.skipsAbilities 가 처리.
+        // 그날의 저항(v2, 1회, 첫 밤 불가, canon [천사]13): 다음 밤까지 백호 1마리 추가 — 일시적으로
+        // 천사팀 카운트 +3(resistCount, 1일 — countTeams 가산) + 거친 포효 지목 +2(roarBonus). 효과
+        // 종료 시(다음 밤 시작 round-reset) 천사팀 카운트 -1(영구) + 강한 의지 지정 대상 +1(resolveBonus).
+        // 첫 밤 차단은 gomdori-rules.firstNight.skipsAbilities 가 처리.
         {
           id: "rainer_resistance",
           name: "그날의 저항",
@@ -166,8 +170,8 @@ export const CORE_ROLES: RoleDefinition[] = [
           priority: 5,
           maxUses: 1,
           effects: [
-            { type: "GrantCount", target: "self", amount: 1, tag: "deadCountBonus" },
-            { type: "GrantCount", target: "self", amount: 1, tag: "willCount" },
+            { type: "GrantCount", target: "self", amount: 3, tag: "resistCount" },
+            { type: "GrantCount", target: "self", amount: 2, tag: "roarBonus" },
           ],
         },
       ],
