@@ -537,9 +537,10 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "police_investigate", name: "조사", targetType: "SINGLE_ALIVE", priority: 5, effects: [] },
-        // 잠입 수사(v2): 대상에 '잠입' 표식. 그 대상이 그 밤 탈락하면(자/타살 무관) 불심검문 발동 —
-        // 도르단은 그 밤 받은 부정 효과(상태이상) 모두 무시(engine death hook 이 retroactive 정화).
-        // canon '대상 능력 발동 확인'(관찰 리포트)은 후속(정보 통지).
+        // 잠입 수사(v2): 대상에 '잠입' 표식. canon "관찰 대상이 탈락하거나 누군가를 탈락시키면"
+        // 불심검문 발동 — (a) 잠입 대상 본인 탈락, (b) 잠입 대상이 가해자(killedBy)로 누군가를
+        // 탈락시킴(2차 트리거). 발동 시 도르단은 그 밤 받은 부정 효과 모두 무시(engine death hook).
+        // 단서 수집(police_investigate)의 '대상 능력 발동 확인' 통지는 별개 후속(gap 1).
         { id: "dordan_infiltrate", name: "잠입 수사", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "AddTag", target: "Target", tag: "infiltrated" }] },
       ],
     },
