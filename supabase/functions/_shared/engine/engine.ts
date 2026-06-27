@@ -1128,11 +1128,6 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
   const daeakmaAliveForBrand = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
 
   for (const player of Object.values(players)) {
-    // 로잔느(악마-5): 캐논상 악마 분류지만 백일몽 단독승의 독립 솔로 — 천사/악마 어느 팀
-    // 카운트에도 잡히지 않는다(승리는 checkWinCondition 의 rosanneWinner 솔로 경로). faction='demon'
-    // 이어도 currentRole 게이트로 제외(파스아/전향자가 neutral→bucket null 인 것과 동일 효과를
-    // demon-분류 솔로에 부여). 안 하면 악마 카운트를 부풀려 승패가 뒤집힌다.
-    if (player.currentRole === "rosanne") continue;
     // 빙의(말렌): 그 라운드 악마팀으로 카운트.
     const possessed = (player.counters?.possessed ?? 0) > 0;
     // 사탄의 마 취급: 영역 활성(전원 0) 또는 대악마 생존 중 개별 천사 vote 0 이하 → demon 으로 transient flip.

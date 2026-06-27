@@ -22,10 +22,6 @@ type RoleCard = { role: string; faction: "angel" | "demon" | "neutral"; pending?
 // W6 중립(파스아) 등장 최소 인원. 중립은 천사 머릿수를 1 줄이므로 큰 게임에서만.
 const PASUA_MIN_PLAYERS = 8;
 
-// 독립 중립 솔로가 등장하기로 결정됐을 때, 파스아 대신 로잔느(백일몽 단독승)가 뽑힐 확률.
-// 두 독립 솔로는 상호배타 — 한 게임에 둘 다 등장하지 않는다(중립 슬롯은 1개). 튜닝 가능.
-const ROSANNE_PICK_CHANCE = 0.5;
-
 function shuffle<T>(arr: T[]): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i--) {
@@ -55,21 +51,19 @@ function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): 
   const neutralEligible = playerCount >= PASUA_MIN_PLAYERS;
   // 독립 중립 솔로 등장 여부(파스아/로잔느 공용 확률 게이트). 등장하기로 결정되면
   // ROSANNE_PICK_CHANCE 로 둘 중 하나를 뽑는다 — 한 게임에 둘 다 나오지 않게(상호배타).
-  const spawnNeutralSolo = neutralEligible &&
+  // 중립 솔로 = 파스아 1직업(8인+ 확률형). 로잔느는 중립이 아니라 악마 슬롯 변종
+  // (DEMON_KILLER_ROLES)이라 여기서 스폰하지 않는다 — 악마 픽 풀에 포함돼 등장한다.
+  const spawnPasua = neutralEligible &&
     (neutralMode === "on" ||
       (neutralMode === "auto" && Math.random() < NEUTRAL_SPAWN_CHANCE));
-  const spawnRosanne = spawnNeutralSolo && Math.random() < ROSANNE_PICK_CHANCE;
-  const spawnPasua = spawnNeutralSolo && !spawnRosanne;
 
   const roles: RoleCard[] = [];
   // 악마팀: 악마 1 + 조력자 1 — 변종은 role_assign 단계에서 본인이 선택(pending).
   // placeholder role 은 각 풀의 기본(대악마/가인). 미선택 시 phase-advance 가 풀에서 폴백.
   roles.push({ role: "demon", faction: "demon", pending: "demon" });
   roles.push({ role: "gain", faction: "demon", pending: "helper" });
-  // 독립 솔로(파스아=중립 / 로잔느=악마-5 분류, 상호배타). 둘 다 처치 풀(DEMON_KILLER_ROLES)에
-  // 안 들어가고, engine countTeams 가 팀집계에서 제외한다(독립 단독승). 로잔느는 캐논 [악마]5라 demon.
+  // 중립 독립 솔로(파스아) — 8인+ 에서 천사 슬롯 1 대체. 로잔느는 악마 슬롯 변종이라 여기 없음.
   if (spawnPasua) roles.push({ role: "pasua", faction: "neutral" });
-  if (spawnRosanne) roles.push({ role: "rosanne", faction: "demon" });
   // 천사: 남은 슬롯을 천사 풀에서 distinct 추첨. ANGEL_ROLES(10) 은 12인(악마+조력자 제외 10)까지 커버.
   const angelSlots = playerCount - roles.length;
   for (const role of shuffle(ANGEL_ROLES).slice(0, angelSlots)) {
@@ -174,9 +168,8 @@ Deno.serve((req: Request) => {
     // 뽑힐 확률이 같았다. 악마팀 카드(faction='demon': 악마 본체 + 조력자)는 인간을 선호해 가중
     // 추첨(AI 가중치 0.35, 인간 1.0 — 완전 배제는 아님). 나머지(천사/중립)는 무작위 배정.
     const AI_DEMON_WEIGHT = 0.35;
-    // 로잔느는 faction='demon' 이지만 악마팀 카드가 아닌 독립 솔로 — AI 가중에서 빼고 무작위 배정 유지.
-    const demonCards = roles.filter((r) => r.faction === "demon" && r.role !== "rosanne");
-    const otherCards = shuffle(roles.filter((r) => r.faction !== "demon" || r.role === "rosanne"));
+    const demonCards = roles.filter((r) => r.faction === "demon");
+    const otherCards = shuffle(roles.filter((r) => r.faction !== "demon"));
     const pool = [...players];
     const paired: Array<{ user_id: string; card: RoleCard }> = [];
     for (const card of demonCards) {
