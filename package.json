@@ -36,15 +36,22 @@
     "@supabase/supabase-js": "^2.49.4",
     "ai": "^6.0.184",
     "discord.js": "^14.19.3",
-    "ws": "^8.20.0",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "express-rate-limit": "^8.5.2",
+    "hono": "^4.12.27",
+    "ip-address": "^10.2.0",
+    "qs": "^6.15.3",
+    "undici": "^6.27.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/ws": "^8.18.1",
     "dotenv": "^17.4.2",
-    "supabase": "^2.98.2",
-    "tsx": "^4.19.4",
+    "supabase": "^2.108.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.8.3"
   }
 }
