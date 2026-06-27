@@ -724,6 +724,22 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if (unoP?.alive && tgt?.alive) { unoP.counters = unoP.counters ?? {}; unoP.counters.unoHonor = 1; }
   }
 
+  // 단서 수집(도르단, canon "대상의 능력 발동 확인"): 그 밤 조사(police_investigate)한 대상이
+  // 그 밤 능력을 발동했는지 — 밤 행동(액션 제출) 여부 — 를 도르단에게 비공개 통지(acted). 진영
+  // 판정은 제출 즉시 별도 경로(submitMatchAction); 여기선 '행동 관찰'만이라 사망과 무관하게(게이트
+  // 밖) 매 조사마다 통지. 가시성은 phase-advance 가 payload.user_id 로 자동 private 라우팅.
+  for (const dordan of Object.values(newState.players)) {
+    if (!dordan.alive || dordan.currentRole !== "dordan") continue;
+    const probe = sortedActions.find((a) => a.sourceUserId === dordan.userId && a.actionType === "police_investigate");
+    const subjectId = probe?.targetUserId;
+    if (!subjectId) continue;
+    const acted = sortedActions.some((a) => a.sourceUserId === subjectId);
+    events.push({
+      type: "dordan_observation",
+      payload: { user_id: dordan.userId, target_user_id: subjectId, acted },
+    });
+  }
+
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
   // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
