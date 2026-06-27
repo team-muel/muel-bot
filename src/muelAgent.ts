@@ -4,8 +4,7 @@ import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
-import { retrieveRelevantMemories } from './memoryRetriever.js';
-import { formatCapabilityRegistryForPrompt, getPreflightGuard } from './capabilities.js';
+import { getPreflightGuard } from './capabilities.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
 import {
   getFallbackTextModel,
@@ -15,6 +14,10 @@ import {
   type MuelModelTask,
 } from './modelRegistry.js';
 import { buildAgentTools } from './agentTools.js';
+import {
+  buildMuelContextWindow,
+  type MentionedUserContext,
+} from './muelContextWindow.js';
 
 export type MuelAgentResult = {
   text: string;
@@ -23,12 +26,8 @@ export type MuelAgentResult = {
   metadata?: Record<string, unknown>;
 };
 
-const MAX_CONTEXT_MESSAGES = 12;
-const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
 const CHAT_MODEL_TASK: MuelModelTask = 'chat';
 
-const TOOL_TRIGGER_RE =
-  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져)/iu;
 const CASUAL_GREETING_RE = /^(?:안녕|안뇽|ㅎㅇ|하이|hello|hi|hey|yo)[!.?~\s]*$/iu;
 const HEALTH_CHECK_RE = /^(?:대답\s*가능\??|응답\s*가능\??|살아\s*있(?:어|냐)\??|잘\s*돼\??|작동\s*해\??)$/iu;
 
@@ -73,16 +72,6 @@ const getLocalFallbackReply = (userText: string): string | null => {
   return null;
 };
 
-const isLightweightTurn = (userText: string): boolean => {
-  const normalized = userText.trim();
-  if (!normalized) return true;
-  if (normalized.length > LIGHTWEIGHT_TURN_MAX_CHARS) return false;
-  if (TOOL_TRIGGER_RE.test(normalized)) return false;
-  return true;
-};
-
-const shouldEnableTools = (userText: string): boolean => TOOL_TRIGGER_RE.test(userText);
-
 const BASE_SYSTEM_PROMPT = [
   'You are Muel (뮤엘). You are not a generic chatbot or a utility. You are a character who lives in this Discord server.',
   'You are the common face across this community: conversation, support, news, memory, and quietly tending Weave when it is relevant.',
@@ -126,74 +115,6 @@ const BASE_SYSTEM_PROMPT = [
   '- 사용자가 묻지 않은 디테일은 빼라. 길게 답하지 마라. 더 알고 싶으면 사용자가 다시 묻는다.',
   '- 자동 발행 카드 (스크린샷처럼 임베드 카드 형태) 는 별개 경로다. 너의 직접 답에서는 카드 형식 흉내내지 마라.',
 ].join('\n');
-
-/**
- * 현재 시각을 KST (Asia/Seoul) 기준으로 시스템 프롬프트에 주입한다.
- *
- * Why: LLM 은 자체 시계가 없어, 대화 컨텍스트에 등장한 시간 표현
- * (예: "한국 시간으로 2시 10분이야!") 을 *지금 시각* 으로 환각하는 경향이 있다.
- * 매 호출마다 *진짜* 현재 시각을 단정해 줘야 시간/날짜 답이 정확해진다.
- *
- * 예: 사용자가 시간 표현을 컨텍스트에 흘리면 Muel 이 그 값을 자기 시간으로
- * 차용하던 문제 (2026-05-25 보고).
- */
-const formatCurrentTime = (): string => {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const formatted = fmt.format(now);
-  return [
-    '--- CURRENT TIME ---',
-    `지금은 ${formatted} (Asia/Seoul, KST = UTC+9) 이다.`,
-    '시간/날짜 질문에는 위 값을 단정해서 답하라. 대화 컨텍스트에 등장한 시간 표현을 *현재 시각* 으로 차용하지 마라.',
-    '--- End Time ---',
-  ].join('\n');
-};
-
-const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
-  if (!summary || summary.totalInteractions === 0) {
-    return `--- About This User ---\n${authorName}: 아직 나와 대화한 기록이 거의 없는 유저.\n--- End User ---`;
-  }
-  const lines = [
-    '--- About This User ---',
-    `${authorName}: ${summary.totalInteractions}번 대화함.`,
-  ];
-  if (summary.recentTopics.length > 0) {
-    lines.push(`최근 했던 말: ${summary.recentTopics.slice(0, 5).join(' / ')}`);
-  }
-  lines.push('--- End User ---');
-  return lines.join('\n');
-};
-
-export type MentionedUserContext = {
-  name: string;
-  summary: UserHistorySummary | null;
-};
-
-const formatMentionedUsers = (mentioned: MentionedUserContext[]): string => {
-  if (!mentioned || mentioned.length === 0) return '';
-  const lines = ['--- Mentioned Users ---'];
-  for (const m of mentioned) {
-    if (m.summary && m.summary.totalInteractions > 0) {
-      lines.push(`${m.name}: ${m.summary.totalInteractions}번 대화함.`);
-      if (m.summary.recentTopics.length > 0) {
-        lines.push(`  최근 했던 말: ${m.summary.recentTopics.slice(0, 3).join(' / ')}`);
-      }
-    } else {
-      lines.push(`${m.name}: 아직 나와 대화한 기록이 거의 없는 유저.`);
-    }
-  }
-  lines.push('--- End Mentioned ---');
-  return lines.join('\n');
-};
 
 const saveGeneratedReply = async (
   supabase: SupabaseClient,
@@ -290,69 +211,26 @@ export const generateMuelReply = async (
     };
   }
 
-  const lightweightTurn = isLightweightTurn(userText);
-  const systemParts = [BASE_SYSTEM_PROMPT, formatCurrentTime(), formatCapabilityRegistryForPrompt()];
-  if (guildTopology) systemParts.push('', guildTopology);
-  if (channelActivity) systemParts.push('', channelActivity);
-  systemParts.push('', formatUserHistory(userHistory, authorName));
-  const mentionedSection = formatMentionedUsers(mentionedUsers ?? []);
-  if (mentionedSection) systemParts.push('', mentionedSection);
-
-  if (sourceUserId && !lightweightTurn) {
-    try {
-      const memoryContext = await retrieveRelevantMemories(supabase, {
-        userId: sourceUserId,
-        query: userText,
-      });
-      if (memoryContext) systemParts.push('', memoryContext);
-    } catch (err) {
-      console.warn('[muel-agent] memory retrieval failed, proceeding without', err);
-    }
-  }
-
-  const convo = history.slice(-MAX_CONTEXT_MESSAGES).filter((msg) => msg.role !== 'system');
-  const lastConvoIdx = convo.length - 1;
-  const messages: Array<any> = convo
-    .map((msg, idx) => {
-      let content = msg.parts || [];
-      // Discord CDN image URLs expire — keep the actual image only on the latest turn
-      // (stale URLs would fail on replay). For older turns, drop the URL but leave an
-      // explicit note instead of a bare "[이미지]" so the model knows an image WAS
-      // shared and never falsely claims it is text-only / cannot see images.
-      if (idx !== lastConvoIdx) {
-        content = content.map((p: any) =>
-          p.type === 'image'
-            ? {
-                type: 'text',
-                text: '[사용자가 이전 메시지에 이미지를 첨부했음 — 그 이미지는 지금 다시 볼 수 없음. "이미지를 못 본다"거나 "텍스트로만 대화한다"고 말하지 말 것]',
-              }
-            : p,
-        );
-      }
-      if (msg.role === 'user') {
-        const name = msg.metadata?.discordUsername ?? authorName;
-        content = content.map((p: any) => (
-          p.type === 'text' && !p._nameInjected
-            ? { ...p, text: `${name}: ${p.text}`, _nameInjected: true }
-            : p
-        ));
-      }
-      return { role: msg.role, content };
-    });
-
-  // 이미지 첨부 turn 감지 — vision 레인(3.5-flash) escalate + 과신 완화 지시.
-  const hasImage = messages.some(
-    (m: any) => Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image'),
-  );
-  if (hasImage) {
-    systemParts.push(
-      '',
-      '[이미지 처리] 너는 첨부된 이미지를 실제로 볼 수 있다. "이미지를 못 본다"거나 "텍스트로만 대화한다"고 말하지 마라 — 그건 거짓말이다. 첨부된 이미지가 있으면 본 내용을 설명해라.',
-      '- 실존 인물이 누구인지(신원)는 식별하지 않는다. "누구인지까지는 말 못 해"라고 솔직히 밝히고, 보이는 것(장면·표정·복장·분위기)은 묘사해줘라.',
-      '- 가상 캐릭터·작품의 "정확한 이름·누구인지"는 확실하지 않으면 단정하지 마라("이거 나잖아" 식 금지). 추측이면 "아마 ~인 것 같은데 확실친 않아"로만. 사물·일반 묘사는 자유롭게.',
-      '- 흐릿하거나 안 보이는 글자·세부는 지어내지 마라. 모르면 솔직히 모른다고 해라.',
-    );
-  }
+  const contextWindow = await buildMuelContextWindow({
+    supabase,
+    baseSystemPrompt: BASE_SYSTEM_PROMPT,
+    userText,
+    authorName,
+    history,
+    channelActivity,
+    userHistory,
+    mentionedUsers,
+    guildTopology,
+    sourceUserId,
+  });
+  const {
+    system,
+    messages,
+    hasImage,
+    lightweightTurn,
+    toolsEnabled,
+    diagnostics: contextDiagnostics,
+  } = contextWindow;
 
   const tools = buildAgentTools({
     supabase,
@@ -362,7 +240,7 @@ export const generateMuelReply = async (
     currentUserId: sourceUserId ?? null,
   });
 
-  const activeTools = shouldEnableTools(userText) ? tools : {};
+  const activeTools = toolsEnabled ? tools : {};
   const providerFailures: string[] = [];
 
   // ADR-003 P3a — multi-step 한도 + 단계별 prompt.
@@ -382,7 +260,7 @@ export const generateMuelReply = async (
     const { text, usage } = await generateText({
       model: aiModel,
       maxRetries: 1,
-      system: systemParts.join('\n'),
+      system,
       messages,
       tools: modelTools,
       stopWhen: stepCountIs(MULTI_STEP_LIMIT),
@@ -392,7 +270,7 @@ export const generateMuelReply = async (
         if (stepNumber < LATE_STEP_THRESHOLD) return undefined;
         return {
           system: [
-            systemParts.join('\n'),
+            system,
             '',
             '--- LATE STEP (압축) ---',
             '도구 호출이 충분히 됐으면 더 부르지 말고 답을 마무리해라.',
@@ -423,6 +301,7 @@ export const generateMuelReply = async (
         inputTokens: tokens.inputTokens,
         outputTokens: tokens.outputTokens,
         totalTokens: tokens.totalTokens,
+        contextWindow: contextDiagnostics,
       },
     };
   };
@@ -442,7 +321,7 @@ export const generateMuelReply = async (
         // Web search (Google grounding) is always attached so the model can answer
         // current-events / news / general-knowledge questions instead of refusing.
         // DB tools stay gated behind shouldEnableTools for cost.
-        const agentTools: Record<string, any> = shouldEnableTools(userText) ? { ...tools } : {};
+        const agentTools: Record<string, any> = toolsEnabled ? { ...tools } : {};
         // Google grounding 은 Gemini 전용 — NVIDIA 레인엔 안 붙인다.
         if (gemini.provider === 'gemini') {
           const googleSearch = getGoogleSearchTool();
