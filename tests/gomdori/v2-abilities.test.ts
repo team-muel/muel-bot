@@ -925,9 +925,9 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
   assert.equal(newState.players.dordan.counters.clue ?? 0, 1, "탈락 1명 → 도르단 단서 +1");
 }
 
-// --- 7f. 루루 소나타: 매료 3 누적 → 전원 정화 + 자기 무적(게이트·소비) ---
+// --- 7f. 루루 소나타(canon [천사]30): 매료 3 누적 → 전원 투표가치 +1(sonataVote) + 루루 무적(게이트·소비) ---
 {
-  // 게이지 3, 부정효과 걸린 아군과 함께 → 소나타가 전원 Cleanse + 루루 보호.
+  // 게이지 3 → 소나타가 전원 투표가치 +1(sonataVote) + 루루 보호. (전원 정화 아님 — 매료만 제거.)
   const luru = { ...player("luru", "luru", "angel"), counters: { charmCount: 3 } };
   const ally = { ...player("ally", "citizen", "angel"), counters: { nightmare: 1 } };
   const state = emptyState(
@@ -938,7 +938,8 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
     ],
   );
   const { newState } = resolveNightActions(state);
-  assert.equal(newState.players.ally.counters.nightmare ?? 0, 0, "소나타 — 전원 부정효과 제거(All Cleanse)");
+  assert.equal(newState.players.ally.counters.sonataVote ?? 0, 1, "소나타 — 전원 투표가치 +1(sonataVote)");
+  assert.equal(newState.players.luru.counters.sonataVote ?? 0, 1, "소나타 — 루루 본인도 sonataVote +1");
   assert.equal(newState.players.luru.alive, true, "소나타 — 루루 자기 무적(처치 무효)");
   assert.equal(newState.players.luru.counters.charmCount ?? 0, 0, "소나타 — 게이지 소비");
   // 게이지 부족(2)이면 발동 안 함.

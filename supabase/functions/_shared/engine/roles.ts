@@ -728,9 +728,10 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "luru_charm", name: "영혼을 만지는 음색", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Charm", target: "Target" }] },
-        // 소나타(v2): 매료 3명 누적(charmCount) 시 연주 — 전원 부정효과 제거(Cleanse All) +
-        // 루루 자신 하루 무적(Protect). 발동 시 게이지 소비. 악보 교체(투표 재설계)는 후속.
-        { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, effects: [{ type: "Cleanse", target: "All" }, { type: "Protect", target: "self", duration: "1_NIGHT" }] },
+        // 소나타(v2, canon [천사]30): 매료 3 누적(charmCount) 시 연주 — 전원 투표가치 +1(sonataVote,
+        // 1일 — tally 가산, engine sonata 루프) + 루루 무적(Protect self). 매료는 charmCount consume +
+        // charmed 라운드리셋으로 제거. '능력 지정 대상 +1 전원'은 후속(systemic). onFire 로 발동 신호.
+        { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, onFireSetCounter: { key: "sonataFired", value: 1 }, effects: [{ type: "Protect", target: "self", duration: "1_NIGHT" }] },
         // 악보 교체(v2, 1회): 자투 악보 — 루루 자신의 투표가치 영구 +1(voteWeightBonus). canon 무투
         // (다음 아침 2회 투표)는 별도 능력(luru_mute) 로 분리. 다중 대상 투표·반론 등판은 후속.
         { id: "luru_score", name: "악보 교체(자투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },

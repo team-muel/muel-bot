@@ -127,6 +127,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.voteBias = 0;
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
+      counters.sonataVote = 0; // 소나타 전원 투표가치 +1 — 1일 한정(다음 밤 시작에 해제).
       counters.tookDemonEffectThisNight = 0; // 감시소 봉쇄 입력(로마즈) — 그 밤 한정 표식 리셋.
       counters.detainedThisNight = 0; // 투표 구금 발동 표식(로마즈 self) — 그 밤 한정 리셋.
       counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
@@ -691,6 +692,18 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 소나타(루루, canon [천사]30): 연주(매료 3+) 발동 시 전원 투표가치 +1(sonataVote, 1일 — tally 가산).
+  // onFireSetCounter(sonataFired)로 실제 발동만 잡는다(requiresCounter 미충족 시 미발동).
+  for (const luru of Object.values(newState.players)) {
+    if ((luru.counters?.sonataFired ?? 0) > 0) {
+      luru.counters!.sonataFired = 0;
+      for (const p of Object.values(newState.players)) {
+        if (p.alive) { p.counters = p.counters ?? {}; p.counters.sonataVote = 1; }
+      }
+      events.push({ type: "sonata_played", payload: { luru: luru.userId } });
+    }
+  }
+
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
   // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
@@ -902,7 +915,7 @@ export function tallyEliminationVotes(
     const adjProwess = dawnFlip ? -prowess : prowess;
     // 고급 와인 1일 페널티(미즐렛): 이 처형 투표 1회만 -1. phase-advance 가 tally 직후 소비.
     const winePenalty = actor.counters?.wineVotePenalty ?? 0;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess - winePenalty);
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) - winePenalty);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -1049,7 +1062,7 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
     const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
     const adjProwess = dawnFlip ? -prowess : prowess;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess);
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0));
     if (voteValue === 0) {
       skipped += 1;
       continue;
