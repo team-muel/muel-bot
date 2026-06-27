@@ -20,7 +20,7 @@
     "test:regression:context-window": "tsx tests/regression/context-window.test.ts",
     "test:registry": "tsx tests/registry/registry.smoke.test.ts",
     "test:router": "tsx tests/router/router.smoke.test.ts",
-    "test:gomdori": "tsx tests/gomdori/phase1-simulation.test.ts && tsx tests/gomdori/w4-runtime-contract.test.ts && tsx tests/gomdori/w6-pasua.test.ts && tsx tests/gomdori/w6-roster.test.ts && tsx tests/gomdori/codex.test.ts && tsx tests/gomdori/v2-abilities.test.ts && tsx tests/gomdori/canon-engine-fidelity.test.ts && tsx tests/gomdori/fullgame-sim.test.ts",
+    "test:gomdori": "tsx tests/gomdori/phase1-simulation.test.ts && tsx tests/gomdori/w4-runtime-contract.test.ts && tsx tests/gomdori/w6-pasua.test.ts && tsx tests/gomdori/w6-roster.test.ts && tsx tests/gomdori/codex.test.ts && tsx tests/gomdori/v2-abilities.test.ts && tsx tests/gomdori/canon-engine-fidelity.test.ts && tsx tests/gomdori/counter-tag-registry.test.ts && tsx tests/gomdori/player-surface-canon.test.ts && tsx tests/gomdori/fullgame-sim.test.ts",
     "sim:balance": "tsx scripts/gomdori-balance-sim.ts",
     "test:smoke": "npm run test:regression && npm run test:regression:research && npm run test:regression:discord-polish && npm run test:regression:agent-actions && npm run test:regression:context-window && npm run test:registry && npm run test:router && npm run test:preflight && npm run test:gomdori",
     "eval:embeddings": "tsx tests/embeddings/embedding-eval.ts",
