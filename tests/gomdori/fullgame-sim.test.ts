@@ -171,21 +171,22 @@ const winnerOf = (state: MatchState) => checkWinCondition(state.players).winner;
     player("a2", "citizen", "angel"),
     player("d", "demon", "demon"),
   ]);
-  runNight(s, [{ src: "m", actionType: "mizlet_wine", target: null }]);
-  assert.equal(s.players.a1.counters.wineVotePenalty, 1, "와인: 미회식자 1일 페널티 부여");
+  // canon 〔지정〕 단일 대상 — a1(미디저트) 지정 → a1 만 페널티(a2 정상).
+  runNight(s, [{ src: "m", actionType: "mizlet_wine", target: "a1" }]);
+  assert.equal(s.players.a1.counters.wineVotePenalty, 1, "와인: 미디저트 대상(a1) 1일 페널티 부여");
   const t1 = tallyEliminationVotes(
-    [{ actorUserId: "a1", targetUserId: "d" }, { actorUserId: "a2", targetUserId: "d" }],
+    [{ actorUserId: "a1", targetUserId: "d" }],
     s.players,
   );
-  assert.equal(t1.candidateUserId, null, "와인 적용일: 투표가치 0 → 후보 없음(부결)");
-  assert.equal(t1.skipped, 2, "두 표 모두 0표 무효");
+  assert.equal(t1.skipped, 1, "와인 적용일: 대상 a1 투표가치 0 → 무효(skipped)");
+  assert.equal(t1.tallies["d"] ?? 0, 0, "a1 표 0표");
   // phase-advance 가 처형 투표 tally 직후 wineVotePenalty 소비 — 여기선 수동 클리어로 미러.
   for (const p of Object.values(s.players)) p.counters.wineVotePenalty = 0;
   const t2 = tallyEliminationVotes(
-    [{ actorUserId: "a1", targetUserId: "d" }, { actorUserId: "a2", targetUserId: "d" }],
+    [{ actorUserId: "a1", targetUserId: "d" }],
     s.players,
   );
-  assert.equal(t2.candidateUserId, "d", "다음 날: 페널티 해제 → 정상 투표(처형 가능)");
+  assert.equal(t2.tallies["d"], 1, "다음 날: 페널티 해제 → a1 표 정상(1)");
 }
 
 console.log("Gomdori 풀게임 e2e 시뮬 (천사/악마/중립 승리 경로 + 타임아웃 우세 + 와인 1일 페널티) passed");

@@ -127,6 +127,8 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.voteBias = 0;
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
+      counters.sonataVote = 0; // 소나타 전원 투표가치 +1 — 1일 한정(다음 밤 시작에 해제).
+      counters.unoHonor = 0; // 우노 명예 — 조건부 매일, 다음 밤 시작에 해제(이 밤 투쟁 대상 생존 시 재부여).
       counters.tookDemonEffectThisNight = 0; // 감시소 봉쇄 입력(로마즈) — 그 밤 한정 표식 리셋.
       counters.detainedThisNight = 0; // 투표 구금 발동 표식(로마즈 self) — 그 밤 한정 리셋.
       counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
@@ -136,6 +138,14 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       // 감시소 봉쇄(로마즈 패시브): 구금된 밤에 천사팀이 악마효과를 받으면 set → '다음 하루' 동안만
       // 구금 불가. 매 밤 시작에 1 씩 감소(카운트다운) — 다음 밤 구금 hook 이 0 보다 크면 건너뛴다.
       if (counters.romazWardenBlocked) counters.romazWardenBlocked = Math.max(0, counters.romazWardenBlocked - 1);
+      // 그날의 저항(라이너) 만료: 전 라운드에 resistCount(+3,1일)·roarBonus(+2)가 섰으면 이 밤 시작에
+      // 만료 — 천사팀 카운트 -1(영구) + 강한 의지 지정 대상 +1(resolveBonus 영구), 임시분 클리어(canon).
+      if ((counters.resistCount ?? 0) > 0) {
+        counters.countBonus = (counters.countBonus ?? 0) - 1;
+        counters.resolveBonus = (counters.resolveBonus ?? 0) + 1;
+        counters.resistCount = 0;
+        counters.roarBonus = 0;
+      }
       // 로잔느 백일몽: 밤 해소(=아침 도래)마다 dreamMorning +1(7 도달 시 checkWinCondition 단독승)
       // + 만들어가는 미래 충전(futureCharge). 생존 중에만 누적(canon 충전조건 v1 근사 — 하루 경과).
       if (newState.players[userId].currentRole === "rosanne" && newState.players[userId].alive) {
@@ -669,19 +679,39 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       events.push({ type: "dessert_received", payload: { user_id: a.targetUserId, by: a.sourceUserId, variant: a.actionType === "mizlet_cookie" ? "cookie" : "pudding" } });
     }
   }
-  const wineFiredBy = sortedActions.filter((a) => a.actionType === "mizlet_wine").map((a) => a.sourceUserId);
-  for (const sourceId of wineFiredBy) {
-    for (const p of Object.values(newState.players)) {
-      if (!p.alive) continue;
-      if (p.tags.includes("dessert")) {
-        events.push({ type: "dessert_chat_open", payload: { user_id: p.userId, mizlet: sourceId } });
-      } else {
-        // 디저트 미회식자: 다음 처형 투표 1회 한정 투표가치 -1(1일). 영속 voteValueMod 가 아니라
-        // 날짜-스코프 counter — phase-advance 가 vote tally 직후 소비(아래 voteCountBonus 와 같은 라이프사이클).
-        p.counters.wineVotePenalty = 1;
-        events.push({ type: "vote_value_modified", payload: { user_id: p.userId, amount: -1, source: "mizlet_wine", scope: "1_day" } });
-      }
+  // 고급 와인(canon 〔지정〕 단일 대상): 와인 대상이 디저트(dessert) 보유면 대화 회로(dessert_chat_open),
+  // 미보유면 다음 처형 1회 한정 투표가치 -1(wineVotePenalty, 1일). 정화는 roles.ts Cleanse(onlyIfTargetTag).
+  const wineActions = sortedActions.filter((a) => a.actionType === "mizlet_wine" && a.targetUserId);
+  for (const wa of wineActions) {
+    const wineTarget = newState.players[wa.targetUserId!];
+    if (!wineTarget || !wineTarget.alive) continue;
+    if (wineTarget.tags.includes("dessert")) {
+      events.push({ type: "dessert_chat_open", payload: { user_id: wineTarget.userId, mizlet: wa.sourceUserId } });
+    } else {
+      wineTarget.counters.wineVotePenalty = 1;
+      events.push({ type: "vote_value_modified", payload: { user_id: wineTarget.userId, amount: -1, source: "mizlet_wine", scope: "1_day" } });
     }
+  }
+
+  // 소나타(루루, canon [천사]30): 연주(매료 3+) 발동 시 전원 투표가치 +1(sonataVote, 1일 — tally 가산).
+  // onFireSetCounter(sonataFired)로 실제 발동만 잡는다(requiresCounter 미충족 시 미발동).
+  for (const luru of Object.values(newState.players)) {
+    if ((luru.counters?.sonataFired ?? 0) > 0) {
+      luru.counters!.sonataFired = 0;
+      for (const p of Object.values(newState.players)) {
+        if (p.alive) { p.counters = p.counters ?? {}; p.counters.sonataVote = 1; }
+      }
+      events.push({ type: "sonata_played", payload: { luru: luru.userId } });
+    }
+  }
+
+  // 우노 명예(canon [천사]6, 조건부 매일): 이 밤 투쟁(uno_struggle)한 대상이 생존하면 우노가 그날
+  // 명예 — 천사팀 카운트 +5 + 투표가치 +5(unoHonor=1, 라운드 한정). 영구 주입(match-start)에서 조건부로
+  // 정정. countTeams/tally/사탄영역이 unoHonor 를 +5 로 읽고, 다음 밤 시작 round-reset 에서 해제.
+  for (const ua of sortedActions.filter((a) => a.actionType === "uno_struggle" && a.targetUserId)) {
+    const unoP = newState.players[ua.sourceUserId];
+    const tgt = newState.players[ua.targetUserId!];
+    if (unoP?.alive && tgt?.alive) { unoP.counters = unoP.counters ?? {}; unoP.counters.unoHonor = 1; }
   }
 
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
@@ -895,7 +925,8 @@ export function tallyEliminationVotes(
     const adjProwess = dawnFlip ? -prowess : prowess;
     // 고급 와인 1일 페널티(미즐렛): 이 처형 투표 1회만 -1. phase-advance 가 tally 직후 소비.
     const winePenalty = actor.counters?.wineVotePenalty ?? 0;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess - winePenalty);
+    const unoHonorElim = (actor.currentRole === "uno" && (actor.counters?.unoHonor ?? 0) > 0) ? (dawnFlip ? -5 : 5) : 0;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) + unoHonorElim - winePenalty);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -1042,7 +1073,8 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
     const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
     const adjProwess = dawnFlip ? -prowess : prowess;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess);
+    const unoHonorVerdict = (actor.currentRole === "uno" && (actor.counters?.unoHonor ?? 0) > 0) ? (dawnFlip ? -5 : 5) : 0;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) + unoHonorVerdict);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -1132,7 +1164,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     const possessed = (player.counters?.possessed ?? 0) > 0;
     // 사탄의 마 취급: 영역 활성(전원 0) 또는 대악마 생존 중 개별 천사 vote 0 이하 → demon 으로 transient flip.
     const ownVoteSuppressed = daeakmaAliveForBrand &&
-      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0)) <= 0;
+      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0) + (player.currentRole === "uno" && (player.counters?.unoHonor ?? 0) > 0 ? 5 : 0)) <= 0;
     const satanicTreated = (realmActive || ownVoteSuppressed) && player.actualFaction === "angel";
     const faction = possessed || satanicTreated ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
@@ -1144,7 +1176,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     if (!bucket) continue;
 
     if (player.alive) {
-      const weight = 1 + (player.counters?.countBonus ?? 0);
+      const weight = 1 + (player.counters?.countBonus ?? 0) + (player.counters?.resistCount ?? 0) + (player.currentRole === "uno" && (player.counters?.unoHonor ?? 0) > 0 ? 5 : 0);
       if (bucket === "demon") {
         aliveDemons += 1;
         demonCount += weight;
@@ -1244,6 +1276,8 @@ export function applyDawnbreakerPassive(players: Record<string, PlayerState>, ev
   const credited = arthur.counters.dawnDeathsCredited ?? 0;
   if (deadInnocentAngels > credited) {
     arthur.counters.emberCharge = (arthur.counters.emberCharge ?? 0) + (deadInnocentAngels - credited);
+    // 다중 베기(canon "탈락자 한 명당 잔불 대검 지정 대상 +1"): 결백 천사 탈락분만큼 동시 지정 대상 증가.
+    arthur.counters.emberTargets = (arthur.counters.emberTargets ?? 0) + (deadInnocentAngels - credited);
     arthur.counters.dawnDeathsCredited = deadInnocentAngels;
   }
   if (arthur.alive && deadInnocentAngels >= 3) {
@@ -1264,7 +1298,7 @@ export function isSatanicRealmActive(players: Record<string, PlayerState>): bool
   const demonAlive = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
   if (!demonAlive) return false;
   return aliveAngels.every((p) => {
-    const v = 1 + (p.bonusVoteValue ?? 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0);
+    const v = 1 + (p.bonusVoteValue ?? 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0) + (p.currentRole === "uno" && (p.counters?.unoHonor ?? 0) > 0 ? 5 : 0);
     return v <= 0;
   });
 }

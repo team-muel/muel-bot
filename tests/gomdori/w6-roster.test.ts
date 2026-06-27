@@ -53,7 +53,7 @@ assert.match(matchStart, /pendingSelection: \{ kind: "demon", pool: DEMON_KILLER
 assert.match(matchStart, /pendingSelection: \{ kind: "helper", pool: HELPER_ROLES \}/, "조력자 슬롯 선택 대기");
 assert.match(matchStart, /shuffle\(ANGEL_ROLES\)\.slice\(0, angelSlots\)/, "천사 distinct 추첨");
 assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지 않는다");
-assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 5/, "우노 명예 카운트 주입(원문 +5)");
+assert.match(readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8"), /uno_struggle[\s\S]{0,500}?unoHonor = 1/, "우노 명예 — 조건부(투쟁 대상 생존 시 unoHonor +5; match-start 영구 주입 폐기)");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
 assert.ok(!/role === "rainer"/.test(matchStart), "라이너 배정 자동 카운트 주입 폐지(소환으로 획득)");
 // 로잔느(캐논 [악마]5, faction demon): 악마 슬롯 플레이어가 고르는 변종 — DEMON_KILLER_ROLES 에 포함.
