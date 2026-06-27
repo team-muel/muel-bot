@@ -101,7 +101,7 @@ function detailMessage(entry: CodexEntry) {
       tone: FACTION_TONE,
       title: `${entry.name} · ${entry.title}`,
       body: `${label}${entry.slot ? ` · ${entry.slot}` : ""}\n${entry.summary}`,
-      // 플레이어 표면(/도감)은 캐논 능력만 — v1/v2 구현 스펙 필드 제거(2026-06-27, Phase 3).
+      // 플레이어 표면(/도감)은 캐논 능력만 — 과거 노출하던 구현-스펙 필드 제거(2026-06-27, Phase 3).
       // 구현상태·드리프트 메타는 디자이너 도구(preview DesignInventory)에만.
       fields: abilityFields,
       footer: entry.vault ? `정본: ${entry.vault}` : "Gomdori 도감",
