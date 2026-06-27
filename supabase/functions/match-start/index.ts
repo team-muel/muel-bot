@@ -66,9 +66,10 @@ function generateRoles(playerCount: number, neutralMode: NeutralMode = "auto"): 
   // placeholder role 은 각 풀의 기본(대악마/가인). 미선택 시 phase-advance 가 풀에서 폴백.
   roles.push({ role: "demon", faction: "demon", pending: "demon" });
   roles.push({ role: "gain", faction: "demon", pending: "helper" });
-  // 중립 독립 솔로(파스아 또는 로잔느 — 상호배타). 처치 풀(DEMON_KILLER_ROLES)에 들어가지 않는다.
+  // 독립 솔로(파스아=중립 / 로잔느=악마-5 분류, 상호배타). 둘 다 처치 풀(DEMON_KILLER_ROLES)에
+  // 안 들어가고, engine countTeams 가 팀집계에서 제외한다(독립 단독승). 로잔느는 캐논 [악마]5라 demon.
   if (spawnPasua) roles.push({ role: "pasua", faction: "neutral" });
-  if (spawnRosanne) roles.push({ role: "rosanne", faction: "neutral" });
+  if (spawnRosanne) roles.push({ role: "rosanne", faction: "demon" });
   // 천사: 남은 슬롯을 천사 풀에서 distinct 추첨. ANGEL_ROLES(10) 은 12인(악마+조력자 제외 10)까지 커버.
   const angelSlots = playerCount - roles.length;
   for (const role of shuffle(ANGEL_ROLES).slice(0, angelSlots)) {
@@ -173,8 +174,9 @@ Deno.serve((req: Request) => {
     // 뽑힐 확률이 같았다. 악마팀 카드(faction='demon': 악마 본체 + 조력자)는 인간을 선호해 가중
     // 추첨(AI 가중치 0.35, 인간 1.0 — 완전 배제는 아님). 나머지(천사/중립)는 무작위 배정.
     const AI_DEMON_WEIGHT = 0.35;
-    const demonCards = roles.filter((r) => r.faction === "demon");
-    const otherCards = shuffle(roles.filter((r) => r.faction !== "demon"));
+    // 로잔느는 faction='demon' 이지만 악마팀 카드가 아닌 독립 솔로 — AI 가중에서 빼고 무작위 배정 유지.
+    const demonCards = roles.filter((r) => r.faction === "demon" && r.role !== "rosanne");
+    const otherCards = shuffle(roles.filter((r) => r.faction !== "demon" || r.role === "rosanne"));
     const pool = [...players];
     const paired: Array<{ user_id: string; card: RoleCard }> = [];
     for (const card of demonCards) {

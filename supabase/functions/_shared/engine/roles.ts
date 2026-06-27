@@ -394,7 +394,8 @@ export const CORE_ROLES: RoleDefinition[] = [
     deathHook: { perDeath: { counter: "soul", amount: 1 }, convert: { from: "soul", threshold: 2, to: "deadCountBonus", amount: 1 } },
   },
   {
-    // 로잔느(악마-5, 세헤라자드): 독립 솔로(파스아식, 조력자 없음, faction neutral). v1 코어 —
+    // 로잔느(악마-5, 세헤라자드): faction demon(캐논 [악마]5)이나 백일몽 단독승의 독립 솔로 —
+  // countTeams 가 currentRole 게이트로 팀집계에서 제외한다(악마팀 카운트 부풀림·승패역전 방지). v1 코어 —
     // 백일몽=7아침 생존 단독승(checkWinCondition + resolveNightActions dreamMorning 카운터),
     // 증오=처형(대상 투표가치 -1, 0 도달 즉시 처형 = VoteCrush), 만들어가는 미래(르상티망 약식)=
     // futureCharge 1 소비 + 대상 '원한' 표식 + 자기 dreamMorning +1(canon "아침이 한 번 더").
@@ -402,7 +403,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     // 처치 풀(DEMON_KILLER_ROLES)에 없음 — match-start 가 besto 자리 대신 독립 스폰한다.
     id: "rosanne",
     name: "로잔느",
-    faction: "neutral",
+    faction: "demon",
     passives: [],
     actions: {
       night: [

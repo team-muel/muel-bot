@@ -220,7 +220,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     vault: "Universes/BoW/Characters/말렌.md",
   },
   {
-    id: "rosanne", name: "로잔느", faction: "neutral", title: "세헤라자드", slot: "중립-로잔느",
+    id: "rosanne", name: "로잔느", faction: "demon", title: "세헤라자드", slot: "악마-5",
     summary: "꿈을 길게 끄는 독립 솔로. 아침을 일곱 번 맞으면 홀로 승리한다.",
     abilities: [
       { kind: "패시브", name: "백일몽", text: "아침을 일곱 번 맞이하면 즉시 단독 승리합니다. 대신 토론은 1분으로 짧아지고 무투에 참여할 수 없습니다.", status: "live" },
@@ -231,7 +231,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
       { kind: "능력", name: "외현기억", text: "탈락자 한 명을 지목해 매 아침 되살리고 그 날의 끝에 다시 처형합니다. 투표로 한 번 더 처형되면 효과가 사라지고 다시 지목할 수 없습니다('만들어가는 미래' 충전 1 소비).", actionType: "rosanne_manifest", status: "live" },
       { kind: "능력2", name: "건너뛰기", text: "이번 밤에 발동한 다른 모든 효과와 통지를 전부 다음 밤으로 넘겨버립니다(1회성, 최우선). 미뤄진 액션은 다음 밤 시작에 그대로 다시 발동됩니다. 게임 종료 시까지 건너뛰기를 남긴 채 승리하면 조력자가 패배로 판정됩니다.", actionType: "rosanne_skip", status: "live" },
     ],
-    v1: "구현됨(독립 솔로, faction neutral — besto 교체). 백일몽(아침 7회 도달 시 checkWinCondition 단독 승리, dreamMorning 카운터) + rosanne_hatred(증오 = 대상 투표가치 -1 = VoteCrush, 0 도달 즉시 처형) + rosanne_resentment(만들어가는 미래 르상티망 약식 = futureCharge 1 소비 + 대상 '원한'(wonhan) 표식 + 자기 dreamMorning +1 = 아침 한 번 더) + 조망(특수 패시브 = 로잔느 생존 중 타인에게 능력을 적용한 시전자 투표가치 -1/대상수, 1 미만 불가 = engine 전역 cast cost) + rosanne_rapport(라포르 = 2인 LinkFate, 한쪽 밤 탈락·소멸 시 상대 전파) + rosanne_manifest(외현기억 = 탈락자 manifestMemory, phase-advance morning hook 이 bounded[manifestCycles<2] 부활→그 날 끝 재처형, 투표 재처형 시 효과 상실+재지정 불가). 받는가치 다운사이드는 후속.",
+    v1: "구현됨(악마-5 분류, faction demon — 단 백일몽 단독승 독립 솔로라 countTeams 팀집계 제외. besto 교체). 백일몽(아침 7회 도달 시 checkWinCondition 단독 승리, dreamMorning 카운터) + rosanne_hatred(증오 = 대상 투표가치 -1 = VoteCrush, 0 도달 즉시 처형) + rosanne_resentment(만들어가는 미래 르상티망 약식 = futureCharge 1 소비 + 대상 '원한'(wonhan) 표식 + 자기 dreamMorning +1 = 아침 한 번 더) + 조망(특수 패시브 = 로잔느 생존 중 타인에게 능력을 적용한 시전자 투표가치 -1/대상수, 1 미만 불가 = engine 전역 cast cost) + rosanne_rapport(라포르 = 2인 LinkFate, 한쪽 밤 탈락·소멸 시 상대 전파) + rosanne_manifest(외현기억 = 탈락자 manifestMemory, phase-advance morning hook 이 bounded[manifestCycles<2] 부활→그 날 끝 재처형, 투표 재처형 시 효과 상실+재지정 불가). 받는가치 다운사이드는 후속.",
     v2: "백일몽 단독승·증오 처형·만들어가는 미래(르상티망 + 받는가치 다운사이드)·조망(전역 시전비용)·라포르(LinkFate)·외현기억(Manifest, bounded)·건너뛰기(SkipNight = 그 밤 취소, partial)까지 라이브. 토론 1분·무투 불가는 백일몽 modifier 로 라이브. 르상티망 받는가치(원한 보유 생존자 1명당 로잔느 받는-표 +1)·건너뛰기 미사용 승리 시 조력자 패배(game_ended helper_defeat)도 라이브. 건너뛰기의 '다음 밤 진짜 이월'만 v2 후속.",
     vault: "Universes/BoW/Characters/로잔느.md",
   },

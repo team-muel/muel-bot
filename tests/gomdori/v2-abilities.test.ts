@@ -1064,7 +1064,7 @@ assert.match(roles, /id: "phantom_eclipse"[\s\S]*?type: "Eclipse"/, "팬텀 일�
 assert.match(matchAction, /SELF_ACTIONS[\s\S]*?targetType === "SELF"[\s\S]*?"NONE"[\s\S]*?"ALL"/, "SELF/무대상 행동은 targetType 으로 도출(단일 출처)");
 assert.match(roles, /id: "daeakma_dominion"/, "대악마 존재감 능력 정의(단일 출처)");
 assert.match(roles, /id: "uno_valor"/, "우노 용맹함 능력 정의(단일 출처)");
-assert.match(roles, /id: "rosanne"[\s\S]*?faction: "neutral"/, "로잔느 독립 솔로(중립) — besto 교체");
+assert.match(roles, /id: "rosanne"[\s\S]*?faction: "demon"/, "로잔느 악마-5 분류(독립 솔로) — besto 교체");
 const batch2aMig = readFileSync("supabase/migrations/20260614140000_gomdori_batch_tier2a.sql", "utf8");
 assert.match(batch2aMig, /'uno_valor'/, "마이그레이션 — 용맹함");
 assert.match(batch2aMig, /'daeakma_dominion'/, "마이그레이션 — 압도적 존재감");

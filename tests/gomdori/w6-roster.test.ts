@@ -52,11 +52,13 @@ assert.ok(!/"citizen"/.test(matchStart), "match-start 가 시민으로 채우지
 assert.match(matchStart, /role === "uno"[\s\S]*?countBonus = 5/, "우노 명예 카운트 주입(원문 +5)");
 assert.match(matchStart, /role === "arthur"[\s\S]*?shield = 1/, "아서 보호막 주입");
 assert.ok(!/role === "rainer"/.test(matchStart), "라이너 배정 자동 카운트 주입 폐지(소환으로 획득)");
-// 로잔느(독립 중립 솔로): 파스아와 상호배타로 스폰 + 중립 카드로 추가. 처치 풀엔 없다.
-assert.match(matchStart, /spawnRosanne[\s\S]*?role: "rosanne", faction: "neutral"/, "로잔느 중립 솔로 스폰");
+// 로잔느(캐논 [악마]5, faction demon — 독립 솔로): 파스아와 상호배타로 스폰. 처치 풀엔 없고,
+// engine countTeams 가 팀집계에서 제외(백일몽 단독승).
+assert.match(matchStart, /spawnRosanne[\s\S]*?role: "rosanne", faction: "demon"/, "로잔느 악마-5 분류 솔로 스폰");
 assert.match(matchStart, /const spawnPasua = spawnNeutralSolo && !spawnRosanne/, "파스아↔로잔느 상호배타");
 assert.ok(!DEMON_KILLER_ROLES.includes("rosanne" as never), "로잔느는 처치 풀에 없다");
-assert.ok(!def("rosanne") || def("rosanne")!.faction === "neutral", "로잔느 엔진 진영 neutral");
+assert.ok(!def("rosanne") || def("rosanne")!.faction === "demon", "로잔느 엔진 진영 demon(캐논 [악마]5)");
+assert.match(readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8"), /currentRole === "rosanne"\) continue/, "로잔느 countTeams 팀집계 제외(독립 솔로)");
 
 // 변종 선택 제출 fn + role_assign 마감 폴백 계약
 const selectFn = readFileSync("supabase/functions/match-select-role/index.ts", "utf8");
