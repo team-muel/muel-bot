@@ -441,6 +441,33 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
   assert.equal(r2.players.unfed.counters.wineVotePenalty ?? 0, 1, "미디저트 대상 1일 투표가치 -1(wineVotePenalty=1)");
   assert.equal(r2.players.unfed.counters.voteValueMod ?? 0, 0, "영속 voteValueMod 는 미변경(회복 보장)");
 }
+// --- 4e-2. 고급 와인 우선적용: 비-디저트 대상의 그 밤 부정 행동 무효 ---
+{
+  const state = emptyState(
+    { mizlet: player("mizlet", "mizlet", "angel"), demon: player("demon", "demon", "demon"), victim: player("victim", "citizen", "angel") },
+    [
+      { sourceUserId: "mizlet", targetUserId: "demon", actionType: "mizlet_wine", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState, events } = resolveNightActions(state);
+  assert.equal(newState.players.victim.alive, true, "와인 우선적용 — 비디저트 악마의 처치 무효");
+  assert.ok(events.some((e: any) => e.type === "wine_nullified" && e.payload?.user_id === "demon"), "wine_nullified 이벤트");
+  assert.equal(newState.players.demon.counters.wineVotePenalty ?? 0, 1, "비디저트 와인 — 투표가치 -1 유지");
+}
+{
+  // 디저트 보유 대상은 무효화 분기 아님(정화 분기) — 부정 행동 그대로 성사.
+  const demon = { ...player("demon", "demon", "demon"), tags: ["dessert"] };
+  const state = emptyState(
+    { mizlet: player("mizlet", "mizlet", "angel"), demon, victim: player("victim", "citizen", "angel") },
+    [
+      { sourceUserId: "mizlet", targetUserId: "demon", actionType: "mizlet_wine", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { newState } = resolveNightActions(state);
+  assert.equal(newState.players.victim.alive, false, "디저트 대상은 무효화 분기 아님 — 처치 성사");
+}
 // --- 4f. 헬렌 자유로운 새: 탈락자 추가 복귀 ---
 {
   const dead = player("dead", "citizen", "angel", false);

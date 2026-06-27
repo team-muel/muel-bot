@@ -232,6 +232,20 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
   // 로마즈에는 detainedThisNight=1 표식 — 아래 감시소 봉쇄 후처리(romazWardenBlocked 트리거)의 입력.
   applyRomazVoteDetain(newState.players, events);
 
+  // 고급 와인 우선적용(미즐렛, canon "우선적용 … 미제공 대상은 자신이 발동하는 부정 효과 사라지고"):
+  // 와인 대상이 디저트 미보유 + 그 밤 행동이 부정(NEGATIVE_EFFECT_TYPES)이면 그 행동을 무효화한다 —
+  // 와인은 priority 5 지만 prepass 로 *우선* 적용해, 대상이 거는 디버프가 애초에 안 생기게 한다.
+  // positive 행동은 보호(부정 능력만 무효). dessert 보유는 정화 분기(아래 wine 루프 + roles.ts Cleanse).
+  const wineNullified = new Set<string>();
+  for (const wa of sortedActions.filter((a) => a.actionType === "mizlet_wine" && a.targetUserId)) {
+    const tgt = newState.players[wa.targetUserId!];
+    if (!tgt || !tgt.alive || tgt.tags.includes("dessert")) continue;
+    const tgtAction = sortedActions.find((a) => a.sourceUserId === tgt.userId);
+    if (!tgtAction) continue;
+    const tgtAbility = getRoleDefinition(tgt.currentRole)?.actions.night?.find((c) => c.id === tgtAction.actionType);
+    if (tgtAbility?.effects?.some((e) => NEGATIVE_EFFECT_TYPES.has(e.type))) wineNullified.add(tgt.userId);
+  }
+
   for (const action of sortedActions) {
     const sourcePlayer = newState.players[action.sourceUserId];
     const targetPlayer = action.targetUserId ? newState.players[action.targetUserId] : null;
@@ -305,6 +319,12 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     if ((sourcePlayer.counters?.nullifyNext ?? 0) > 0) {
       sourcePlayer.counters.nullifyNext -= 1;
       events.push({ type: "action_nullified", userId: sourcePlayer.userId });
+      continue;
+    }
+
+    // 고급 와인 우선적용(미즐렛): 비-디저트 와인 대상의 그 밤 부정 행동을 무효화(prepass 판정).
+    if (wineNullified.has(action.sourceUserId)) {
+      events.push({ type: "wine_nullified", payload: { user_id: action.sourceUserId } });
       continue;
     }
 

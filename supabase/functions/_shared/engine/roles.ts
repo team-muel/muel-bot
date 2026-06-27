@@ -599,9 +599,10 @@ export const CORE_ROLES: RoleDefinition[] = [
           { type: "AddTag", target: "Target", tag: "dessert" },
           { type: "AddTag", target: "Target", tag: "pudding" },
         ] },
-        // 고급 와인(v2, 1회, canon 〔지정〕 단일 대상): 대상이 전날 디저트(dessert 태그) 보유 시 그 밤
-        // 받는 부정효과 제거(Cleanse onlyIfTargetTag) + 미즐렛 대화 회로. 디저트 미보유 대상은 투표가치
-        // -1(engine wine 루프 wineVotePenalty, 1일). '대상이 발동한 부정효과 제거'는 후속(defer).
+        // 고급 와인(v2, 1회, canon 〔지정〕 "우선적용", 단일 대상): 대상이 디저트(dessert 태그) 보유 시
+        // 그 밤 받는 부정효과 제거(Cleanse onlyIfTargetTag) + 미즐렛 대화 회로. 디저트 미보유 대상은
+        // 자신이 발동하는 부정 행동 무효(engine prepass wineNullified — "우선적용") + 투표가치 -1
+        // (engine wine 루프 wineVotePenalty, 1일).
         { id: "mizlet_wine", name: "고급 와인", targetType: "SINGLE_ALIVE", priority: 5, maxUses: 1, effects: [
           { type: "Cleanse", target: "Target", onlyIfTargetTag: "dessert" },
           // 투표가치 -1(미디저트 대상)은 영속 voteValueMod 가 아니라 1일 counter(wineVotePenalty)로
