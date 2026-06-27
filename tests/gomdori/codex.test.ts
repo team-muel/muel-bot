@@ -7,13 +7,13 @@ import {
 } from "../../src/gomdoriCodex.ts";
 
 // 데이터 모듈은 엔진과 분리 — 순수 데이터(엔진 import 없음). 정합성만 검증.
-assert.equal(GOMDORI_CODEX.length, 19, "19 직업(천사10+악마3+조력자4+중립2)");
+assert.equal(GOMDORI_CODEX.length, 19, "19 직업(천사10+악마4+조력자4+중립1)");
 
 // 진영별 카운트
 assert.equal(codexByFaction("angel").length, 10, "천사 10");
-assert.equal(codexByFaction("demon").length, 3, "악마 3(besto→로잔느 중립 이동)");
+assert.equal(codexByFaction("demon").length, 4, "악마 4(demon/phantom/malen/rosanne — 캐논 [악마]5)");
 assert.equal(codexByFaction("helper").length, 4, "조력자 4");
-assert.equal(codexByFaction("neutral").length, 2, "중립 2(파스아·로잔느)");
+assert.equal(codexByFaction("neutral").length, 1, "중립 1(파스아)");
 
 // id 유일
 const ids = GOMDORI_CODEX.map((e) => e.id);

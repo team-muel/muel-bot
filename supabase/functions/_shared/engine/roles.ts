@@ -394,7 +394,9 @@ export const CORE_ROLES: RoleDefinition[] = [
     deathHook: { perDeath: { counter: "soul", amount: 1 }, convert: { from: "soul", threshold: 2, to: "deadCountBonus", amount: 1 } },
   },
   {
-    // 로잔느(악마-5, 세헤라자드): 독립 솔로(파스아식, 조력자 없음, faction neutral). v1 코어 —
+    // 로잔느(악마-5, 세헤라자드): faction demon(캐논 [악마]5) — 악마 슬롯 플레이어가 고르는 변종 중
+  // 하나(DEMON_KILLER_ROLES). 악마팀 공통 승리패턴을 따르고, 백일몽(아침 7회) 단독승 패시브가 하나
+  // 더 얹힌다(checkWinCondition rosanneWinner 가 팀 판정보다 먼저 평가). v1 코어 —
     // 백일몽=7아침 생존 단독승(checkWinCondition + resolveNightActions dreamMorning 카운터),
     // 증오=처형(대상 투표가치 -1, 0 도달 즉시 처형 = VoteCrush), 만들어가는 미래(르상티망 약식)=
     // futureCharge 1 소비 + 대상 '원한' 표식 + 자기 dreamMorning +1(canon "아침이 한 번 더").
@@ -402,7 +404,7 @@ export const CORE_ROLES: RoleDefinition[] = [
     // 처치 풀(DEMON_KILLER_ROLES)에 없음 — match-start 가 besto 자리 대신 독립 스폰한다.
     id: "rosanne",
     name: "로잔느",
-    faction: "neutral",
+    faction: "demon",
     passives: [],
     actions: {
       night: [
@@ -737,9 +739,10 @@ export const CORE_ROLES: RoleDefinition[] = [
 ];
 
 // === 기본 로스터 진영 풀 / 판정 세트 (match-start·match-action·engine 공유) ===
-// 악마 처치자(살해 능력 보유). 조사·포교 차단 판정은 이 집합 기준 — 가인 등 조력자는
-// faction='demon' 이지만 처치자가 아니므로 조사 시 '천사'로 보인다(canon §1).
-export const DEMON_KILLER_ROLES = ["demon", "phantom", "malen"];
+// 악마 본체 풀 — 악마 슬롯 플레이어가 고르는 변종(demon/phantom/malen 처치자 + rosanne 비-처치
+// 변종도 악마 본체로 함께 셈). 조사·포교 차단·팀존속 판정은 이 집합 기준 — 가인 등 조력자는
+// faction='demon' 이지만 본체가 아니므로 조사 시 '천사'로 보인다(canon §1).
+export const DEMON_KILLER_ROLES = ["demon", "phantom", "malen", "rosanne"];
 // 조력자 풀(악마팀, 조사 시 천사). 가인만 보호막(배정 시 주입).
 export const HELPER_ROLES = ["gain", "luna", "logen", "ellen"];
 // 천사 풀 — match-start 가 나머지 슬롯을 여기서 distinct 추첨(대천사 미포함, off).
