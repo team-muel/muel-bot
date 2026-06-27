@@ -383,6 +383,41 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
     "침착한 탐정 — 범인의 밤 지정 대상 통지",
   );
 }
+// --- 4d-3. 도르단 단서 수집(canon "대상의 능력 발동 확인"): 조사 대상의 밤 행동 여부 통지(acted) ---
+{
+  // (a) 조사 대상이 밤 행동(킬) → acted true
+  const state = emptyState(
+    {
+      dordan: player("dordan", "dordan", "angel"),
+      demon: player("demon", "demon", "demon"),
+      victim: player("victim", "citizen", "angel"),
+    },
+    [
+      { sourceUserId: "dordan", targetUserId: "demon", actionType: "police_investigate", priority: 5 },
+      { sourceUserId: "demon", targetUserId: "victim", actionType: "demon_kill", priority: 4 },
+    ],
+  );
+  const { events } = resolveNightActions(state);
+  assert.ok(
+    events.some((e: any) => e.type === "dordan_observation" && e.payload?.user_id === "dordan" && e.payload?.target_user_id === "demon" && e.payload?.acted === true),
+    "조사 대상이 밤 행동 → acted true",
+  );
+}
+{
+  // (b) 조사 대상이 취침(무행동) → acted false
+  const state = emptyState(
+    {
+      dordan: player("dordan", "dordan", "angel"),
+      mark: player("mark", "citizen", "angel"),
+    },
+    [{ sourceUserId: "dordan", targetUserId: "mark", actionType: "police_investigate", priority: 5 }],
+  );
+  const { events } = resolveNightActions(state);
+  assert.ok(
+    events.some((e: any) => e.type === "dordan_observation" && e.payload?.target_user_id === "mark" && e.payload?.acted === false),
+    "조사 대상 무행동 → acted false",
+  );
+}
 // --- 4e. 미즐렛 고급 와인(canon 〔지정〕 단일 대상): 디저트 대상=정화, 미디저트 대상=투표가치 -1 ---
 {
   // 디저트 보유 대상 → 받는 부정효과 정화 + 페널티 없음.
