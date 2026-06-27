@@ -1,5 +1,5 @@
 import type { ButtonInteraction, Client, Message } from 'discord.js';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { generateText, stepCountIs } from 'ai';
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
@@ -9,6 +9,8 @@ import { flushPendingResearchDms } from './researchDeliver.js';
 import { getGeminiTextModel, getGoogleSearchTool } from './modelRegistry.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import { DISCORD_SAFE, truncateForDiscord } from './rendering/discordLimits.js';
+import { isPostgresConstraintError, postgresErrorClass, postgresErrorMessage } from './supabaseErrors.js';
 
 /**
  * "이 소식 더 알아보기" → two-step, grounding-first flow.
@@ -140,6 +142,15 @@ const buildDeepButtonRow = (researchJobRowId: string) =>
       .setStyle(ButtonStyle.Secondary),
   );
 
+const buildBriefAttachment = (topic: string, brief: string): AttachmentBuilder => {
+  const safe = (topic || 'research-brief')
+    .replace(/[\\/:*?"<>|\n\r]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60) || 'research-brief';
+  return new AttachmentBuilder(Buffer.from(brief, 'utf8'), { name: `리서치_요약_${safe}.md` });
+};
+
 // ---- enrich: immediate grounded brief + opt-in deep button ----
 
 export const handleResearchEnrichButton = async (
@@ -172,6 +183,7 @@ export const handleResearchEnrichButton = async (
   // Persist topic + brief (status='briefed', not submitted to AI-Q yet) so the
   // opt-in deep button can recover them — the ephemeral message has no source embed.
   let researchJobRowId: string | null = null;
+  let deepSetupWarning: string | null = null;
   if (deepAvailable) {
     const { data: insertData, error: insertError } = await supabase
       .from('muel_research_jobs')
@@ -205,8 +217,14 @@ export const handleResearchEnrichButton = async (
           .limit(1)
           .maybeSingle();
         researchJobRowId = existing?.id ?? null;
+      } else if (isPostgresConstraintError(insertError)) {
+        const errorClass = postgresErrorClass(insertError);
+        const errorMessage = postgresErrorMessage(insertError);
+        console.error('[research-enrich] briefed row insert constraint failed', { errorClass, errorMessage });
+        deepSetupWarning = '딥리서치 버튼 준비가 DB 제약조건에 막혔어. 빠른 요약은 아래에 남겨둘게.';
       } else {
         console.error('[research-enrich] briefed row insert failed', insertError);
+        deepSetupWarning = '딥리서치 버튼 준비에 실패했어. 빠른 요약은 아래에 남겨둘게.';
       }
     } else {
       researchJobRowId = insertData?.id ?? null;
@@ -217,21 +235,35 @@ export const handleResearchEnrichButton = async (
 
   if (brief) {
     // 빠른 요약도 딥 리서치 결과(rich embed)와 같은 톤의 카드로 — 평문 대신 info-card.
-    // 딥 버튼은 카드 아래 components 로 유지. brief 는 embed description(≤3900) 에 들어간다.
+    // 긴 요약은 embed 에 다 밀어넣지 않고 전문 첨부로 보낸다.
+    const briefPreview = truncateForDiscord(brief, DISCORD_SAFE.quickResearchPreview, {
+      omission: '\n\n[전체 요약은 첨부파일에 있어]',
+    });
     const footerNote = deepAvailable
-      ? 'Muel 리서치 · 더 깊게 조사하려면 아래 버튼'
-      : 'Muel 리서치';
+      ? deepSetupWarning
+        ? `Muel 리서치 · ${deepSetupWarning}`
+        : briefPreview.truncated
+        ? 'Muel 리서치 · 전체 요약은 첨부파일 · 더 깊게 조사하려면 아래 버튼'
+        : 'Muel 리서치 · 더 깊게 조사하려면 아래 버튼'
+      : briefPreview.truncated
+        ? 'Muel 리서치 · 전체 요약은 첨부파일'
+        : 'Muel 리서치';
     const rendered = renderDiscordMessage([
       {
         type: 'info-card',
         tone: 'muel',
         title: '리서치 요약',
-        body: brief,
+        body: briefPreview.text,
         footer: footerNote,
       },
     ]);
     await interaction
-      .editReply({ embeds: rendered.embeds, components, allowedMentions: { parse: [] } })
+      .editReply({
+        embeds: rendered.embeds,
+        components,
+        files: briefPreview.truncated ? [buildBriefAttachment(topic, brief)] : [],
+        allowedMentions: { parse: [] },
+      })
       .catch(() => {});
   } else {
     const content = deepAvailable
@@ -300,8 +332,16 @@ export const handleResearchDeepButton = async (
     })
     .eq('id', rowId);
   if (updErr) {
-    console.error('[research-deep] status update failed', updErr);
-    await interaction.editReply({ content: '딥리서치 시작에 실패했어. 잠시 뒤 다시 시도해줘.' }).catch(() => {});
+    if (isPostgresConstraintError(updErr)) {
+      console.error('[research-deep] status update constraint failed', {
+        errorClass: postgresErrorClass(updErr),
+        errorMessage: postgresErrorMessage(updErr),
+      });
+      await interaction.editReply({ content: '딥리서치 시작이 DB 제약조건에 막혔어. 운영자가 스키마 상태를 확인해야 해.' }).catch(() => {});
+    } else {
+      console.error('[research-deep] status update failed', updErr);
+      await interaction.editReply({ content: '딥리서치 시작에 실패했어. 잠시 뒤 다시 시도해줘.' }).catch(() => {});
+    }
     return;
   }
 
@@ -326,12 +366,24 @@ export const handleResearchDeepButton = async (
       `research_user_dm:${rowId}`,
     );
   } catch (err) {
-    console.error('[research-deep] enqueue failed', err);
+    const isConstraint = isPostgresConstraintError(err);
+    console.error(isConstraint ? '[research-deep] enqueue constraint failed' : '[research-deep] enqueue failed', isConstraint
+      ? { errorClass: postgresErrorClass(err), errorMessage: postgresErrorMessage(err) }
+      : err);
     await supabase
       .from('muel_research_jobs')
-      .update({ status: 'failure', error_class: 'EnqueueError', error_message: (err instanceof Error ? err.message : String(err)).slice(0, 240), completed_at: new Date().toISOString() })
+      .update({
+        status: 'failure',
+        error_class: isConstraint ? postgresErrorClass(err) : 'EnqueueError',
+        error_message: (isConstraint ? postgresErrorMessage(err) : err instanceof Error ? err.message : String(err)).slice(0, 240),
+        completed_at: new Date().toISOString(),
+      })
       .eq('id', rowId);
-    await interaction.editReply({ content: '딥리서치 작업 큐 등록에 실패했어. 운영자에게 알려줘.' }).catch(() => {});
+    await interaction.editReply({
+      content: isConstraint
+        ? '딥리서치 작업 큐 등록이 DB 제약조건에 막혔어. 운영자가 스키마 상태를 확인해야 해.'
+        : '딥리서치 작업 큐 등록에 실패했어. 운영자에게 알려줘.',
+    }).catch(() => {});
     return;
   }
 

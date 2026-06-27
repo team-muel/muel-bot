@@ -62,11 +62,18 @@ export type AiqJobState = {
 export class AiqClientError extends Error {
   readonly status: number;
   readonly responseBody: unknown;
-  constructor(message: string, status: number, responseBody?: unknown) {
+  readonly kind: 'config' | 'http' | 'network' | 'timeout';
+  constructor(
+    message: string,
+    status: number,
+    responseBody?: unknown,
+    kind: 'config' | 'http' | 'network' | 'timeout' = status === 0 ? 'network' : 'http',
+  ) {
     super(message);
     this.name = 'AiqClientError';
     this.status = status;
     this.responseBody = responseBody;
+    this.kind = kind;
   }
 }
 
@@ -83,7 +90,7 @@ const headers = (): Record<string, string> => {
 
 const baseUrl = (): string => {
   if (!config.aiqServerUrl) {
-    throw new AiqClientError('AIQ_SERVER_URL is not configured', 0);
+    throw new AiqClientError('AIQ_SERVER_URL is not configured', 0, undefined, 'config');
   }
   return config.aiqServerUrl.replace(/\/+$/, '');
 };
@@ -96,6 +103,11 @@ const baseUrl = (): string => {
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const SUBMIT_REQUEST_TIMEOUT_MS = 120_000;
 
+const isFetchTimeout = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'TimeoutError' || error.name === 'AbortError';
+};
+
 const requestJson = async <T>(
   method: string,
   path: string,
@@ -103,12 +115,30 @@ const requestJson = async <T>(
   timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<T> => {
   const url = `${baseUrl()}${path}`;
-  const response = await fetch(url, {
-    method,
-    headers: headers(),
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: headers(),
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (isFetchTimeout(error)) {
+      throw new AiqClientError(
+        `AI-Q ${method} ${path} timed out after ${timeoutMs}ms`,
+        0,
+        undefined,
+        'timeout',
+      );
+    }
+    throw new AiqClientError(
+      `AI-Q ${method} ${path} network error: ${error instanceof Error ? error.message : String(error)}`,
+      0,
+      undefined,
+      'network',
+    );
+  }
   const text = await response.text();
   let json: unknown = null;
   try {
@@ -121,6 +151,7 @@ const requestJson = async <T>(
       `AI-Q ${method} ${path} failed: ${response.status} ${response.statusText}`,
       response.status,
       json ?? text,
+      'http',
     );
   }
   return (json as T);
@@ -220,6 +251,9 @@ export const cancelJob = async (jobId: string): Promise<AiqJobStatusResponse> =>
 
 export const isTerminalStatus = (status: AiqJobStatus): boolean =>
   status === 'SUCCESS' || status === 'FAILURE' || status === 'INTERRUPTED';
+
+export const isAiqTimeoutError = (error: unknown): boolean =>
+  error instanceof AiqClientError && error.kind === 'timeout';
 
 /**
  * Poll until terminal or timeout. Calls onProgress on every poll (optional).

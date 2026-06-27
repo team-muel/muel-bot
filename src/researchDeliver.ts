@@ -2,11 +2,13 @@ import type { Client } from 'discord.js';
 import { AttachmentBuilder } from 'discord.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { MuelRenderablePart, CardSection } from './rendering/types.js';
+import { DISCORD_SAFE, truncateDiscordText } from './rendering/discordLimits.js';
 import {
   AiqClientError,
   getJobStatus,
   getJobReport,
   getJobState,
+  isAiqTimeoutError,
   submitJob,
   type AiqJobStatusResponse,
 } from './aiqClient.js';
@@ -14,6 +16,7 @@ import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
 import { insertWeaveNode } from './weaveNodes.js';
+import { isPostgresConstraintError, postgresErrorClass, postgresErrorMessage } from './supabaseErrors.js';
 
 /**
  * jobWorker handler for 'research_user_dm' job type. Submitted from
@@ -84,7 +87,7 @@ const buildDmRenderable = (args: {
   const { intro, sections } = reportToSections(args.report);
   const toc = sections.map((s, i) => `${i + 1}. ${s.header}`).join('\n');
   const bodyLines: string[] = [];
-  if (intro) bodyLines.push(intro.length > 1500 ? `${intro.slice(0, 1499).trimEnd()}…` : intro);
+  if (intro) bodyLines.push(truncateDiscordText(intro, DISCORD_SAFE.researchIntro));
   if (toc) bodyLines.push(`**목차**\n${toc}`);
 
   const footerParts = ['Muel 리서치'];
@@ -155,12 +158,51 @@ const schedulePoll = async (
 const durationFrom = (createdAt: string | null | undefined, fallbackStartedAt: number): number =>
   Date.now() - (createdAt ? Date.parse(createdAt) : fallbackStartedAt);
 
+const classifyResearchError = (error: unknown): {
+  status: 'failure' | 'timeout';
+  errorClass: string;
+  errorMessage: string;
+  userMessage: string;
+} => {
+  if (isAiqTimeoutError(error)) {
+    return {
+      status: 'timeout',
+      errorClass: 'AiqTimeout',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      userMessage: '조사가 너무 오래 걸려서 멈췄어요. 리서치 백엔드 처리 시간이나 검색 쿼터 상태를 확인한 뒤 다시 시도해주세요.',
+    };
+  }
+  if (error instanceof AiqClientError) {
+    return {
+      status: 'failure',
+      errorClass: `AiqClientError(${error.status}:${error.kind})`,
+      errorMessage: error.message,
+      userMessage: '리서치 백엔드 호출에 실패했어요. AI-Q 상태, 인증, 검색 쿼터를 따로 확인해야 해요.',
+    };
+  }
+  if (isPostgresConstraintError(error)) {
+    return {
+      status: 'failure',
+      errorClass: postgresErrorClass(error),
+      errorMessage: postgresErrorMessage(error),
+      userMessage: '딥리서치 작업을 DB에 기록하는 중 제약조건 오류가 났어요. 운영자가 스키마/마이그레이션 상태를 확인해야 해요.',
+    };
+  }
+  return {
+    status: 'failure',
+    errorClass: error instanceof Error ? error.name : typeof error,
+    errorMessage: error instanceof Error ? error.message : String(error),
+    userMessage: '조사 중 문제가 생겼어요. 리서치 백엔드나 검색 쿼터 상태를 확인해야 해요.',
+  };
+};
+
 const failResearchRow = async (
   payload: ResearchUserDmPayload,
   args: {
     status: 'failure' | 'timeout' | 'cancelled';
     errorClass: string;
     errorMessage: string;
+    userMessage?: string;
     startedAt: number;
     createdAt?: string | null;
   },
@@ -178,18 +220,10 @@ const failResearchRow = async (
     .eq('id', payload.researchJobRowId);
 
   if (payload.interactionApplicationId && payload.interactionToken) {
-    let userMsg: string;
-    if (args.status === 'timeout') {
-      userMsg = '조사가 너무 오래 걸려서 멈췄어요. 리서치 백엔드나 검색 쿼터 상태를 확인한 뒤 다시 시도해주세요.';
-    } else if (args.errorClass === 'AiqClientError(0)') {
-      userMsg = '조사를 시작하지 못했어요. 리서치 백엔드 연결이나 검색 쿼터 상태를 확인해야 해요.';
-    } else {
-      userMsg = '조사 중 문제가 생겼어요. 리서치 백엔드나 검색 쿼터 상태를 확인해야 해요.';
-    }
     await followUpEphemeral(
       payload.interactionApplicationId,
       payload.interactionToken,
-      userMsg,
+      args.userMessage ?? '조사 중 문제가 생겼어요. 리서치 백엔드나 검색 쿼터 상태를 확인해야 해요.',
     );
   }
 };
@@ -238,15 +272,18 @@ export const processResearchUserDmJob = async (
 
     await schedulePoll({ ...payload, externalJobId }, config.aiqPollIntervalMs);
   } catch (error) {
-    const isClient = error instanceof AiqClientError;
-    const errClass = isClient ? `AiqClientError(${(error as AiqClientError).status})` : (error instanceof Error ? error.name : typeof error);
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.error('[research-deliver] submit failed', { rowId, errClass, errMsg });
+    const failure = classifyResearchError(error);
+    console.error('[research-deliver] submit failed', {
+      rowId,
+      errClass: failure.errorClass,
+      errMsg: failure.errorMessage,
+    });
 
     await failResearchRow(payload, {
-      status: errMsg.includes('timed out') ? 'timeout' : 'failure',
-      errorClass: errClass,
-      errorMessage: errMsg,
+      status: failure.status,
+      errorClass: failure.errorClass,
+      errorMessage: failure.errorMessage,
+      userMessage: failure.userMessage,
       startedAt,
       createdAt: existing?.created_at,
     });
@@ -280,9 +317,14 @@ export const processResearchUserDmPollJob = async (
     throw new Error(`research row ${rowId} has no external_job_id`);
   }
 
-  try {
+    try {
     if (durationFrom(existing?.created_at, startedAt) > config.aiqPollTimeoutMs) {
-      throw new AiqClientError(`AI-Q job ${externalJobId} polling timed out after ${config.aiqPollTimeoutMs}ms`, 0);
+      throw new AiqClientError(
+        `AI-Q job ${externalJobId} polling timed out after ${config.aiqPollTimeoutMs}ms`,
+        0,
+        undefined,
+        'timeout',
+      );
     }
 
     const terminal: AiqJobStatusResponse = await getJobStatus(externalJobId);
@@ -402,17 +444,18 @@ export const processResearchUserDmPollJob = async (
       },
     });
   } catch (error) {
-    const isClient = error instanceof AiqClientError;
-    const errClass = isClient ? `AiqClientError(${(error as AiqClientError).status})` : (error instanceof Error ? error.name : typeof error);
-    const errMsg = error instanceof Error ? error.message : String(error);
-    console.error('[research-deliver] job failed', { rowId, errClass, errMsg });
-
-    const status = errMsg.includes('timed out') ? 'timeout' : 'failure';
+    const failure = classifyResearchError(error);
+    console.error('[research-deliver] job failed', {
+      rowId,
+      errClass: failure.errorClass,
+      errMsg: failure.errorMessage,
+    });
 
     await failResearchRow(payload, {
-      status,
-      errorClass: errClass,
-      errorMessage: errMsg,
+      status: failure.status,
+      errorClass: failure.errorClass,
+      errorMessage: failure.errorMessage,
+      userMessage: failure.userMessage,
       startedAt,
       createdAt: existing?.created_at,
     });

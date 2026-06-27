@@ -1,5 +1,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, type MessageCreateOptions, type APIEmbedField } from 'discord.js';
 import type { MuelRenderablePart, RenderTone, CardSection, CardActionButton, CardSelectMenu } from './types.js';
+import { DISCORD_LIMITS, DISCORD_SAFE, truncateDiscordText } from './discordLimits.js';
 import { MUEL_BRAND_COLOR, MUEL_SUCCESS_COLOR, MUEL_WARN_COLOR } from '../uiColors.js';
 
 function toneColor(tone?: RenderTone): number | null {
@@ -59,12 +60,6 @@ function formatPublishedAtForFooter(text: string | undefined): string {
   return raw.replace(/<t:\d+:[tTdDfFR]>/g, '').trim().slice(0, 80);
 }
 
-function truncate(text: string, max: number): string {
-  if (!text) return '';
-  if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(1, max - 18)).trimEnd()}\n\n[원문에서 계속 보기]`;
-}
-
 function truncateTitle(text: string, max = 256): string {
   if (!text) return '';
   if (text.length <= max) return text;
@@ -78,12 +73,12 @@ function applyTone(embed: EmbedBuilder, tone?: RenderTone): EmbedBuilder {
 
 function sectionsToFields(sections: CardSection[] | undefined): APIEmbedField[] {
   if (!sections || sections.length === 0) return [];
-  const MAX_FIELDS = 25;
+  const MAX_FIELDS = DISCORD_LIMITS.embedFields;
   const overflow = sections.length > MAX_FIELDS;
   const shown = sections.slice(0, overflow ? MAX_FIELDS - 1 : MAX_FIELDS);
   const fields: APIEmbedField[] = shown.map((section) => ({
-    name: truncateTitle(`▼ ${section.header}`, 256),
-    value: truncate(section.content, 1024),
+    name: truncateTitle(`▼ ${section.header}`, DISCORD_LIMITS.embedFieldName),
+    value: truncateDiscordText(section.content, DISCORD_SAFE.sectionFieldValue),
     inline: section.inline ?? false,
   }));
   if (overflow) {
@@ -116,11 +111,11 @@ function actionButtonStyleToDiscord(style: CardActionButton['style']): ButtonSty
 function buildActionButtonRow(buttons: CardActionButton[] | undefined): ActionRowBuilder<ButtonBuilder> | null {
   if (!buttons || buttons.length === 0) return null;
   const row = new ActionRowBuilder<ButtonBuilder>();
-  for (const btn of buttons.slice(0, 5)) {
+  for (const btn of buttons.slice(0, DISCORD_LIMITS.buttonsPerRow)) {
     const button = new ButtonBuilder()
-      .setLabel(btn.label.slice(0, 80))
+      .setLabel(btn.label.slice(0, DISCORD_LIMITS.buttonLabel))
       .setStyle(actionButtonStyleToDiscord(btn.style))
-      .setCustomId(btn.customId.slice(0, 100));
+      .setCustomId(btn.customId.slice(0, DISCORD_LIMITS.customId));
     if (btn.emoji) button.setEmoji(btn.emoji);
     row.addComponents(button);
   }
@@ -129,10 +124,10 @@ function buildActionButtonRow(buttons: CardActionButton[] | undefined): ActionRo
 
 function buildLinkButtonRow(linkButton: { label: string; url: string } | undefined): ActionRowBuilder<ButtonBuilder> | null {
   const url = linkButton?.url?.trim();
-  if (!url || !/^https?:\/\//i.test(url) || url.length > 512) return null;
+  if (!url || !/^https?:\/\//i.test(url) || url.length > DISCORD_LIMITS.url) return null;
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setLabel((linkButton?.label || '열기').slice(0, 80))
+      .setLabel((linkButton?.label || '열기').slice(0, DISCORD_LIMITS.buttonLabel))
       .setStyle(ButtonStyle.Link)
       .setURL(url),
   );
@@ -140,17 +135,17 @@ function buildLinkButtonRow(linkButton: { label: string; url: string } | undefin
 
 function buildSelectMenuRow(menu: CardSelectMenu | undefined): ActionRowBuilder<StringSelectMenuBuilder> | null {
   if (!menu || menu.options.length === 0) return null;
-  const maxOptions = menu.options.slice(0, 25);
+  const maxOptions = menu.options.slice(0, DISCORD_LIMITS.selectOptions);
   const select = new StringSelectMenuBuilder()
-    .setCustomId(menu.customId.slice(0, 100))
-    .setPlaceholder(menu.placeholder.slice(0, 150))
+    .setCustomId(menu.customId.slice(0, DISCORD_LIMITS.customId))
+    .setPlaceholder(menu.placeholder.slice(0, DISCORD_LIMITS.selectPlaceholder))
     .setMinValues(menu.minValues ?? 1)
     .setMaxValues(Math.min(menu.maxValues ?? 1, maxOptions.length))
     .addOptions(maxOptions.map((option) => {
       const built = {
-        label: option.label.slice(0, 100),
-        value: option.value.slice(0, 100),
-        description: option.description?.slice(0, 100),
+        label: option.label.slice(0, DISCORD_LIMITS.selectOptionLabel),
+        value: option.value.slice(0, DISCORD_LIMITS.selectOptionValue),
+        description: option.description?.slice(0, DISCORD_LIMITS.selectOptionDescription),
         emoji: option.emoji,
       };
       return built;
@@ -160,7 +155,7 @@ function buildSelectMenuRow(menu: CardSelectMenu | undefined): ActionRowBuilder<
 
 function appendComponentRow(options: MessageCreateOptions, row: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder> | null) {
   if (!row) return;
-  if ((options.components?.length ?? 0) >= 5) return;
+  if ((options.components?.length ?? 0) >= DISCORD_LIMITS.componentsPerMessage) return;
   options.components = [...(options.components || []), row];
 }
 
@@ -183,19 +178,19 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     } else if (part.type === 'info-card') {
       const embed = applyTone(
         new EmbedBuilder()
-          .setTitle(truncateTitle(part.title, 256))
-          .setDescription(part.body ? truncate(part.body, 3900) : null),
+          .setTitle(truncateTitle(part.title, DISCORD_LIMITS.embedTitle))
+          .setDescription(part.body ? truncateDiscordText(part.body, DISCORD_SAFE.infoDescription) : null),
         part.tone ?? 'muel',
       );
 
       if (part.fields?.length) {
         embed.addFields(part.fields.slice(0, 25).map((field) => ({
-          name: truncateTitle(field.name, 256),
-          value: truncate(field.value, 1024),
+          name: truncateTitle(field.name, DISCORD_LIMITS.embedFieldName),
+          value: truncateDiscordText(field.value, DISCORD_SAFE.sectionFieldValue),
           inline: field.inline ?? false,
         })));
       }
-      if (part.footer) embed.setFooter({ text: part.footer.slice(0, 2048) });
+      if (part.footer) embed.setFooter({ text: part.footer.slice(0, DISCORD_SAFE.footer) });
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       embeds.push(embed);
 
@@ -207,7 +202,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
 
       const descriptionLines: string[] = [];
       if (part.subtitle) descriptionLines.push(`**${truncateTitle(part.subtitle, 200)}**`);
-      if (part.body) descriptionLines.push(truncate(part.body, imageUrl ? 1400 : 2400));
+      if (part.body) descriptionLines.push(truncateDiscordText(part.body, imageUrl ? DISCORD_SAFE.communityBodyWithImage : DISCORD_SAFE.communityBodyNoImage));
       const description = descriptionLines.join('\n\n');
 
       const timeStr = formatPublishedAtForFooter(part.publishedAt);
@@ -215,18 +210,18 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
       const embed = applyTone(
         new EmbedBuilder()
           .setDescription(description || null)
-          .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' · ').slice(0, 2048) }),
+          .setFooter({ text: ['YouTube 커뮤니티', part.authorName, timeStr].filter(Boolean).join(' · ').slice(0, DISCORD_SAFE.footer) }),
         part.tone,
       );
 
-      if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (part.title) embed.setTitle(truncateTitle(part.title, DISCORD_LIMITS.embedTitle));
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (imageUrl) embed.setImage(imageUrl);
 
       if (part.highlights?.length) {
         embed.addFields({
           name: '▼ 주요 내용',
-          value: truncate(part.highlights.map((h) => `- ${h}`).join('\n'), 1024),
+          value: truncateDiscordText(part.highlights.map((h) => `- ${h}`).join('\n'), DISCORD_SAFE.sectionFieldValue),
           inline: false,
         });
       }
@@ -249,12 +244,12 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     } else if (part.type === 'announcement-card') {
       const embed = applyTone(
         new EmbedBuilder()
-          .setDescription(part.body ? truncate(part.body, 3900) : null)
-          .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' · ').slice(0, 2048) }),
+          .setDescription(part.body ? truncateDiscordText(part.body, DISCORD_SAFE.infoDescription) : null)
+          .setFooter({ text: ['공지', part.author, part.publishedAt].filter(Boolean).join(' · ').slice(0, DISCORD_SAFE.footer) }),
         'muel',
       );
 
-      if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (part.title) embed.setTitle(truncateTitle(part.title, DISCORD_LIMITS.embedTitle));
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
       if (part.imageUrl) embed.setImage(part.imageUrl);
 
@@ -268,8 +263,8 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
     } else if (part.type === 'release-note-card') {
       const embed = applyTone(
         new EmbedBuilder()
-          .setTitle(truncateTitle(`${part.product} ${part.version ? `v${part.version}` : ''} 업데이트`, 256))
-          .setDescription(truncate(part.highlights.map((highlight) => `- ${highlight}`).join('\n'), 3900))
+          .setTitle(truncateTitle(`${part.product} ${part.version ? `v${part.version}` : ''} 업데이트`, DISCORD_LIMITS.embedTitle))
+          .setDescription(truncateDiscordText(part.highlights.map((highlight) => `- ${highlight}`).join('\n'), DISCORD_SAFE.infoDescription))
           .setFooter({ text: 'Release Note' }),
         'success',
       );
@@ -286,9 +281,9 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
 
       const embed = applyTone(
         new EmbedBuilder()
-          .setTitle(truncateTitle(part.title, 256))
+          .setTitle(truncateTitle(part.title, DISCORD_LIMITS.embedTitle))
           .setURL(part.url)
-          .setFooter({ text: ['YouTube', kind, part.author, timeStr].filter(Boolean).join(' · ').slice(0, 2048) }),
+          .setFooter({ text: ['YouTube', kind, part.author, timeStr].filter(Boolean).join(' · ').slice(0, DISCORD_SAFE.footer) }),
         'neutral',
       );
       // Thumbnail per video kind:
@@ -325,15 +320,15 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
 
       const descriptionLines: string[] = [];
       if (part.subtitle) descriptionLines.push(`**${truncateTitle(part.subtitle, 200)}**`);
-      if (part.body) descriptionLines.push(truncate(part.body, 3000));
+      if (part.body) descriptionLines.push(truncateDiscordText(part.body, DISCORD_SAFE.richDescription));
       const description = descriptionLines.join('\n\n');
 
       const embed = applyTone(new EmbedBuilder(), part.tone);
-      if (part.title) embed.setTitle(truncateTitle(part.title, 256));
+      if (part.title) embed.setTitle(truncateTitle(part.title, DISCORD_LIMITS.embedTitle));
       if (description) embed.setDescription(description);
       if (part.thumbnail && /^https?:\/\//i.test(part.thumbnail)) embed.setThumbnail(part.thumbnail);
       if (part.sourceUrl) embed.setURL(part.sourceUrl);
-      if (part.footer) embed.setFooter({ text: part.footer.slice(0, 2048) });
+      if (part.footer) embed.setFooter({ text: part.footer.slice(0, DISCORD_SAFE.footer) });
 
       const sectionFields = sectionsToFields(part.sections);
       if (sectionFields.length > 0) embed.addFields(sectionFields);
@@ -350,7 +345,7 @@ export function renderDiscordMessage(parts: MuelRenderablePart[]): MessageCreate
   }
 
   if (textContents.length > 0) {
-    options.content = textContents.join('\n\n');
+    options.content = truncateDiscordText(textContents.join('\n\n'), DISCORD_SAFE.textContent);
   }
 
   if (!options.content && embeds.length === 0) {

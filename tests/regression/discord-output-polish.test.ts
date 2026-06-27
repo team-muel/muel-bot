@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ChannelType } from 'discord.js';
 import { renderDiscordMessage } from '../../src/rendering/discordRenderer.js';
+import { DISCORD_LIMITS, DISCORD_SAFE } from '../../src/rendering/discordLimits.js';
 import { formatSubscriptionLine } from '../../src/subscribePresentation.js';
 import type { YouTubeSubscription } from '../../src/youtubeSubscriptionStore.js';
 
@@ -144,6 +145,28 @@ check('deep research copy mentions backend/search quota failure modes', () => {
   assert.match(enrich, /백엔드 상태/);
   assert.match(deliver, /검색 쿼터/);
   assert.match(deliver, /리서치 백엔드/);
+});
+
+check('renderer keeps long info-card descriptions within Discord budget without fake continuation link', () => {
+  const longBody = '긴 요약 문장입니다. '.repeat(500);
+  const message = renderDiscordMessage([{
+    type: 'info-card',
+    title: '긴 요약',
+    body: longBody,
+  }]);
+  const description = (message.embeds?.[0] as any).toJSON().description as string;
+  assert.ok(description.length <= DISCORD_LIMITS.embedDescription);
+  assert.ok(description.length <= DISCORD_SAFE.infoDescription);
+  assert.match(description, /\[일부 생략됨\]/);
+  assert.doesNotMatch(description, /\[원문에서 계속 보기\]/);
+});
+
+check('concierge stores hub chat turns as allowed discord conversation source', () => {
+  const concierge = readFileSync(join(SRC, 'conciergeHandler.ts'), 'utf8');
+  const prepareCall = concierge.match(/const prepared = await prepareChatTurn\([\s\S]*?\n    \}\);/)?.[0] ?? '';
+  assert.match(prepareCall, /source:\s*'discord'/);
+  assert.match(prepareCall, /surface:\s*'discord_hub'/);
+  assert.doesNotMatch(prepareCall, /source:\s*'discord_hub'/);
 });
 
 console.log(`\n${'='.repeat(50)}`);

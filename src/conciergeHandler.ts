@@ -360,7 +360,7 @@ export const handleHubChannelMessage = async (
 
     const userMessageId = crypto.randomUUID();
     const prepared = await prepareChatTurn(supabase, {
-      source: 'discord_hub',
+      source: 'discord',
       sourceChannelId: channelId,
       sourceThreadId: channelId,
       userMessageId,
@@ -372,6 +372,7 @@ export const handleHubChannelMessage = async (
         discordUserId: userId,
         discordUsername: message.author.username,
         externalMessageId: message.id,
+        surface: 'discord_hub',
         triggerSource: 'allowlist_channel',
         routerIntent: decision.intent,
         routerConfidence: decision.confidence,

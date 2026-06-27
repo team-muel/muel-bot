@@ -108,6 +108,18 @@ assert(
   'aiqClient never returns a status response without normalization',
   !/return toCamel<AiqJobStatusResponse>/.test(aiqClient),
 );
+assert(
+  'aiqClient classifies fetch aborts as timeout errors',
+  /kind:\s*'config'\s*\|\s*'http'\s*\|\s*'network'\s*\|\s*'timeout'/.test(aiqClient) &&
+    /AI-Q \$\{method\} \$\{path\} timed out after/.test(aiqClient) &&
+    /isAiqTimeoutError/.test(aiqClient),
+);
+assert(
+  'researchDeliver records AI-Q timeout separately from DB constraint failures',
+  /errorClass:\s*['"]AiqTimeout['"]/.test(researchDeliver) &&
+    /isPostgresConstraintError/.test(researchDeliver) &&
+    /PostgresConstraint/.test(researchDeliver),
+);
 
 const youtubeMonitor = readFileSync(join(SRC, 'youtubeMonitor.ts'), 'utf8');
 assert(
@@ -121,6 +133,20 @@ assert(
 assert(
   'youtubeMonitor enrichment buttons are gated by config.aiqEnabled',
   /config\.aiqEnabled/.test(youtubeMonitor),
+);
+
+assert(
+  'quick research brief attaches full markdown when Discord preview is truncated',
+  /AttachmentBuilder/.test(researchEnrich) &&
+    /buildBriefAttachment/.test(researchEnrich) &&
+    /quickResearchPreview/.test(researchEnrich) &&
+    /files:\s*briefPreview\.truncated/.test(researchEnrich),
+);
+assert(
+  'researchEnrich surfaces DB constraint failures separately from generic enqueue errors',
+  /briefed row insert constraint failed/.test(researchEnrich) &&
+    /enqueue constraint failed/.test(researchEnrich) &&
+    /postgresErrorClass/.test(researchEnrich),
 );
 
 const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
