@@ -1244,6 +1244,8 @@ export function applyDawnbreakerPassive(players: Record<string, PlayerState>, ev
   const credited = arthur.counters.dawnDeathsCredited ?? 0;
   if (deadInnocentAngels > credited) {
     arthur.counters.emberCharge = (arthur.counters.emberCharge ?? 0) + (deadInnocentAngels - credited);
+    // 다중 베기(canon "탈락자 한 명당 잔불 대검 지정 대상 +1"): 결백 천사 탈락분만큼 동시 지정 대상 증가.
+    arthur.counters.emberTargets = (arthur.counters.emberTargets ?? 0) + (deadInnocentAngels - credited);
     arthur.counters.dawnDeathsCredited = deadInnocentAngels;
   }
   if (arthur.alive && deadInnocentAngels >= 3) {

@@ -680,7 +680,10 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 잔불 대검: 충전(emberCharge) 1 소비. 결백(tainted 없음)=하루 무적, 타락(tainted)=폭열,
         // 폭열된 타락자 재적용 시 소멸(Annihilate 가 branded→annihilated 2단을 자체 처리).
         {
+          // 다중 베기(canon "탈락자 한 명당 잔불 대검 지정 대상이 1 증가"): 결백 천사 탈락 1명당
+          // emberTargets +1(applyDawnbreakerPassive). 동시 지정 가능 수 = 1 + emberTargets.
           id: "arthur_emberblade", name: "잔불 대검", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true,
+          targetCount: 1, targetCountCounter: "emberTargets",
           requiresCounter: { key: "emberCharge", min: 1, consumeAmount: 1 },
           effects: [
             { type: "Protect", target: "Target", duration: "1_NIGHT", skipIfTargetCounter: { key: "tainted", min: 1 } },
