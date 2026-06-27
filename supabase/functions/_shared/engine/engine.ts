@@ -1558,6 +1558,16 @@ function applyEffect(
       target.counters.voteValueMod = (target.counters.voteValueMod ?? 0) + (effect.amount ?? 0);
       events.push({ type: "vote_value_modified", payload: { user_id: target.userId, amount: effect.amount ?? 0 } });
       break;
+    case "ConsumeVoteValue":
+      // 헬렌 황금빛 수면(canon "투표가치 모두 소모하여 헬렌과 접선"): 대상의 *누적* 투표가치를
+      // base 로 소모 — voteWeightBonus·bonusVoteValue 영점, 양수 voteValueMod 제거(음수 디버프 유지).
+      // 같은 능력의 후속 GrantCount voteWeightBonus +1 이 깨면 회복분을 얹어 net base+1. 대상에게
+      // 접선 통지(personal — payload.user_id 로 phase-advance 자동 private).
+      target.counters.voteWeightBonus = 0;
+      target.bonusVoteValue = 0;
+      if ((target.counters.voteValueMod ?? 0) > 0) target.counters.voteValueMod = 0;
+      events.push({ type: "vote_value_consumed", payload: { user_id: target.userId } });
+      break;
     case "VoteCrush":
       // 증오(로잔느): 대상 행사 투표가치 -1. 기본 1 기준으로 0 이하가 되면 즉시 처형(canon
       // "투표가치가 0이 되면 즉시 처형"). v1 근사 — 명예 등 다른 보정 무시, 1+voteValueMod 기준.
