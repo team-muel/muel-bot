@@ -91,13 +91,9 @@ function engineStateForAssignment(card: RoleCard): Record<string, unknown> | nul
 
   // 라이너 백호: v2 에서 자동 주입 폐지 — rainer_summon(1회 self 액션)으로 능동 획득한다.
 
-  if (card.role === "uno") {
-    // 우노 명예(원문 [천사]6): 천사팀 카운트 +5 + 행사 투표가치 +5. voteValueMod +5 는 사탄의 마
-    // (전원 -1)를 뚫고 우노의 표를 살린다 — 악마 투표 독점에 맞서는 천사 진영의 표 경로(tally 가
-    // voteValueMod 합산). 명예 실추(밤행동 불가)는 uno_valor 동료 살해 분기에서 처리.
-    counters.countBonus = 5;
-    counters.voteValueMod = 5;
-  }
+  // 우노 명예(원문 [천사]6, 조건부): 천사팀 카운트 +5 + 투표가치 +5 — 배정 시 영구 주입이 아니라
+  // 투쟁(uno_struggle) 대상이 다음 아침 생존한 날만 그날 부여(engine unoHonor 라운드 카운터). 여기선
+  // 주입하지 않는다(과거 무조건 +5/+5 = canon 위반 정정). 명예 실추는 uno_valor 동료 살해 분기 처리.
 
   if (card.role === "arthur") {
     // 아서 여명의 기사: 자기 보호막 1 (밤 살해·처형 1회 무효). canon 탈락 면역의 v1 축약.

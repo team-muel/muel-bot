@@ -128,6 +128,7 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
       counters.suspicionBias = 0;
       counters.charmed = 0; // 매료(루루)도 라운드 한정 — 직전 라운드 잔여 제거.
       counters.sonataVote = 0; // 소나타 전원 투표가치 +1 — 1일 한정(다음 밤 시작에 해제).
+      counters.unoHonor = 0; // 우노 명예 — 조건부 매일, 다음 밤 시작에 해제(이 밤 투쟁 대상 생존 시 재부여).
       counters.tookDemonEffectThisNight = 0; // 감시소 봉쇄 입력(로마즈) — 그 밤 한정 표식 리셋.
       counters.detainedThisNight = 0; // 투표 구금 발동 표식(로마즈 self) — 그 밤 한정 리셋.
       counters.possessed = 0; // 빙의(말렌)도 라운드 한정.
@@ -704,6 +705,15 @@ export function resolveNightActions(state: MatchState): { newState: MatchState; 
     }
   }
 
+  // 우노 명예(canon [천사]6, 조건부 매일): 이 밤 투쟁(uno_struggle)한 대상이 생존하면 우노가 그날
+  // 명예 — 천사팀 카운트 +5 + 투표가치 +5(unoHonor=1, 라운드 한정). 영구 주입(match-start)에서 조건부로
+  // 정정. countTeams/tally/사탄영역이 unoHonor 를 +5 로 읽고, 다음 밤 시작 round-reset 에서 해제.
+  for (const ua of sortedActions.filter((a) => a.actionType === "uno_struggle" && a.targetUserId)) {
+    const unoP = newState.players[ua.sourceUserId];
+    const tgt = newState.players[ua.targetUserId!];
+    if (unoP?.alive && tgt?.alive) { unoP.counters = unoP.counters ?? {}; unoP.counters.unoHonor = 1; }
+  }
+
   // 밤 탈락 후크(ADR-006 S3, 선언형): 살아있는 직업의 RoleDefinition.deathHook 을 제네릭
   // 적용한다 — 직업 분기 없음. 말렌 혼/시체(perDeath soul + convert→deadCountBonus),
   // 도르단 단서(perDeath clue). 다단계(혼령 방출 격상 등)는 후속.
@@ -915,7 +925,8 @@ export function tallyEliminationVotes(
     const adjProwess = dawnFlip ? -prowess : prowess;
     // 고급 와인 1일 페널티(미즐렛): 이 처형 투표 1회만 -1. phase-advance 가 tally 직후 소비.
     const winePenalty = actor.counters?.wineVotePenalty ?? 0;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) - winePenalty);
+    const unoHonorElim = (actor.currentRole === "uno" && (actor.counters?.unoHonor ?? 0) > 0) ? (dawnFlip ? -5 : 5) : 0;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + (actor.counters?.voteWeightBonus ?? 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) + unoHonorElim - winePenalty);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -1062,7 +1073,8 @@ export function tallyVerdictVotes(actions: VoteActionInput[], players: Record<st
     const dawnFlip = (modifiers?.dawnRule ?? 0) > 0;
     const adjVvm = dawnFlip && vvm > 0 ? -vvm : vvm;
     const adjProwess = dawnFlip ? -prowess : prowess;
-    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0));
+    const unoHonorVerdict = (actor.currentRole === "uno" && (actor.counters?.unoHonor ?? 0) > 0) ? (dawnFlip ? -5 : 5) : 0;
+    const voteValue = Math.max(0, (actor.baseVoteValue || 1) + (actor.bonusVoteValue || 0) + adjVvm + adjProwess + (actor.counters?.sonataVote ?? 0) + unoHonorVerdict);
     if (voteValue === 0) {
       skipped += 1;
       continue;
@@ -1152,7 +1164,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     const possessed = (player.counters?.possessed ?? 0) > 0;
     // 사탄의 마 취급: 영역 활성(전원 0) 또는 대악마 생존 중 개별 천사 vote 0 이하 → demon 으로 transient flip.
     const ownVoteSuppressed = daeakmaAliveForBrand &&
-      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0)) <= 0;
+      (1 + (player.bonusVoteValue ?? 0) + (player.counters?.voteWeightBonus ?? 0) + (player.counters?.voteValueMod ?? 0) + (player.currentRole === "uno" && (player.counters?.unoHonor ?? 0) > 0 ? 5 : 0)) <= 0;
     const satanicTreated = (realmActive || ownVoteSuppressed) && player.actualFaction === "angel";
     const faction = possessed || satanicTreated ? "demon" : (player.treatedAsFaction || player.actualFaction);
     const bucket =
@@ -1164,7 +1176,7 @@ export function countTeams(players: Record<string, PlayerState>): TeamCounts {
     if (!bucket) continue;
 
     if (player.alive) {
-      const weight = 1 + (player.counters?.countBonus ?? 0) + (player.counters?.resistCount ?? 0);
+      const weight = 1 + (player.counters?.countBonus ?? 0) + (player.counters?.resistCount ?? 0) + (player.currentRole === "uno" && (player.counters?.unoHonor ?? 0) > 0 ? 5 : 0);
       if (bucket === "demon") {
         aliveDemons += 1;
         demonCount += weight;
@@ -1286,7 +1298,7 @@ export function isSatanicRealmActive(players: Record<string, PlayerState>): bool
   const demonAlive = Object.values(players).some((p) => p.alive && p.currentRole === "demon");
   if (!demonAlive) return false;
   return aliveAngels.every((p) => {
-    const v = 1 + (p.bonusVoteValue ?? 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0);
+    const v = 1 + (p.bonusVoteValue ?? 0) + (p.counters?.voteWeightBonus ?? 0) + (p.counters?.voteValueMod ?? 0) + (p.currentRole === "uno" && (p.counters?.unoHonor ?? 0) > 0 ? 5 : 0);
     return v <= 0;
   });
 }

@@ -438,6 +438,10 @@ assert.match(mizletCpMig, /'mizlet_pudding'/, "마이그레이션 — 푸딩");
   assert.equal(newState.players.ally.counters.countBonus, 1, "투쟁 대상 카운트 +1");
   assert.equal(newState.players.ally.counters.missionCharge, 1, "투쟁 대상 군인의 사명 +1");
   assert.ok(events.some((e: any) => e.type === "count_granted" && e.payload?.user_id === "ally"), "투쟁 이벤트");
+  // 명예(조건부, canon [천사]6): 투쟁 대상(ally)이 생존 → 우노가 그날 명예(unoHonor=1) → 투표가치 +5.
+  assert.equal(newState.players.uno.counters.unoHonor ?? 0, 1, "우노 명예 — 투쟁 대상 생존 → unoHonor");
+  const honorTally = tallyEliminationVotes([{ actorUserId: "uno", targetUserId: "ally" }], newState.players);
+  assert.equal(honorTally.tallies["ally"], 6, "우노 명예 — 행사 투표가치 1+5=6");
 }
 // --- 5b. 군인의 사명(우노): 투쟁 2회 충전 → 악마 효과 1회 제거 ---
 {
