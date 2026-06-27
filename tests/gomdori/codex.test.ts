@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   GOMDORI_CODEX,
   FACTION_LABEL,
@@ -62,5 +63,10 @@ for (const [id, patterns] of implementedCore) {
     assert.match(spec, pattern, `${id}: 구현된 v2 코어 설명 포함`);
   }
 }
+
+// 플레이어 표면 가드(Phase 3, 2026-06-27): /도감 핸들러가 v1/v2 구현 스펙을 플레이어에 노출하지
+// 않는다(자꾸 되살아나던 메타 표기 차단). 구현상태·드리프트 메타는 디자이너 도구(preview)에만.
+const codexHandlerSrc = readFileSync("src/gomdoriCodexHandler.ts", "utf8");
+assert.ok(!/v1 현황|v2 구현 스펙|entry\.v1|entry\.v2/.test(codexHandlerSrc), "/도감 플레이어 표면에 v1/v2 구현 스펙 노출 금지(Phase 3)");
 
 console.log("Gomdori 도감 데이터 checks passed");

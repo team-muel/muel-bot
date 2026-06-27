@@ -63,7 +63,7 @@ function factionListMessage(faction: CodexFaction) {
       type: "info-card",
       tone: FACTION_TONE,
       title: `${label} 도감`,
-      body: `${label} 진영의 직업 ${entries.length}종. 아래에서 직업을 고르면 정본 능력과 구현 스펙을 볼 수 있어.`,
+      body: `${label} 진영의 직업 ${entries.length}종. 아래에서 직업을 고르면 능력을 자세히 볼 수 있어.`,
       fields,
       footer: "Gomdori 도감 · 자세히 볼 직업을 선택하세요",
       selectMenu: {
@@ -101,11 +101,9 @@ function detailMessage(entry: CodexEntry) {
       tone: FACTION_TONE,
       title: `${entry.name} · ${entry.title}`,
       body: `${label}${entry.slot ? ` · ${entry.slot}` : ""}\n${entry.summary}`,
-      fields: [
-        ...abilityFields,
-        { name: "▼ v1 현황", value: entry.v1.slice(0, 1024) },
-        { name: "▼ v2 구현 스펙", value: entry.v2.slice(0, 1024) },
-      ],
+      // 플레이어 표면(/도감)은 캐논 능력만 — 과거 노출하던 구현-스펙 필드 제거(2026-06-27, Phase 3).
+      // 구현상태·드리프트 메타는 디자이너 도구(preview DesignInventory)에만.
+      fields: abilityFields,
       footer: entry.vault ? `정본: ${entry.vault}` : "Gomdori 도감",
     },
   ]);
