@@ -325,22 +325,28 @@ export async function submitMatchAction(
     if (target) {
       const disguised = ((target.engine_state as { counters?: { disguised?: number } } | null)?.counters?.disguised ?? 0) > 0;
       const clue = (player.engine_state as { counters?: { clue?: number } } | null)?.counters?.clue ?? 0;
+      // 단서 임계(canon [천사]3): "단서가 (5-탈락자)만큼 모이면 사건의 전말" — 탈락자가 늘수록 임계가
+      // 낮아진다(최소 1). 기존 고정 3 근사 → 동적 임계로 정정.
+      const { count: dordanDead } = await supabase
+        .from("match_players").select("user_id", { count: "exact", head: true })
+        .eq("match_id", matchId).eq("alive", false);
+      const clueThreshold = Math.max(1, 5 - (dordanDead ?? 0));
       // 사탄의 마 전역 판정 우선(천사팀 전원 투표가치 0 → 모든 조사가 '악마', 변신·정밀조사 무시).
       // per-target(canon): 전원이 아니어도 *그 대상* 투표가치가 0 이하면 그 한 명은 악마로 판정.
       if (await isAngelTeamVoteFullySuppressed(supabase, matchId)) {
         investigationResult = "demon";
       } else if (isTargetVoteSuppressed(target.engine_state as { bonusVoteValue?: number; counters?: Record<string, number> } | null)) {
         investigationResult = "demon";
-      } else if (clue >= 3 && !disguised) {
+      } else if (clue >= clueThreshold && !disguised) {
         investigationResult = effectiveRole(target);
       } else {
         investigationResult = (isDemonKillerRole(effectiveRole(target)) && !disguised) ? "demon" : "angel";
       }
 
-      // 사건의 전말(도르단): 정밀 조사(clue≥3)로 악마 처치자를 정확히 식별하면 다음 아침을
-      // 생략하고 그 악마를 곧장 판결대에 세운다. matches.engine_state.caseClosed 에 기록 →
+      // 사건의 전말(도르단): 정밀 조사(clue≥clueThreshold = 5-탈락자)로 악마 처치자를 정확히 식별하면
+      // 다음 아침을 생략하고 그 악마를 곧장 판결대에 세운다. matches.engine_state.caseClosed 에 기록 →
       // phase-advance(night_resolve)가 읽어 verdict 를 강제(전원 통지·아침 생략·판결). canon §도르단.
-      if (effectiveRole(player) === "dordan" && clue >= 3 && !disguised && isDemonKillerRole(effectiveRole(target))) {
+      if (effectiveRole(player) === "dordan" && clue >= clueThreshold && !disguised && isDemonKillerRole(effectiveRole(target))) {
         const { data: m } = await supabase.from("matches").select("engine_state").eq("id", matchId).single();
         const es = ((m?.engine_state ?? {}) as Record<string, unknown>);
         await supabase

@@ -1100,7 +1100,8 @@ assert.match(roles, /id: "arthur_emberblade"[\s\S]*?type: "Protect"/, "아서 �
 assert.match(roles, /id: "luru_charm"[\s\S]*?type: "Charm"/, "루루 매료");
 assert.match(roles, /id: "luru_sonata"[\s\S]*?requiresCounter: \{ key: "charmCount", min: 3/, "루루 소나타(매료 3 게이트)");
 assert.match(roles, /id: "luru_sonata"/, "루루 소나타 능력 정의(단일 출처)");
-assert.match(matchAction, /clue >= 3 && !disguised/, "도르단 단서 3 — 정밀 조사");
+assert.match(readFileSync("supabase/functions/_shared/match-action-core.ts", "utf8"), /clue >= clueThreshold && !disguised/, "도르단 단서 — 동적 임계(5-탈락자) 정밀 조사");
+assert.match(readFileSync("supabase/functions/_shared/match-action-core.ts", "utf8"), /clueThreshold = Math\.max\(1, 5 - /, "도르단 단서 임계 = max(1, 5-탈락자)");
 const batch2cMig = readFileSync("supabase/migrations/20260614160000_gomdori_batch_tier2c.sql", "utf8");
 assert.match(batch2cMig, /'luru_sonata'/, "마이그레이션 — 소나타");
 const malenElusiveMig = readFileSync("supabase/migrations/20260617190000_gomdori_malen_elusive.sql", "utf8");
