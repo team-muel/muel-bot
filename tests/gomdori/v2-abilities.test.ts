@@ -2500,9 +2500,25 @@ assert.match(habMig, /'demon_deduce'/, "마이그레이션 — 악마 역추리"
   assert.equal(r.newState.players.a.alive, false, "annihilated — 부활 불가");
 }
 
+// --- 헬렌 황금빛 수면: 투표가치 모두 소모(누적 base 로) + 깨면 +1(net base+1) + 접선 통지 ---
+{
+  const helen: PlayerState = player("helen", "helen", "angel");
+  // 누적 투표가치(voteWeightBonus +3, bonusVoteValue +2)를 쌓은 대상.
+  const rich: PlayerState = { ...player("rich", "citizen", "angel"), bonusVoteValue: 2, counters: { voteWeightBonus: 3 } };
+  const r = resolveNightActions(emptyState(
+    { helen, rich },
+    [{ sourceUserId: "helen", targetUserId: "rich", actionType: "helen_sleep", priority: 3 }],
+  ));
+  // ConsumeVoteValue(0) 후 GrantCount +1 → net voteWeightBonus 1, bonusVoteValue 소모.
+  assert.equal(r.newState.players.rich.counters.voteWeightBonus ?? 0, 1, "누적 소모 후 깨면 +1 = net base+1");
+  assert.equal(r.newState.players.rich.bonusVoteValue ?? 0, 0, "bonusVoteValue 소모");
+  assert.ok(r.events.some((e: any) => e.type === "vote_value_consumed" && e.payload?.user_id === "rich"), "접선 통지(vote_value_consumed)");
+}
+
 // 헬렌 v2 — 계약 정규식.
 assert.match(roles, /id: "helen_sleep"[\s\S]*?allowRememberedDead: true/, "헬렌 sleep — allowRememberedDead 플래그");
 assert.match(roles, /id: "helen_sleep"[\s\S]*?tag: "remembered"/, "헬렌 sleep — remembered 표식 부여");
+assert.match(roles, /id: "helen_sleep"[\s\S]*?type: "ConsumeVoteValue"/, "헬렌 sleep — 투표가치 소모(접선)");
 const engineSrcHelen = readFileSync("supabase/functions/_shared/engine/engine.ts", "utf8");
 assert.match(engineSrcHelen, /remembered_sleep/, "engine Sleep — remembered 부활 분기");
 

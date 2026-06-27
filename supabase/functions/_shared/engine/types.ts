@@ -68,6 +68,9 @@ export interface Effect {
   // Rebrand(대악마 낙인): 대상의 currentRole 을 임의의 천사 직업으로 재배정(직업 삭제→비밀 재배정).
   // Eclipse(팬텀 일식): self.counters.eclipse=1 — phase-advance 가 다음 아침을 밤으로 바꾸고 팬텀 소멸.
   // Cleanse(세이카 초신성·우노 사명): 대상의 라운드성/지연 부정 효과를 모두 제거(지속 자석·마크 제외).
+  // ConsumeVoteValue(헬렌 황금빛 수면): 대상의 *누적* 투표가치(voteWeightBonus·bonusVoteValue·
+  //   양수 voteValueMod)를 base 로 소모한다(canon "투표가치 모두 소모하여 헬렌과 접선"). 음수
+  //   디버프는 유지. 같은 능력의 후속 GrantCount +1 이 깨면 회복분을 얹는다(net base+1).
   // Haunt(말렌 혼령 방출 다단계): 1회차 → 혼령 표식(haunted). 2회차(표식 보유) → 영에게 잠식
   //   = 탈락 + 대상의 투표가치를 말렌에게 조공(source.voteWeightBonus +1). 표식 소비.
   // Verdict(아서 해오름 판정): 대상이 부정 효과를 적용한 적 있으면(counters.tainted) '타락',
@@ -102,7 +105,7 @@ export interface Effect {
   //   modifiers.nightSkipped=1 을 세워, priority 0 이라 가장 먼저 처리된 뒤 후속 액션들이 액션
   //   루프 상단 가드에서 일괄 건너뛰어진다(봉인류 전역 취소 근사). canon "다음 밤으로 넘김"의 진짜
   //   replay 와 "잔여 채 승리 시 조력자 패배" win 조항은 후속(현재는 그 밤 취소만).
-  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush" | "Shatter" | "LinkFate" | "Manifest" | "SkipNight";
+  type: "ModifyVoteValue" | "ModifyReceivedVote" | "ModifyReceivedSuspicion" | "AddTag" | "RemoveTag" | "Kill" | "Annihilate" | "Heal" | "Protect" | "RevealRole" | "ChangeFaction" | "Silence" | "Corrupt" | "GrantCount" | "Charm" | "Nightmare" | "Possess" | "Disguise" | "Rebrand" | "Eclipse" | "Cleanse" | "ConsumeVoteValue" | "Sleep" | "Nullify" | "Haunt" | "Verdict" | "DelaySilence" | "Absorb" | "DelayAction" | "Charge" | "Deduce" | "SummonCorpse" | "VoteCrush" | "Shatter" | "LinkFate" | "Manifest" | "SkipNight";
   // Charge 전용: 대상이 악마일 때 쓰는 충전량(미지정 시 amount).
   demonAmount?: number;
   // 태그 게이트(미즐렛 고급 와인): 대상에게 tag 가 있으면(onlyIfTargetTag) / 없으면(skipIfTargetTag 는

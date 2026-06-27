@@ -620,13 +620,15 @@ export const CORE_ROLES: RoleDefinition[] = [
     actions: {
       night: [
         { id: "helen_revive", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
-        // 황금빛 수면(v2, canon [천사]17): 대상 수면 + 'remembered'(영혼 기억) + 깨면 투표가치 +1
-        // (voteWeightBonus, canon "밤이 지나면 깨어나며 투표가치 1 증가"). 연속 같은 대상 2번 불가
-        // (noConsecutiveTarget). allowRememberedDead 로 탈락 후에도 지정 가능(기억된 플레이어 재수면 →
-        // Sleep case 가 부활 — "수면으로 깨면 복귀"). 투표가치 모두 소모·헬렌 접선·지정 대상 +1 은 후속.
+        // 황금빛 수면(v2, canon [천사]17): 대상 수면 + 'remembered'(영혼 기억) + 투표가치 모두 소모하여
+        // 헬렌과 접선(ConsumeVoteValue → 누적 가치 base 소모 + 대상에게 접선 통지) + 깨면 투표가치 +1
+        // (GrantCount voteWeightBonus, 소모 뒤라 net base+1 — canon "깨어나면 투표가치 +1"). 연속 같은
+        // 대상 2번 불가(noConsecutiveTarget). allowRememberedDead 로 탈락 후에도 지정 가능(기억된 플레이어
+        // 재수면 → Sleep case 가 부활). '지정 대상' 해석은 현행(+1 본인) 유지.
         { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, allowRememberedDead: true, noConsecutiveTarget: true, effects: [
           { type: "Sleep", target: "Target" },
           { type: "AddTag", target: "Target", tag: "remembered" },
+          { type: "ConsumeVoteValue", target: "Target" },
           { type: "GrantCount", target: "Target", tag: "voteWeightBonus", amount: 1 },
         ] },
         // 자유로운 새(v2, 1회, canon [천사]17): 탈락자를 복귀시키고 '황금빛 수면'(remembered)을 부여 —
