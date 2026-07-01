@@ -12,6 +12,7 @@ import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
 import { logMuelAiEvent, classifyAiError } from './muelAiEvents.js';
 import { classifyMentionIntent, type MuelRouterIntent } from './muelRouter.js';
+import { intentHasSurfaceCue } from './hubResponsiveness.js';
 import { acquireMentionSlot } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
 import { REACTION_DONE, REACTION_QUESTION, REACTION_SEEN, tagMessage } from './agentReactions.js';
@@ -52,13 +53,6 @@ const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'memory_query',
   'meta',
 ]);
-
-// PA-0: a bare YouTube/link share gets classified as news_query but should NOT
-// trigger a reflexive reply — only engage news_query when it reads as a question.
-const looksLikeNewsQuestion = (text: string): boolean => {
-  if (/[?？]/.test(text)) return true;
-  return /(뭐|무슨|어때|어떤|추천|있어|있나|알려|찾아|봤|뉴스|소식|영상|업로드|recommend|news)/i.test(text);
-};
 
 const pickStringField = (record: Record<string, unknown> | undefined, key: string): string | null => {
   if (!record) return null;
@@ -325,13 +319,15 @@ export const handleHubChannelMessage = async (
       discordUserId: userId,
     });
 
-    const newsReflexSuppressed =
-      decision?.intent === 'news_query' && !looksLikeNewsQuestion(userText);
+    const responsive = !!decision && RESPONSIVE_INTENTS.has(decision.intent);
+    // A responsive intent only fires when the text shows a real surface cue that
+    // it's FOR Muel — not peer banter the router mislabeled with high confidence.
+    const reflexSuppressed = responsive && !intentHasSurfaceCue(decision!.intent, userText);
     if (
       !decision ||
-      !RESPONSIVE_INTENTS.has(decision.intent) ||
+      !responsive ||
       decision.confidence < responsiveMin ||
-      newsReflexSuppressed
+      reflexSuppressed
     ) {
       void logMuelAgentAction(supabase, {
         triggerSource: 'allowlist_channel',
@@ -345,7 +341,7 @@ export const handleHubChannelMessage = async (
           confidence: decision?.confidence ?? null,
           intent: decision?.intent ?? null,
           channelResponsiveMin: responsiveMin,
-          reason: newsReflexSuppressed ? 'news_query_link_share_suppressed' : 'intent_not_responsive_or_low_confidence',
+          reason: reflexSuppressed ? 'responsive_intent_without_surface_cue' : 'intent_not_responsive_or_low_confidence',
         },
       });
       return;
