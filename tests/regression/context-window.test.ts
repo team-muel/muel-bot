@@ -67,6 +67,10 @@ await check('lightweight turns get a small context-message budget and skip memor
   assert.equal(window.messages.length, 4);
   assert.equal(window.diagnostics.memoryIncluded, false);
   assert.equal(window.diagnostics.memorySkippedReason, 'lightweight');
+  // Efficiency: the full capability registry is dropped on lightweight turns,
+  // replaced by a one-line boundary floor.
+  assert.equal(window.diagnostics.sections.includes('capabilities'), false);
+  assert.ok(window.diagnostics.sections.includes('capabilitiesCompact'));
 });
 
 await check('context mode classification keeps recall/catchup/admin turns distinct', () => {
