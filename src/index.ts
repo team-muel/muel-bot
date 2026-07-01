@@ -471,10 +471,12 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (message.content) {
     pushMessage(message.channelId, {
+      id: message.id,
       authorId: message.author.id,
       authorName: message.author.displayName ?? message.author.username,
       content: message.content,
       timestamp: message.createdTimestamp,
+      replyToId: message.reference?.messageId ?? undefined,
     });
     try {
       observeCommunityMessage(getSupabaseClient(), message);
