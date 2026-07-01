@@ -6,6 +6,8 @@ import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
 import { getPreflightGuard } from './capabilities.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
+import { splitForDiscord } from './rendering/discordText.js';
+import { DISCORD_LIMITS } from './rendering/discordLimits.js';
 import {
   getFallbackTextModel,
   getGeminiTextModel,
@@ -391,13 +393,17 @@ export const generateMuelReply = async (
   throw new Error(`LLM All Failed: ${providerFailures.join(', ')}`);
 };
 
-export const toDiscordReply = (text: string): string => {
+/**
+ * Split a model reply into Discord-sendable chunks. Unlike the old truncating
+ * variant, this DROPS NOTHING and never cuts inside a URL — long replies are
+ * carried across multiple messages / a thread by the caller. Always returns at
+ * least one chunk.
+ */
+export const toDiscordReplyChunks = (text: string): string[] => {
   const sanitized = sanitizeModelOutput(text) || '응답을 정리하는 중 문제가 생겼어. 다시 짧게 물어봐줘.';
-  if (sanitized.length <= 1900) return sanitized;
-  const head = sanitized.slice(0, 1890);
-  const marks = ['. ', '? ', '! ', '。'];
-  let cut = -1;
-  for (const m of marks) cut = Math.max(cut, head.lastIndexOf(m));
-  const body = cut > 1500 ? head.slice(0, cut + 1).trimEnd() : head.trimEnd();
-  return `${body}\n\n(메시지가 길어 일부만 표시했어.)`;
+  const chunks = splitForDiscord(sanitized, DISCORD_LIMITS.content);
+  return chunks.length > 0 ? chunks : [sanitized];
 };
+
+/** Back-compat single-string reply (first chunk only). Prefer the chunked API. */
+export const toDiscordReply = (text: string): string => toDiscordReplyChunks(text)[0]!;

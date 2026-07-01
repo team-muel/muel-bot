@@ -3,6 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionF
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { activateHubChannel, deactivateHubChannel } from './hubChannels.js';
 import { logMuelAgentAction } from './agentActions.js';
+import { flavorError } from './errorFlavor.js';
 
 const PREFIX = 'muel:action';
 const HUB_ON = 'hub_on';
@@ -131,7 +132,7 @@ export const handleMuelActionButton = async (
       metadata: { triggerKind: 'action_confirmation' },
     });
   } catch (error) {
-    await interaction.reply({ content: '작업 실행에 실패했어. 잠시 뒤 다시 시도해줘.', flags: [MessageFlags.Ephemeral] }).catch(() => {});
+    await interaction.reply({ content: flavorError(error), flags: [MessageFlags.Ephemeral] }).catch(() => {});
     void logMuelAgentAction(supabase, {
       triggerSource: 'mention',
       triggerDetail: parsed.kind,

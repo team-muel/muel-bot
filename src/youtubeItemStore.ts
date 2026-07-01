@@ -87,6 +87,45 @@ export async function upsertYouTubeItem(
   }
 }
 
+/**
+ * Atomically claim a YouTube/community item for delivery, keyed per source.
+ *
+ * Returns true only for the caller that actually inserted the ledger row (first
+ * delivery); false if the item was already claimed/delivered. This is the
+ * idempotency gate that makes duplicate posts impossible even across crashes,
+ * job retries, or concurrent pollers — call it right before sending to Discord.
+ *
+ * Fails OPEN (returns true) on a ledger error so a transient DB hiccup never
+ * silently blocks a legitimate delivery; the cheap last_post_id check still
+ * guards the common repeat case.
+ */
+export async function claimYouTubeDelivery(
+  supabase: SupabaseClient,
+  input: { sourceId: number; youtubeId: string; kind: string; channelId?: string | null },
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('muel_youtube_deliveries')
+    .upsert(
+      {
+        source_id: input.sourceId,
+        youtube_id: input.youtubeId,
+        kind: input.kind,
+        channel_id: input.channelId ?? null,
+        delivered_at: new Date().toISOString(),
+      },
+      { onConflict: 'source_id,youtube_id', ignoreDuplicates: true },
+    )
+    .select('youtube_id');
+
+  if (error) {
+    console.warn('[youtube] delivery claim failed (continuing)', error);
+    return true;
+  }
+  // ignoreDuplicates => conflicting rows are NOT returned. A non-empty result
+  // means THIS caller inserted the row (first delivery); empty means it existed.
+  return Array.isArray(data) && data.length > 0;
+}
+
 export async function getYouTubeItemByOrigin(
   supabase: SupabaseClient,
   originTable: string,

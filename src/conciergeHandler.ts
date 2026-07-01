@@ -4,7 +4,9 @@ import { MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.
 import { getSupabaseClient } from './supabase.js';
 import { prepareChatTurn, getUserHistorySummary } from './muelConversationStore.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
-import { generateMuelReply, toDiscordReply } from './muelAgent.js';
+import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
+import { deliverOverflowChunks } from './rendering/discordDelivery.js';
+import { flavorError } from './errorFlavor.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
@@ -161,7 +163,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] activate failed', error);
       await interaction.editReply({
-        content: '허브 활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
+        content: flavorError(error),
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -197,7 +199,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] deactivate failed', error);
       await interaction.editReply({
-        content: '허브 비활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
+        content: flavorError(error),
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -245,7 +247,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] list failed', error);
       await interaction.editReply({
-        content: '허브 목록 조회에 실패했어.',
+        content: flavorError(error),
       }).catch(() => {});
     }
     return;
@@ -412,15 +414,21 @@ export const handleHubChannelMessage = async (
       ),
     ]);
 
+    const replyChunks = toDiscordReplyChunks(reply.text);
     const sent = await message.reply({
-      content: toDiscordReply(reply.text),
+      content: replyChunks[0]!,
       allowedMentions: { parse: [], repliedUser: false },
     }).catch((err) => {
       console.warn('[hub] message.reply failed', err);
       return null;
     });
 
-    if (sent) void tagMessage(message, REACTION_DONE);
+    if (sent) {
+      if (replyChunks.length > 1) {
+        await deliverOverflowChunks(message, sent, replyChunks.slice(1), { threadName: '이어서 말할게' });
+      }
+      void tagMessage(message, REACTION_DONE);
+    }
 
     const meta = (reply.metadata ?? {}) as Record<string, unknown>;
     const taskType = pickStringField(meta, 'taskType') ?? 'chat';
