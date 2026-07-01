@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatCapabilityRegistryForPrompt } from './capabilities.js';
+import { CAPABILITY_BOUNDARIES_COMPACT, formatCapabilityRegistryForPrompt } from './capabilities.js';
 import { retrieveRelevantMemories } from './memoryRetriever.js';
 import type { UIMessage, UserHistorySummary } from './muelConversationStore.js';
 
@@ -182,8 +182,23 @@ export const buildMuelContextWindow = async (
   const lightweightTurn = mode === 'lightweight';
   const toolsEnabled = shouldEnableTools(opts.userText);
   const maxMessages = getContextMessageBudget(mode);
-  const systemParts = [opts.baseSystemPrompt, formatCurrentTime(), formatCapabilityRegistryForPrompt()];
-  const sections = ['base', 'time', 'capabilities'];
+  const systemParts = [opts.baseSystemPrompt, formatCurrentTime()];
+  const sections = ['base', 'time'];
+
+  // Efficiency: the full capability registry (~26 lines / ~940 tokens) is only
+  // relevant on substantive turns (tool use, help / meta / news / memory).
+  // Casual lightweight turns get a one-line boundary reminder instead — the
+  // deterministic preflight guard (getPreflightGuard, run at the top of
+  // generateMuelReply before any model call) still blocks the sensitive
+  // categories regardless of the prompt. Mirrors how memory / guildTopology are
+  // already gated to substantive turns.
+  if (lightweightTurn) {
+    systemParts.push(CAPABILITY_BOUNDARIES_COMPACT);
+    sections.push('capabilitiesCompact');
+  } else {
+    systemParts.push(formatCapabilityRegistryForPrompt());
+    sections.push('capabilities');
+  }
 
   if (opts.guildTopology) {
     systemParts.push('', opts.guildTopology);
