@@ -55,6 +55,8 @@ export const config = {
   // 개선용. mindlogic 이면 chat 레인만 MindLogic 게이트웨이의 Sonnet 계열로 라우팅.
   chatProvider: (optionalEnv('MUEL_CHAT_PROVIDER') ?? 'gemini') as 'gemini' | 'mindlogic',
   mindlogicChatModel: optionalEnv('MINDLOGIC_CHAT_MODEL') ?? 'claude-sonnet-5',
+  // 부팅 시 프로바이더 도달성 프로브(muel_ai_events source='healthcheck'). 비용 무시 가능.
+  enableProviderHealthcheck: booleanEnv('ENABLE_PROVIDER_HEALTHCHECK', true),
   nvidiaHeavyModel: optionalEnv('NVIDIA_HEAVY_MODEL') ?? 'deepseek-ai/deepseek-v4-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
