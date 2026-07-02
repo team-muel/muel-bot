@@ -7,6 +7,7 @@ import { insertWeaveNode } from './weaveNodes.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 import { repairJsonText } from './aiRepair.js';
+import { maybeUpdateSocialProfile } from './socialProfile.js';
 
 type MemoryWorkerStatus = {
   enabled: boolean;
@@ -126,6 +127,27 @@ export async function processMemoryJob(job: any) {
 
   if (!conversationText.trim()) return; // Nothing to analyze
 
+  // 메모 소유자 판정 — 심오사실 추출과 소셜 프로필(P5) 양쪽에서 쓰므로 먼저 계산.
+  // muel_chats.source_user_id 는 채널 스코프 chat 에서 NULL 인 경우가 많다 (운영 데이터에서 관찰).
+  // 메모의 실제 소유자 = 트리거 user 메시지 작성자 (metadata.discordUserId).
+  const resolveMemoOwnerId = (): string | null => {
+    const fromTrigger = (messages as Array<{ id: string; role: string; metadata?: { discordUserId?: string } }>)
+      .find((m) => m.id === messageId && m.role === 'user' && m.metadata?.discordUserId)?.metadata?.discordUserId;
+    if (fromTrigger) return String(fromTrigger);
+    const lastUser = [...(messages as Array<{ role: string; metadata?: { discordUserId?: string } }>)]
+      .reverse()
+      .find((m) => m.role === 'user' && m.metadata?.discordUserId);
+    return lastUser?.metadata?.discordUserId ? String(lastUser.metadata.discordUserId) : null;
+  };
+  const memoOwnerUserId = (chatData.source_user_id as string | null) ?? resolveMemoOwnerId();
+
+  // P5 소셜 프로필 — 대화를 읽는 김에 레지스터 요약 갱신(24h TTL, 실패 무해).
+  const ownerUserLines = (messages as Array<{ role: string; parts?: any[]; metadata?: { discordUserId?: string } }>)
+    .filter((m) => m.role === 'user' && (!memoOwnerUserId || String(m.metadata?.discordUserId ?? '') === String(memoOwnerUserId)))
+    .map((m) => m.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ') || '')
+    .filter((t) => t.trim().length > 0);
+  await maybeUpdateSocialProfile(supabase, extractModel, memoOwnerUserId, ownerUserLines);
+
   // 3. Generate Object
   const extractStartedAt = Date.now();
   let extractResult;
@@ -173,21 +195,8 @@ export async function processMemoryJob(job: any) {
   const object = extractResult.object;
   if (!object.memories || object.memories.length === 0) return;
 
-  const sourceUserId = chatData.source_user_id;
-
-  // muel_chats.source_user_id 는 채널 스코프 chat 에서 NULL 인 경우가 많다 (운영 데이터에서 관찰).
-  // 메모의 실제 소유자 = 트리거 user 메시지 작성자 (metadata.discordUserId). 이게 weave
-  // private 그래프의 owner_user_id 가 된다. 없으면 owner-less 노드 → 개인 그래프에 안 뜸.
-  const resolveMemoOwnerId = (): string | null => {
-    const fromTrigger = (messages as Array<{ id: string; role: string; metadata?: { discordUserId?: string } }>)
-      .find((m) => m.id === messageId && m.role === 'user' && m.metadata?.discordUserId)?.metadata?.discordUserId;
-    if (fromTrigger) return String(fromTrigger);
-    const lastUser = [...(messages as Array<{ role: string; metadata?: { discordUserId?: string } }>)]
-      .reverse()
-      .find((m) => m.role === 'user' && m.metadata?.discordUserId);
-    return lastUser?.metadata?.discordUserId ? String(lastUser.metadata.discordUserId) : null;
-  };
-  const memoOwnerUserId = sourceUserId ?? resolveMemoOwnerId();
+  // (메모 소유자 memoOwnerUserId 는 위에서 이미 판정 — weave private 그래프의
+  // owner_user_id 가 된다. 없으면 owner-less 노드 → 개인 그래프에 안 뜸.)
 
   // Fetch existing active memories for this user to deduplicate/merge
   const { data: userMemories, error: userMemoriesError } = await supabase.rpc('fetch_active_memories_by_user', {

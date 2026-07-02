@@ -11,6 +11,7 @@ import { sanitizeModelOutput } from './responseSanitizer.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import { DISCORD_SAFE, truncateForDiscord } from './rendering/discordLimits.js';
 import { isPostgresConstraintError, postgresErrorClass, postgresErrorMessage } from './supabaseErrors.js';
+import { flavorError } from './errorFlavor.js';
 
 /**
  * "이 소식 더 알아보기" → two-step, grounding-first flow.
@@ -340,7 +341,7 @@ export const handleResearchDeepButton = async (
       await interaction.editReply({ content: '딥리서치 시작이 DB 제약조건에 막혔어. 운영자가 스키마 상태를 확인해야 해.' }).catch(() => {});
     } else {
       console.error('[research-deep] status update failed', updErr);
-      await interaction.editReply({ content: '딥리서치 시작에 실패했어. 잠시 뒤 다시 시도해줘.' }).catch(() => {});
+      await interaction.editReply({ content: flavorError(updErr) }).catch(() => {});
     }
     return;
   }

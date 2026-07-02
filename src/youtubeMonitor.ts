@@ -1,4 +1,4 @@
-import { Client, ThreadAutoArchiveDuration, Message } from 'discord.js';
+import { Client, Message } from 'discord.js';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
@@ -14,7 +14,9 @@ import { enqueueJob } from './muelJobs.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 import { fetchYouTubeChannelMetadata, fetchYouTubeVideoMetadata, type YouTubeChannelMetadata, type YouTubeVideoMetadata } from './youtubeMetadataClient.js';
-import { buildVideoItemInput, upsertYouTubeItem } from './youtubeItemStore.js';
+import { buildVideoItemInput, claimYouTubeDelivery, upsertYouTubeItem } from './youtubeItemStore.js';
+import { postOverflowToThread } from './rendering/discordDelivery.js';
+import { safeBreakIndex } from './rendering/discordText.js';
 
 type SourceRow = {
   id: number;
@@ -204,42 +206,18 @@ const truncate = (input: string, maxLength: number): string => {
   return `${text.slice(0, Math.max(1, maxLength - 1))}...`;
 };
 
-const splitDiscordMessages = (input: string, maxLength = 1800): string[] => {
-  const text = String(input || '').trim();
-  if (!text) return [];
-
-  const chunks: string[] = [];
-  let remaining = text;
-  while (remaining.length > maxLength) {
-    const preferredBreak = remaining.lastIndexOf('\n', maxLength);
-    const splitAt = preferredBreak > 200 ? preferredBreak : maxLength;
-    chunks.push(remaining.slice(0, splitAt).trim());
-    remaining = remaining.slice(splitAt).trim();
-  }
-  if (remaining) chunks.push(remaining);
-  return chunks;
-};
-
 const splitCommunityBody = (input: string): { preview: string; overflow: string } => {
-  const text = String(input || '').trim();
+  const text = String(input || '').replace(/\r\n/g, '\n').trim();
   const maxPreviewLength = 1950;
   if (text.length <= maxPreviewLength) {
     return { preview: text, overflow: '' };
   }
 
-  const newlineBreak = text.lastIndexOf('\n', maxPreviewLength);
-  if (newlineBreak > 400) {
-    return {
-      preview: text.slice(0, newlineBreak).trim(),
-      overflow: text.slice(newlineBreak).trim(),
-    };
-  }
-
-  const spaceBreak = text.lastIndexOf(' ', maxPreviewLength);
-  const splitAt = spaceBreak > 400 ? spaceBreak : maxPreviewLength;
+  // URL-safe boundary: never split inside a link when carving preview/overflow.
+  const at = safeBreakIndex(text, maxPreviewLength);
   return {
-    preview: text.slice(0, splitAt).trim(),
-    overflow: text.slice(splitAt).trim(),
+    preview: text.slice(0, at).trim(),
+    overflow: text.slice(at).trim(),
   };
 };
 
@@ -411,31 +389,6 @@ const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow
   ].filter(Boolean).join('\n');
 };
 
-const createThreadFromMessage = async (
-  message: { startThread?: (options: { name: string; autoArchiveDuration: ThreadAutoArchiveDuration; reason?: string }) => Promise<{ send: (content: string) => Promise<unknown> }> },
-  name: string,
-  body: string,
-): Promise<void> => {
-  if (typeof message.startThread !== 'function') {
-    return;
-  }
-
-  try {
-    const thread = await message.startThread({
-      name,
-      autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
-      reason: 'Muel YouTube procurement thread',
-    });
-
-    const chunks = splitDiscordMessages(body);
-    for (const chunk of chunks.length > 0 ? chunks : ['내용 없음']) {
-      await thread.send(chunk);
-    }
-  } catch (error) {
-    console.warn('[youtube] thread creation failed', error);
-  }
-};
-
 const updateRow = async (row: SourceRow, latest: LatestEntry): Promise<void> => {
   const common = {
     last_check_status: 'success',
@@ -538,6 +491,22 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
   }
 
+  // Idempotency gate: atomically claim this item BEFORE sending. If it was
+  // already delivered (crash-after-send, job retry, or a concurrent poller) the
+  // claim fails and we skip re-sending — this is the fix for duplicate posts.
+  // We still persist the cheap marker so the fast path skips it next tick.
+  const deliveryKind = mode === 'posts' ? 'community_post' : (isShortsEntry(latest) ? 'shorts' : 'video');
+  const claimed = await claimYouTubeDelivery(getSupabaseClient(), {
+    sourceId: row.id,
+    youtubeId: latest.id,
+    kind: deliveryKind,
+    channelId: row.channel_id,
+  });
+  if (!claimed) {
+    await updateRow(row, latest);
+    return 'skipped';
+  }
+
   if (mode === 'posts') {
     const { preview, overflow } = splitCommunityBody(latest.content);
     
@@ -606,7 +575,9 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     });
 
     if (overflow) {
-      await createThreadFromMessage(sentMessage, threadTitle('이어서 보기', latest), overflow);
+      await postOverflowToThread(sentMessage, threadTitle('이어서 보기', latest), overflow, {
+        footer: displayLink(latest),
+      });
     }
 
   } else {

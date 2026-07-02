@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatCapabilityRegistryForPrompt } from './capabilities.js';
-import { retrieveRelevantMemories } from './memoryRetriever.js';
+import { CAPABILITY_BOUNDARIES_COMPACT, formatCapabilityRegistryForPrompt } from './capabilities.js';
+import { retrieveRelevantMemories, retrieveDirectMemoText } from './memoryRetriever.js';
+import { fetchSocialProfileText } from './socialProfile.js';
 import type { UIMessage, UserHistorySummary } from './muelConversationStore.js';
 
 export type MentionedUserContext = {
@@ -19,6 +20,8 @@ export type MuelContextWindowDiagnostics = {
   memoryIncluded: boolean;
   memorySkippedReason: 'lightweight' | 'missing-user' | 'empty' | 'error' | null;
   sections: string[];
+  /** 섹션별 문자 수 — 컨텍스트 비용 회계용(muel_ai_events.metadata 로 적재). */
+  sectionChars: Record<string, number>;
 };
 
 export type MuelContextWindow = {
@@ -43,6 +46,8 @@ export type BuildMuelContextWindowOptions = {
   mentionedUsers?: MentionedUserContext[];
   guildTopology?: string;
   sourceUserId?: string;
+  /** P4 social-read 전처리 판독 섹션(포맷 완료 텍스트). 휘발 섹션으로 후미 배치. */
+  socialReadSection?: string;
 };
 
 const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
@@ -182,33 +187,70 @@ export const buildMuelContextWindow = async (
   const lightweightTurn = mode === 'lightweight';
   const toolsEnabled = shouldEnableTools(opts.userText);
   const maxMessages = getContextMessageBudget(mode);
-  const systemParts = [opts.baseSystemPrompt, formatCurrentTime(), formatCapabilityRegistryForPrompt()];
-  const sections = ['base', 'time', 'capabilities'];
 
-  if (opts.guildTopology) {
-    systemParts.push('', opts.guildTopology);
-    sections.push('guildTopology');
+  // 섹션 조립 — *캐시 친화 순서*: 정적 프리픽스(베이스+능력)를 앞에 고정하고,
+  // 휘발 섹션(채널 활동, 현재 시각)을 뒤로 보낸다. 이전에는 CURRENT TIME 이
+  // 2번째라 분 단위로 프리픽스가 바뀌어 프로바이더의 암묵적 프롬프트 캐시가
+  // 매 턴 깨졌다. 시맨틱은 동일 — 순서만 안정→휘발로 재배열.
+  const systemParts: string[] = [];
+  const sections: string[] = [];
+  const sectionChars: Record<string, number> = {};
+  const pushSection = (name: string, text: string, blankBefore = true): void => {
+    if (!text) return;
+    if (blankBefore && systemParts.length > 0) systemParts.push('');
+    systemParts.push(text);
+    sections.push(name);
+    sectionChars[name] = text.length;
+  };
+
+  pushSection('base', opts.baseSystemPrompt, false);
+
+  // Efficiency: the full capability registry (~26 lines / ~940 tokens) is only
+  // relevant on substantive turns (tool use, help / meta / news / memory).
+  // Casual lightweight turns get a one-line boundary reminder instead — the
+  // deterministic preflight guard (getPreflightGuard, run at the top of
+  // generateMuelReply before any model call) still blocks the sensitive
+  // categories regardless of the prompt.
+  if (lightweightTurn) {
+    pushSection('capabilitiesCompact', CAPABILITY_BOUNDARIES_COMPACT, false);
+  } else {
+    pushSection('capabilities', formatCapabilityRegistryForPrompt(), false);
   }
-  if (opts.channelActivity) {
-    systemParts.push('', opts.channelActivity);
-    sections.push('channelActivity');
+
+  if (opts.guildTopology) pushSection('guildTopology', opts.guildTopology);
+
+  pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName));
+
+  // P5 소셜 프로필 — 유저의 대화 레지스터(반말/드립 성향 등). 잡담 개인화 재료라
+  // lightweight 턴에도 주입한다(단일 select, 저비용·실패 무해).
+  if (opts.sourceUserId) {
+    const profileText = await fetchSocialProfileText(opts.supabase, opts.sourceUserId, opts.authorName);
+    if (profileText) pushSection('socialProfile', profileText);
   }
 
-  systemParts.push('', formatUserHistory(opts.userHistory, opts.authorName));
-  sections.push('userHistory');
+  pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? []));
 
-  const mentionedSection = formatMentionedUsers(opts.mentionedUsers ?? []);
-  if (mentionedSection) {
-    systemParts.push('', mentionedSection);
-    sections.push('mentionedUsers');
-  }
-
+  // Memory — lightweight 턴은 직접 지침(muel_user_memos)만 저비용 주입(임베딩 X),
+  // 비-lightweight 턴은 직접 지침 + 의미 기반 장기 기억(임베딩 유사도) 풀 경로.
+  // 이전에는 lightweight 에서 전부 스킵 → 실트래픽이 거의 전부 lightweight 라
+  // 30일간 retrieval 0건(읽기 경로 사망)이었다.
   let memoryIncluded = false;
   let memorySkippedReason: MuelContextWindowDiagnostics['memorySkippedReason'] = null;
   if (!opts.sourceUserId) {
     memorySkippedReason = 'missing-user';
   } else if (lightweightTurn) {
-    memorySkippedReason = 'lightweight';
+    try {
+      const directText = await retrieveDirectMemoText(opts.supabase, opts.sourceUserId);
+      if (directText) {
+        pushSection('memoryDirect', directText);
+        memoryIncluded = true;
+      } else {
+        memorySkippedReason = 'empty';
+      }
+    } catch (err) {
+      memorySkippedReason = 'error';
+      console.warn('[muel-agent] direct memo retrieval failed, proceeding without', err);
+    }
   } else {
     try {
       const memoryContext = await retrieveRelevantMemories(opts.supabase, {
@@ -216,8 +258,7 @@ export const buildMuelContextWindow = async (
         query: opts.userText,
       });
       if (memoryContext) {
-        systemParts.push('', memoryContext);
-        sections.push('memory');
+        pushSection('memory', memoryContext);
         memoryIncluded = true;
       } else {
         memorySkippedReason = 'empty';
@@ -231,15 +272,18 @@ export const buildMuelContextWindow = async (
   const { messages, hasImage } = buildConversationMessages(opts.history, maxMessages, opts.authorName);
 
   if (hasImage) {
-    systemParts.push(
-      '',
+    pushSection('imageInstruction', [
       '[이미지 처리] 너는 첨부된 이미지를 실제로 볼 수 있다. "이미지를 못 본다"거나 "텍스트로만 대화한다"고 말하지 마라 — 그건 거짓말이다. 첨부된 이미지가 있으면 본 내용을 설명해라.',
       '- 실존 인물이 누구인지(신원)는 식별하지 않는다. "누구인지까지는 말 못 해"라고 솔직히 밝히고, 보이는 것(장면·표정·복장·분위기)은 묘사해줘라.',
       '- 가상 캐릭터·작품의 "정확한 이름·누구인지"는 확실하지 않으면 단정하지 마라("이거 나잖아" 식 금지). 추측이면 "아마 ~인 것 같은데 확실친 않아"로만. 사물·일반 묘사는 자유롭게.',
       '- 흐릿하거나 안 보이는 글자·세부는 지어내지 마라. 모르면 솔직히 모른다고 해라.',
-    );
-    sections.push('imageInstruction');
+    ].join('\n'));
   }
+
+  // 휘발 섹션은 마지막 — 채널 활동(메시지마다 변동), 판독, 현재 시각(분마다 변동).
+  if (opts.channelActivity) pushSection('channelActivity', opts.channelActivity);
+  if (opts.socialReadSection) pushSection('socialRead', opts.socialReadSection);
+  pushSection('time', formatCurrentTime());
 
   const diagnostics = {
     mode,
@@ -250,6 +294,7 @@ export const buildMuelContextWindow = async (
     memoryIncluded,
     memorySkippedReason,
     sections,
+    sectionChars,
   };
 
   return {

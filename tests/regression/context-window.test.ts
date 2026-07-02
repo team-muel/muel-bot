@@ -65,8 +65,14 @@ await check('lightweight turns get a small context-message budget and skip memor
   assert.equal(window.lightweightTurn, true);
   assert.equal(window.diagnostics.maxMessages, 4);
   assert.equal(window.messages.length, 4);
+  // P3: lightweight 는 이제 *semantic* memory 만 스킵 — 직접 지침(직메모)은
+  // 저비용이라 시도한다. fakeSupabase 는 빈손이므로 'empty' 로 남는다.
   assert.equal(window.diagnostics.memoryIncluded, false);
-  assert.equal(window.diagnostics.memorySkippedReason, 'lightweight');
+  assert.equal(window.diagnostics.memorySkippedReason, 'empty');
+  // Efficiency: the full capability registry is dropped on lightweight turns,
+  // replaced by a one-line boundary floor.
+  assert.equal(window.diagnostics.sections.includes('capabilities'), false);
+  assert.ok(window.diagnostics.sections.includes('capabilitiesCompact'));
 });
 
 await check('context mode classification keeps recall/catchup/admin turns distinct', () => {
@@ -131,10 +137,17 @@ await check('system sections include caller-provided Discord context without raw
   });
 
   assert.equal(window.mode, 'normal');
-  assert.deepEqual(window.diagnostics.sections.slice(0, 3), ['base', 'time', 'capabilities']);
-  assert.ok(window.diagnostics.sections.includes('channelActivity'));
+  // P2 캐시 친화 순서: 정적 프리픽스(base→capabilities)가 앞, 휘발 섹션
+  // (channelActivity→time)이 맨 뒤 — CURRENT TIME 이 앞에 있으면 분 단위로
+  // 프리픽스가 바뀌어 프롬프트 캐시가 매 턴 깨진다.
+  assert.deepEqual(window.diagnostics.sections.slice(0, 2), ['base', 'capabilities']);
+  assert.equal(window.diagnostics.sections[window.diagnostics.sections.length - 1], 'time');
+  assert.equal(window.diagnostics.sections[window.diagnostics.sections.length - 2], 'channelActivity');
   assert.ok(window.diagnostics.sections.includes('guildTopology'));
   assert.ok(window.diagnostics.sections.includes('mentionedUsers'));
+  // P2 섹션 회계: 섹션별 문자 수가 진단에 실린다.
+  assert.ok(window.diagnostics.sectionChars['base'] > 0);
+  assert.ok(window.diagnostics.sectionChars['time'] > 0);
   assert.match(window.system, /Tester: 3번 대화함/);
   assert.match(window.system, /Other: 1번 대화함/);
 });

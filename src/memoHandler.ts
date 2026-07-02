@@ -6,6 +6,7 @@ import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import { deleteWeaveNodesBySourceRef, insertWeaveNode } from './weaveNodes.js';
 import { config } from './config.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
+import { flavorError } from './errorFlavor.js';
 
 /**
  * /메모 명령 — 사용자가 Muel 에게 *기억해줘* 라고 직접 지시하는 메모 CRUD.
@@ -440,8 +441,9 @@ export const handleMemoCommand = async (interaction: ChatInputCommandInteraction
   } catch (err) {
     console.error('[memo] handler failed', err);
     try {
-      if (interaction.deferred) await interaction.editReply({ content: '메모 처리 중 오류.' });
-      else if (!interaction.replied) await interaction.reply({ content: '메모 처리 중 오류.', flags: EPHEMERAL });
+      const flavored = flavorError(err);
+      if (interaction.deferred) await interaction.editReply({ content: flavored });
+      else if (!interaction.replied) await interaction.reply({ content: flavored, flags: EPHEMERAL });
     } catch { /* ignore */ }
   }
 };

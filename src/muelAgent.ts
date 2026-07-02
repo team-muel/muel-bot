@@ -6,6 +6,8 @@ import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
 import { getPreflightGuard } from './capabilities.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
+import { splitForDiscord } from './rendering/discordText.js';
+import { DISCORD_LIMITS } from './rendering/discordLimits.js';
 import {
   getFallbackTextModel,
   getGeminiTextModel,
@@ -14,10 +16,13 @@ import {
   type MuelModelTask,
 } from './modelRegistry.js';
 import { buildAgentTools } from './agentTools.js';
+import { getOverlayPromptText } from './promptOverlays.js';
 import {
   buildMuelContextWindow,
+  isLightweightTurn,
   type MentionedUserContext,
 } from './muelContextWindow.js';
+import { runSocialRead, formatSocialReadSection } from './socialRead.js';
 
 export type MuelAgentResult = {
   text: string;
@@ -81,8 +86,8 @@ const BASE_SYSTEM_PROMPT = [
   '',
   'COMMUNICATION RULES:',
   '- Default to Korean. Use casual 반말 unless the user clearly wants a different tone.',
-  '- Keep casual Discord replies short: usually 1-3 sentences.',
-  '- Be dense, not long. Every sentence should carry information or emotion.',
+  '- 잡담·짧은 반응은 짧게 (1-3 문장). 하지만 설명이 필요한 substantive 한 답은 짧게 만들려고 내용을 깎지 말고, 읽기 좋게 구조화해서 필요한 만큼 답해라 (아래 READABILITY 참고).',
+  '- Be dense, not padded. Every sentence should carry information or emotion.',
   '- Do not start with servile openers like "네," or "물론이죠".',
   '- Do not say "죄송합니다 사용자님" or sound like customer support.',
   '- If you do not know something, say so briefly and move on.',
@@ -108,13 +113,29 @@ const BASE_SYSTEM_PROMPT = [
   '- For realtime finance or market questions, do not invent prices, dates, rates, or predictions without a live source.',
   '- If tools return empty, be honest in one sentence.',
   '',
-  'EXTERNAL CONTEXT HANDLING (강력):',
-  '- 외부 자료 (검색 결과, tool 응답, 유튜브 게시글, 리서치 리포트, 사용자가 붙여넣은 텍스트) 를 받아도 너의 답은 *너의 말로 압축한 캐주얼 1-3 문장*.',
-  '- 절대 사용하지 마: 마크다운 heading (## ~, ### ~), 헤더 스타일 굵은 표현 (**배경 및 최근 동향**, **공식 발표 및 사전 판매 정보**), bullet 리스트, "정리한 맥락은 다음과 같습니다" "검증 완료" "주요 내용" "사전 통판" "사전 판매" 같은 보고서/공식 발표 마커.',
-  '- 너는 캐릭터다. 보고서를 쓰는 게 아니다. 외부 자료의 사실은 그대로 가져오되 *포맷*은 반말 + 짧고 dense.',
-  '- 사용자가 묻지 않은 디테일은 빼라. 길게 답하지 마라. 더 알고 싶으면 사용자가 다시 묻는다.',
-  '- 자동 발행 카드 (스크린샷처럼 임베드 카드 형태) 는 별개 경로다. 너의 직접 답에서는 카드 형식 흉내내지 마라.',
+  'READABILITY (Discord) — 가독성이 최우선:',
+  '- 여기는 Discord 다. 여러 갈래·항목·단계가 있는 답은 산문 벽으로 뭉치지 말고 한눈에 스캔되게 구조화해라: 캐릭터 톤의 한 줄 리드 → 항목별로 나눠서. 각 항목은 **굵은 짧은 라벨** 뒤에 한두 문장, 또는 `-` 불릿. Discord 에서 깨끗이 렌더된다.',
+  '- 구조는 *구별되는 항목이 여럿일 때만*. 한 가지 생각·감정이면 그냥 짧은 반말 문장 — 억지로 불릿 만들면 봇티 난다.',
+  '- 짧게 만들려고 내용을 깎지 마라. 가독성은 길이를 줄이는 게 아니라 구조로 스캔되게 하는 것이다.',
+  '- 외부 자료 (검색 결과, tool 응답, 유튜브 게시글, 리서치, 붙여넣은 텍스트) 의 사실은 그대로 가져오되, raw 텍스트를 옮기지 말고 네 말·네 캐릭터로 소화해 위 형식으로 담아라.',
+  '- 피해라: 거대한 `#`/`##` 헤더 (Discord 에서 과하게 큼), "정리하면 다음과 같습니다"·"주요 내용"·"검증 완료" 같은 보고서/공식발표 상투어, 안 물어본 군더더기. 구조는 쓰되 톤은 반말·dense.',
+  '- 자동 발행 카드 (임베드 카드) 는 별개 경로다. 너의 직접 답에서 카드 형식을 흉내내진 마라.',
+  '',
+  'WHO IS BEING TALKED ABOUT (중요):',
+  '- 채널 로그의 "이름: 내용" 에서 앞의 이름은 *그 말을 한 사람* 일 뿐이다. 그 줄이 딴 사람 이름이나 "너/니/걔" 를 말하면, 화제의 대상은 말한 사람이 아니다. 화자와 화제를 헷갈리지 마라.',
+  '- 대상이 누구인지 확실하지 않으면 이름·핸들을 붙이지 마라. 남의 핸들에 근거 없이 상태·계획 ("○○이 군대 간다" 같은) 을 부여하지 마라.',
+  '- 사람들끼리 주고받는 말 (특히 농담·놀림) 을 너에게 온 사실 질문처럼 받지 마라. "○○한테 직접 물어봐 / 그 정보는 없어" 식 반사 응답 금지 — 확실치 않으면 끼어들지 말고, 낄 거면 같은 톤으로 가볍게.',
 ].join('\n');
+
+// 세부 행동 규칙(인시던트 대응 등)은 DB 오버레이(muel_prompt_overlays)에서
+// 로드해 합성한다 — promptOverlays.ts 참조. 공개 레포에 규칙 원문을 남기지 않는다.
+const composeSystemPrompt = (): string => {
+  const overlays = getOverlayPromptText();
+  return overlays ? `${BASE_SYSTEM_PROMPT}\n\n${overlays}` : BASE_SYSTEM_PROMPT;
+};
+
+/** 소셜 골든셋 eval 이 실제 배포 프롬프트(베이스+오버레이)와 동일 조건으로 돌 수 있게 노출. */
+export const getComposedBaseSystemPrompt = (): string => composeSystemPrompt();
 
 const saveGeneratedReply = async (
   supabase: SupabaseClient,
@@ -179,6 +200,8 @@ export const generateMuelReply = async (
   guildTopology?: string,
   sourceUserId?: string,
   currentChannelId: string | null = null,
+  // P6 채널별 다이얼 — social-read low-commit 임계 오버라이드(null=전역 기본).
+  socialTuning: { lowCommitMin?: number | null } | null = null,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
   const preflightGuard = getPreflightGuard(userText);
@@ -211,9 +234,15 @@ export const generateMuelReply = async (
     };
   }
 
+  // P4 social-read: 잡담 턴에서 생성 전에 저가 판독 1홉 — 수신자/레지스터/확신도를
+  // 명시 주입하고, 저확신이면 low-commit 정책. 실패·비활성 시 섹션 생략(동작 불변).
+  const socialRead = isLightweightTurn(userText)
+    ? await runSocialRead({ userText, authorName, channelActivity })
+    : null;
+
   const contextWindow = await buildMuelContextWindow({
     supabase,
-    baseSystemPrompt: BASE_SYSTEM_PROMPT,
+    baseSystemPrompt: composeSystemPrompt(),
     userText,
     authorName,
     history,
@@ -222,6 +251,9 @@ export const generateMuelReply = async (
     mentionedUsers,
     guildTopology,
     sourceUserId,
+    socialReadSection: socialRead
+      ? formatSocialReadSection(socialRead, socialTuning?.lowCommitMin ?? null)
+      : undefined,
   });
   const {
     system,
@@ -256,6 +288,9 @@ export const generateMuelReply = async (
     provider: 'gemini' | 'nvidia' | 'mindlogic',
     modelName: string,
     modelTools: Record<string, any>,
+    // 실제 라우팅된 레인 — telemetry 의 model_lane 이 'chat' 으로 고정되면
+    // heavy/vision 턴이 안 보여 경로 검증이 불가능하다.
+    lane: MuelModelTask = CHAT_MODEL_TASK,
   ): Promise<MuelAgentResult> => {
     const { text, usage } = await generateText({
       model: aiModel,
@@ -272,10 +307,10 @@ export const generateMuelReply = async (
           system: [
             system,
             '',
-            '--- LATE STEP (압축) ---',
+            '--- LATE STEP (마무리) ---',
             '도구 호출이 충분히 됐으면 더 부르지 말고 답을 마무리해라.',
-            '결과를 너의 말로 1-3 문장 한국어 반말로 압축. heading/bullet/보고서 마커 절대 금지.',
-            '도구 raw 텍스트를 그대로 옮기지 말고 캐릭터의 한 마디로 바꿔라.',
+            '결과를 너의 말·네 캐릭터로 소화해 답해라. 갈래가 여럿이면 굵은 라벨/불릿으로 읽기 좋게 구조화하고, 한 가지면 짧은 반말.',
+            '도구 raw 텍스트를 그대로 옮기지 말고 캐릭터의 말로 바꿔라.',
           ].join('\n'),
         };
       },
@@ -297,7 +332,7 @@ export const generateMuelReply = async (
       provider,
       metadata: {
         taskType: 'chat',
-        modelLane: CHAT_MODEL_TASK,
+        modelLane: lane,
         inputTokens: tokens.inputTokens,
         outputTokens: tokens.outputTokens,
         totalTokens: tokens.totalTokens,
@@ -334,6 +369,7 @@ export const generateMuelReply = async (
           gemini.provider,
           gemini.modelId,
           agentTools,
+          chatLane,
         );
         return result;
       } catch (error) {
@@ -391,13 +427,17 @@ export const generateMuelReply = async (
   throw new Error(`LLM All Failed: ${providerFailures.join(', ')}`);
 };
 
-export const toDiscordReply = (text: string): string => {
+/**
+ * Split a model reply into Discord-sendable chunks. Unlike the old truncating
+ * variant, this DROPS NOTHING and never cuts inside a URL — long replies are
+ * carried across multiple messages / a thread by the caller. Always returns at
+ * least one chunk.
+ */
+export const toDiscordReplyChunks = (text: string): string[] => {
   const sanitized = sanitizeModelOutput(text) || '응답을 정리하는 중 문제가 생겼어. 다시 짧게 물어봐줘.';
-  if (sanitized.length <= 1900) return sanitized;
-  const head = sanitized.slice(0, 1890);
-  const marks = ['. ', '? ', '! ', '。'];
-  let cut = -1;
-  for (const m of marks) cut = Math.max(cut, head.lastIndexOf(m));
-  const body = cut > 1500 ? head.slice(0, cut + 1).trimEnd() : head.trimEnd();
-  return `${body}\n\n(메시지가 길어 일부만 표시했어.)`;
+  const chunks = splitForDiscord(sanitized, DISCORD_LIMITS.content);
+  return chunks.length > 0 ? chunks : [sanitized];
 };
+
+/** Back-compat single-string reply (first chunk only). Prefer the chunked API. */
+export const toDiscordReply = (text: string): string => toDiscordReplyChunks(text)[0]!;

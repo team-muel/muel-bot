@@ -146,12 +146,49 @@ const getNested = (source: unknown, path: string[]): unknown => {
   }, source);
 };
 
+const unwrapRedirect = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    if (isYouTubeHost(parsed.hostname) && parsed.pathname === '/redirect') {
+      const target = parsed.searchParams.get('q');
+      if (target) return target;
+    }
+  } catch {
+    // not a parseable URL — return as-is
+  }
+  return url;
+};
+
+type CommunityRun = {
+  text?: string;
+  navigationEndpoint?: {
+    urlEndpoint?: { url?: unknown };
+    commandMetadata?: { webCommandMetadata?: { url?: unknown } };
+  };
+};
+
+/**
+ * Full text of a single run. External-link runs render an ELLIPSIZED display
+ * text (e.g. "youtu.be/abc…") while the real URL lives in
+ * navigationEndpoint.urlEndpoint.url. Using the display text truncates/breaks
+ * the link so the user can't click through — so prefer the endpoint URL (and
+ * unwrap YouTube's /redirect wrapper) whenever it's present. Internal runs
+ * (hashtags, @mentions, watch links) have no urlEndpoint and keep their text.
+ */
+const runFullText = (run: CommunityRun): string => {
+  const external = run?.navigationEndpoint?.urlEndpoint?.url;
+  if (typeof external === 'string' && external.trim()) {
+    return unwrapRedirect(external.trim());
+  }
+  return String(run?.text ?? '');
+};
+
 const getRunsText = (value: unknown): string => {
   if (!value || typeof value !== 'object') {
     return '';
   }
 
-  const record = value as { runs?: Array<{ text?: string }>; simpleText?: string };
+  const record = value as { runs?: CommunityRun[]; simpleText?: string };
   if (typeof record.simpleText === 'string' && record.simpleText.trim()) {
     return record.simpleText.trim();
   }
@@ -161,7 +198,7 @@ const getRunsText = (value: unknown): string => {
     return '';
   }
 
-  return runs.map((item) => String(item?.text || '')).join('').trim();
+  return runs.map((item) => runFullText(item)).join('').trim();
 };
 
 const findFirstPostRenderer = (root: unknown): Record<string, unknown> | null => {

@@ -4,12 +4,15 @@ import { MessageFlags, PermissionFlagsBits, SlashCommandBuilder } from 'discord.
 import { getSupabaseClient } from './supabase.js';
 import { prepareChatTurn, getUserHistorySummary } from './muelConversationStore.js';
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
-import { generateMuelReply, toDiscordReply } from './muelAgent.js';
+import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
+import { deliverOverflowChunks } from './rendering/discordDelivery.js';
+import { flavorError } from './errorFlavor.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
 import { logMuelAiEvent, classifyAiError } from './muelAiEvents.js';
 import { classifyMentionIntent, type MuelRouterIntent } from './muelRouter.js';
+import { intentHasSurfaceCue } from './hubResponsiveness.js';
 import { acquireMentionSlot } from './mentionRateLimit.js';
 import { logMuelAgentAction } from './agentActions.js';
 import { REACTION_DONE, REACTION_QUESTION, REACTION_SEEN, tagMessage } from './agentReactions.js';
@@ -50,13 +53,6 @@ const RESPONSIVE_INTENTS = new Set<MuelRouterIntent>([
   'memory_query',
   'meta',
 ]);
-
-// PA-0: a bare YouTube/link share gets classified as news_query but should NOT
-// trigger a reflexive reply — only engage news_query when it reads as a question.
-const looksLikeNewsQuestion = (text: string): boolean => {
-  if (/[?？]/.test(text)) return true;
-  return /(뭐|무슨|어때|어떤|추천|있어|있나|알려|찾아|봤|뉴스|소식|영상|업로드|recommend|news)/i.test(text);
-};
 
 const pickStringField = (record: Record<string, unknown> | undefined, key: string): string | null => {
   if (!record) return null;
@@ -161,7 +157,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] activate failed', error);
       await interaction.editReply({
-        content: '허브 활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
+        content: flavorError(error),
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -197,7 +193,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] deactivate failed', error);
       await interaction.editReply({
-        content: '허브 비활성화에 실패했어. 잠시 뒤 다시 시도해줘.',
+        content: flavorError(error),
       }).catch(() => {});
       void logMuelAgentAction(supabase, {
         triggerSource: 'slash_command',
@@ -245,7 +241,7 @@ export const handleHubSlashInteraction = async (
     } catch (error) {
       console.error('[hub] list failed', error);
       await interaction.editReply({
-        content: '허브 목록 조회에 실패했어.',
+        content: flavorError(error),
       }).catch(() => {});
     }
     return;
@@ -323,13 +319,18 @@ export const handleHubChannelMessage = async (
       discordUserId: userId,
     });
 
-    const newsReflexSuppressed =
-      decision?.intent === 'news_query' && !looksLikeNewsQuestion(userText);
+    const responsive = !!decision && RESPONSIVE_INTENTS.has(decision.intent);
+    // A responsive intent only fires when the text shows a real surface cue that
+    // it's FOR Muel — not peer banter the router mislabeled with high confidence.
+    // P6: 활기 우선 채널은 surface_cue_required=false 로 이 게이트를 끌 수 있다
+    // (라우터 confidence 게이트는 유지). 기본은 true — #211 동작 그대로.
+    const surfaceCueRequired = channelConfig?.surfaceCueRequired !== false;
+    const reflexSuppressed = responsive && surfaceCueRequired && !intentHasSurfaceCue(decision!.intent, userText);
     if (
       !decision ||
-      !RESPONSIVE_INTENTS.has(decision.intent) ||
+      !responsive ||
       decision.confidence < responsiveMin ||
-      newsReflexSuppressed
+      reflexSuppressed
     ) {
       void logMuelAgentAction(supabase, {
         triggerSource: 'allowlist_channel',
@@ -343,7 +344,7 @@ export const handleHubChannelMessage = async (
           confidence: decision?.confidence ?? null,
           intent: decision?.intent ?? null,
           channelResponsiveMin: responsiveMin,
-          reason: newsReflexSuppressed ? 'news_query_link_share_suppressed' : 'intent_not_responsive_or_low_confidence',
+          reason: reflexSuppressed ? 'responsive_intent_without_surface_cue' : 'intent_not_responsive_or_low_confidence',
         },
       });
       return;
@@ -406,21 +407,29 @@ export const handleHubChannelMessage = async (
         guildTopology,
         userId,
         channelId,
+        // P6: 채널별 low-commit 임계(null=전역 기본).
+        { lowCommitMin: channelConfig?.lowCommitMin ?? null },
       ),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`hub generateMuelReply timed out after ${config.mentionReplyTimeoutMs}ms`)), config.mentionReplyTimeoutMs),
       ),
     ]);
 
+    const replyChunks = toDiscordReplyChunks(reply.text);
     const sent = await message.reply({
-      content: toDiscordReply(reply.text),
+      content: replyChunks[0]!,
       allowedMentions: { parse: [], repliedUser: false },
     }).catch((err) => {
       console.warn('[hub] message.reply failed', err);
       return null;
     });
 
-    if (sent) void tagMessage(message, REACTION_DONE);
+    if (sent) {
+      if (replyChunks.length > 1) {
+        await deliverOverflowChunks(message, sent, replyChunks.slice(1), { threadName: '이어서 말할게' });
+      }
+      void tagMessage(message, REACTION_DONE);
+    }
 
     const meta = (reply.metadata ?? {}) as Record<string, unknown>;
     const taskType = pickStringField(meta, 'taskType') ?? 'chat';
@@ -429,6 +438,7 @@ export const handleHubChannelMessage = async (
     const inputTokens = pickNumberField(meta, 'inputTokens');
     const outputTokens = pickNumberField(meta, 'outputTokens');
     const totalTokens = pickNumberField(meta, 'totalTokens');
+    const contextWindowDiag = (meta as Record<string, unknown>)['contextWindow'] ?? null;
 
     const aiEventId = await logMuelAiEvent(supabase, {
       source: 'discord_hub',
@@ -442,6 +452,8 @@ export const handleHubChannelMessage = async (
       provider: reply.provider,
       model: reply.model,
       latencyMs: Date.now() - startedAt,
+      // 회계 수리(P2): 허브 이벤트에 lightweight_turn 이 안 실려 잡담/실질 구분 불가였다.
+      lightweightTurn: Boolean((contextWindowDiag as { lightweightTurn?: boolean } | null)?.lightweightTurn),
       taskType,
       modelLane,
       fallbackReason,
@@ -454,6 +466,7 @@ export const handleHubChannelMessage = async (
         routerConfidence: decision.confidence,
         channelResponsiveMin: responsiveMin,
         discordMessageId: message.id,
+        contextWindow: contextWindowDiag,
       },
     });
 

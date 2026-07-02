@@ -7,7 +7,9 @@ import {
   getUserHistorySummary,
   prepareChatTurn,
 } from './muelConversationStore.js';
-import { generateMuelReply, toDiscordReply } from './muelAgent.js';
+import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
+import { deliverOverflowChunks } from './rendering/discordDelivery.js';
+import { flavorError } from './errorFlavor.js';
 import { classifyNegativeText, recordFeedbackSignal } from './feedbackSignals.js';
 import { schedulePendingObservation } from './feedbackObserver.js';
 import { formatForContext } from './channelBuffer.js';
@@ -122,6 +124,12 @@ const pickUnknownField = (record: Record<string, unknown> | undefined, key: stri
   return record[key];
 };
 
+// Stand-in user turn for a bare @Muel mention (no text/image). Long enough that
+// isLightweightTurn() treats it as substantive so the full context window is
+// built; phrased as an internal directive, not words put in the user's mouth.
+const BARE_MENTION_PROMPT =
+  '(사용자가 본문 없이 나를 불렀어. 최근 대화 맥락을 보고 짧게 자연스럽게 먼저 말을 걸거나, 도울 게 있는지 캐릭터답게 물어봐. 맥락이 마땅치 않으면 가볍게 인사만.)';
+
 export const handleMuelMention = async (
   client: Client<true>,
   message: Message,
@@ -135,28 +143,35 @@ export const handleMuelMention = async (
     .filter((a) => (a.contentType ?? '').startsWith('image/'))
     .slice(0, 4)
     .map((a) => ({ type: 'image' as const, image: a.url }));
-  if (!userText && imageParts.length === 0) {
+  // Bare @Muel (no text, no image): read the recent channel context and react
+  // instead of returning a canned "give me something". If the channel has
+  // nothing to go on, fall back to a light in-character greeting (not an error).
+  const bareMention = !userText && imageParts.length === 0;
+  if (bareMention && !formatForContext(message.channelId, client.user.id, 4).trim()) {
     await message.reply({
-      content: '부를 때 할 말이나 이미지를 같이 줘.',
+      content: '왔어. 무슨 얘기 하고 있었어? 도와줄 거 있으면 말해줘.',
       allowedMentions: { parse: [], repliedUser: false },
     });
     return;
   }
-  const dedupContent = userText || imageParts.map((p) => p.image).join('|');
+  const effectiveText = bareMention ? BARE_MENTION_PROMPT : userText;
 
-  const requestKey = `${message.channelId}:${message.author.id}`;
-  const now = Date.now();
-  sweepRecentRequests(now);
-  const previous = recentRequests.get(requestKey);
-  if (previous && previous.content === dedupContent && now - previous.at < RECENT_REQUEST_TTL_MS) {
-    previous.at = now;
-    await message.reply({
-      content: '방금 본 내용이야. 너무 연속으로 보내면 곤란해.',
-      allowedMentions: { parse: [], repliedUser: false },
-    });
-    return;
+  if (!bareMention) {
+    const dedupContent = userText || imageParts.map((p) => p.image).join('|');
+    const requestKey = `${message.channelId}:${message.author.id}`;
+    const now = Date.now();
+    sweepRecentRequests(now);
+    const previous = recentRequests.get(requestKey);
+    if (previous && previous.content === dedupContent && now - previous.at < RECENT_REQUEST_TTL_MS) {
+      previous.at = now;
+      await message.reply({
+        content: '방금 본 내용이야. 너무 연속으로 보내면 곤란해.',
+        allowedMentions: { parse: [], repliedUser: false },
+      });
+      return;
+    }
+    recentRequests.set(requestKey, { content: dedupContent, at: now });
   }
-  recentRequests.set(requestKey, { content: dedupContent, at: now });
 
   const supabase = getSupabaseClient();
 
@@ -191,7 +206,7 @@ export const handleMuelMention = async (
       discordGuildId: message.guildId,
       discordChannelId: message.channelId,
       discordUserId: message.author.id,
-      lightweightTurn: isLightweightTurn(userText),
+      lightweightTurn: isLightweightTurn(effectiveText),
       taskType: 'chat',
       modelLane: 'chat',
       fallbackReason: limitDecision.reason,
@@ -218,7 +233,7 @@ export const handleMuelMention = async (
 
   let inboundMessageId: string | null = null;
   let chatId: string | null = null;
-  const lightweightTurn = isLightweightTurn(userText);
+  const lightweightTurn = isLightweightTurn(effectiveText);
   const replyStartedAt = Date.now();
 
   try {
@@ -237,7 +252,7 @@ export const handleMuelMention = async (
       sourceChannelId: message.channelId,
       sourceThreadId: message.channelId,
       userMessageId,
-      userParts: userText ? [{ type: 'text', text: userText }, ...imageParts] : imageParts,
+      userParts: effectiveText ? [{ type: 'text', text: effectiveText }, ...imageParts] : imageParts,
       metadata: {
         discordGuildId: message.guildId,
         discordChannelId: message.channelId,
@@ -265,7 +280,7 @@ export const handleMuelMention = async (
     // muel_ai_events with task_type='router' inside classifyMentionIntent.
     const routerDecision = await classifyMentionIntent(supabase, {
       chatId,
-      userText,
+      userText: effectiveText,
       discordGuildId: message.guildId,
       discordChannelId: message.channelId,
       discordUserId: message.author.id,
@@ -317,7 +332,7 @@ export const handleMuelMention = async (
     if (message.guildId) {
       const draft = await classifyActionDraft(supabase, {
         chatId,
-        userText,
+        userText: effectiveText,
         discordGuildId: message.guildId,
         discordChannelId: message.channelId,
         discordUserId: message.author.id,
@@ -393,7 +408,7 @@ export const handleMuelMention = async (
     const reply = await withTimeout(generateMuelReply(
       supabase,
       chatId,
-      userText,
+      effectiveText,
       authorName,
       history,
       message.guildId,
@@ -406,13 +421,17 @@ export const handleMuelMention = async (
       message.channelId,
     ), imageParts.length > 0 ? config.mentionImageReplyTimeoutMs : config.mentionReplyTimeoutMs, 'generateMuelReply');
 
+    const replyChunks = toDiscordReplyChunks(reply.text);
     const sent = await message.reply({
-      content: toDiscordReply(reply.text),
+      content: replyChunks[0]!,
       allowedMentions: {
         parse: [],
         repliedUser: false,
       },
     });
+    if (replyChunks.length > 1) {
+      await deliverOverflowChunks(message, sent, replyChunks.slice(1), { threadName: '이어서 말할게' });
+    }
 
     void tagMessage(message, REACTION_DONE);
 
@@ -497,6 +516,8 @@ export const handleMuelMention = async (
         discordMessageId: message.id,
         routerIntent: routerDecision?.intent ?? null,
         routerConfidence: routerDecision?.confidence ?? null,
+        // 섹션별 컨텍스트 회계 — P2: 이전엔 생성만 되고 적재가 안 돼 쿼리 불가였다.
+        contextWindow: pickUnknownField(meta, 'contextWindow') ?? null,
       },
     });
 
@@ -532,7 +553,7 @@ export const handleMuelMention = async (
     });
 
     await message.reply({
-      content: '지금은 대답하기 어려워. 잠시 뒤에 다시 불러줘.',
+      content: flavorError(error),
       allowedMentions: { parse: [], repliedUser: false },
     }).catch(() => {});
 

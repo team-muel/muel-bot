@@ -24,6 +24,10 @@ const DEFAULT_RESPONSIVE_CONFIDENCE_MIN = 0.6;
 
 export type HubChannelConfig = {
   responsiveConfidenceMin: number;
+  /** P6: false 면 표면단서 게이트를 끄고 라우터 confidence 만으로 응답(활기 우선 채널). 기본 true(정밀 우선). */
+  surfaceCueRequired: boolean;
+  /** P6: social-read low-commit 임계 채널별 오버라이드. null = 전역 기본. */
+  lowCommitMin: number | null;
 };
 
 const CACHE_TTL_MS = 5 * 60_000;
@@ -38,7 +42,7 @@ const refreshCache = async (supabase: SupabaseClient): Promise<void> => {
   loadingPromise = (async () => {
     const { data, error } = await supabase
       .from('muel_hub_channels')
-      .select('guild_id, channel_id, responsive_confidence_min');
+      .select('guild_id, channel_id, responsive_confidence_min, surface_cue_required, low_commit_min');
     if (error) {
       console.warn('[hub] cache refresh failed', error);
       return;
@@ -48,7 +52,13 @@ const refreshCache = async (supabase: SupabaseClient): Promise<void> => {
       const min = typeof row.responsive_confidence_min === 'number' && Number.isFinite(row.responsive_confidence_min)
         ? row.responsive_confidence_min
         : DEFAULT_RESPONSIVE_CONFIDENCE_MIN;
-      next.set(makeKey(row.guild_id, row.channel_id), { responsiveConfidenceMin: min });
+      next.set(makeKey(row.guild_id, row.channel_id), {
+        responsiveConfidenceMin: min,
+        surfaceCueRequired: row.surface_cue_required !== false,
+        lowCommitMin: typeof row.low_commit_min === 'number' && Number.isFinite(row.low_commit_min)
+          ? row.low_commit_min
+          : null,
+      });
     }
     cache = next;
     lastFullLoadAt = Date.now();
@@ -132,6 +142,8 @@ export const activateHubChannel = async (
   const existing = cache.get(makeKey(args.guildId, args.channelId));
   cache.set(makeKey(args.guildId, args.channelId), {
     responsiveConfidenceMin: existing?.responsiveConfidenceMin ?? DEFAULT_RESPONSIVE_CONFIDENCE_MIN,
+    surfaceCueRequired: existing?.surfaceCueRequired ?? true,
+    lowCommitMin: existing?.lowCommitMin ?? null,
   });
 };
 

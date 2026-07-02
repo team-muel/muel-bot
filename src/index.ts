@@ -19,6 +19,9 @@ import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobW
 import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { startFeedbackObserver } from './feedbackObserver.js';
+import { runProviderHealthcheck } from './providerHealthcheck.js';
+import { initPromptOverlays } from './promptOverlays.js';
+import { runSocialEval } from './socialEval.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -354,6 +357,27 @@ client.once(Events.ClientReady, async (readyClient) => {
   startProactiveScheduler(readyClient, getSupabaseClient());
   startFeedbackObserver(readyClient, getSupabaseClient());
 
+  // DB 프롬프트 오버레이 로드(+5분 주기 리프레시) — 실패해도 기동은 계속.
+  const supabaseForOverlays = getSupabaseClient();
+  if (supabaseForOverlays) {
+    initPromptOverlays(supabaseForOverlays)
+      .then(() => {
+        // 소셜 골든셋 eval 은 오버레이 로드 *후* 에 실행 — 실제 배포 프롬프트와
+        // 동일 조건이어야 채점이 의미 있다. ENABLE_SOCIAL_EVAL=true 부팅에서만.
+        return runSocialEval(supabaseForOverlays);
+      })
+      .catch((err) => {
+        console.warn('[prompt-overlays/social-eval] init failed', err);
+      });
+  }
+
+  // 프로바이더 도달성 검증 — 설정된 프로바이더마다 초소형 프로브를 날려
+  // muel_ai_events(source='healthcheck')로 적재. NVIDIA/MindLogic 경로가
+  // 실제로 응답을 반환하는지 텔레메트리에서 관측 가능해진다.
+  runProviderHealthcheck(getSupabaseClient()).catch((err) => {
+    console.warn('[provider-healthcheck] crashed', err);
+  });
+
   if (config.enableJobWorker) {
     runJobWorkerLoop().catch(err => {
       console.error('[jobs] worker loop crashed', err);
@@ -471,10 +495,12 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (message.content) {
     pushMessage(message.channelId, {
+      id: message.id,
       authorId: message.author.id,
       authorName: message.author.displayName ?? message.author.username,
       content: message.content,
       timestamp: message.createdTimestamp,
+      replyToId: message.reference?.messageId ?? undefined,
     });
     try {
       observeCommunityMessage(getSupabaseClient(), message);
