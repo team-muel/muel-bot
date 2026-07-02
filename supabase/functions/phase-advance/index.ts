@@ -402,7 +402,7 @@ async function performPresenceSweep(supabase: ReturnType<typeof getSupabaseAdmin
 // (전원 이탈) 매치를 중단한다. AI 는 heartbeat 가 없으므로 present 판정에서 제외 — AI 만
 // 남은 게임이 maxDays 타임아웃까지 도는 좀비화를 막는다. 로비 sweep(performPresenceSweep)
 // 과 같은 2분 임계. 사람이 한 명이라도 최근 heartbeat 가 있으면 건드리지 않는다.
-const IN_PROGRESS_STATUSES = ["role_assign", "night", "night_suspect", "night_resolve", "day", "vote", "verdict"];
+const IN_PROGRESS_STATUSES = ["role_assign", "night", "night_suspect", "night_deduce", "night_resolve", "day", "vote", "verdict"];
 async function performAbandonedMatchSweep(supabase: ReturnType<typeof getSupabaseAdmin>) {
   const threshold = new Date(Date.now() - 120 * 1000).toISOString();
   const { data: matches, error } = await supabase
@@ -555,6 +555,27 @@ Deno.serve((req: Request) => {
               .select("actor_user_id, target_user_id, action_type, result")
               .eq("phase_id", phase.id),
           ) as DbAction[];
+
+          // 같은 밤 번호의 추리 페이즈(night_deduce) 제출을 병합 — 상호추리는 전용 페이즈에서
+          // 제출되지만 해소는 이 밤의 actionStack 에서 함께 처리한다(Deduce semantics 불변).
+          const { data: deducePhaseRow } = await supabase
+            .from("match_phases")
+            .select("id")
+            .eq("match_id", matchId)
+            .eq("phase_type", "night_deduce")
+            .eq("phase_number", phase.phase_number)
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (deducePhaseRow) {
+            const deduceActions = requireNoError(
+              await supabase
+                .from("match_actions")
+                .select("actor_user_id, target_user_id, action_type, result")
+                .eq("phase_id", deducePhaseRow.id),
+            ) as DbAction[];
+            actions.push(...deduceActions);
+          }
 
           const state = playerStateFromRows(
             matchId,
@@ -874,11 +895,33 @@ Deno.serve((req: Request) => {
             }),
         );
 
-        // 의심 투표와 그 밤은 같은 밤 번호 — phase_number 유지하고 night 로 전환.
-        const transition = nightAfterSuspicionTransition(phase.phase_number, durations);
-        nextPhaseType = transition.phaseType;
-        nextDurationSec = transition.durationSec;
-        nextPhaseNumber = transition.phaseNumber;
+        // 의심 투표와 그 밤은 같은 밤 번호 — phase_number 유지.
+        // 상호추리 게이트(canon 하브레터스 "매 밤마다 서로 정체 추리", 2026-07-02): 하브레터스와
+        // 악마 처치자가 모두 생존해 있으면 밤 앞에 전용 추리 페이즈(night_deduce)를 끼운다.
+        // 하브가 없거나 죽은 게임은 이 분기 자체가 스킵 — 기존 흐름 그대로(무영향 설계).
+        const effRole = (p: { role: string; engine_state?: Record<string, unknown> | null }) => {
+          const cur = (p.engine_state as { currentRole?: unknown } | null)?.currentRole;
+          return typeof cur === "string" ? cur : p.role;
+        };
+        const deduceEligible =
+          players.some((p) => p.alive && effRole(p) === "habreterus") &&
+          players.some((p) => p.alive && DEMON_KILLER_ROLES.includes(effRole(p)));
+        if (deduceEligible) {
+          nextPhaseType = "night_deduce";
+          nextDurationSec = durations.nightDeduce;
+          nextPhaseNumber = phase.phase_number;
+        } else {
+          const transition = nightAfterSuspicionTransition(phase.phase_number, durations);
+          nextPhaseType = transition.phaseType;
+          nextDurationSec = transition.durationSec;
+          nextPhaseNumber = transition.phaseNumber;
+        }
+      } else if (phase.phase_type === "night_deduce") {
+        // 추리 마감 → 밤. 추리 액션의 해소는 밤 종료 시 actionStack 에 병합돼 처리된다
+        // (Deduce 효과 semantics 불변 — 제출 창만 분리).
+        nextPhaseType = "night";
+        nextDurationSec = durations.night;
+        nextPhaseNumber = phase.phase_number;
       } else if (phase.phase_type === "night_resolve") {
         // 아침 해소: 악몽(팬텀) 표식 보유 생존자 탈락. 밤 능력 해소와 분리된 단계라
         // 1_NIGHT 보호로 막히지 않는다(canon 악몽).

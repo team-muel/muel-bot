@@ -31,6 +31,8 @@ export const SELF_ACTIONS: string[] = ALL_NIGHT_ABILITIES
 export const NIGHT_ACTIONS_BY_ROLE: Record<string, string[]> = Object.fromEntries(
   CORE_ROLES.map((r) => [r.id, (r.actions.night ?? []).map((a) => a.id)]),
 );
+// 상호추리(전용 night_deduce 페이즈 소관) — 하브레터스 '삶이 있는 곳으로' ↔ 대악마 '역추리'.
+export const DEDUCE_ACTIONS = ["habreterus_deduce", "demon_deduce"];
 
 export type SubmitActionParams = {
   matchId: string;
@@ -118,7 +120,7 @@ export async function submitMatchAction(
   if (playerError || !player) throw forbidden("not_participant", "게임 참가자가 아닙니다.");
   if (!player.alive) throw forbidden("dead_player", "사망한 플레이어는 행동할 수 없습니다.");
 
-  if (match.status === "night") {
+  if (match.status === "night" || match.status === "night_deduce") {
     // 첫 밤 silent (vault canon §34): phase_number===1 + firstNight.skipsAbilities 면
     // 모든 능력 제출 차단. 정보 누적 전 첫 능력으로 결판나는 것 방지.
     if (currentPhase.phase_number === 1 && GOMDORI_RULES.firstNight.skipsAbilities) {
@@ -129,6 +131,34 @@ export async function submitMatchAction(
     const ability = getRoleDefinition(actorRole)?.actions.night?.find((a) => a.id === actionType);
     if (!ability) {
       throw forbidden("invalid_role", "현재 직업으로는 이 밤 행동을 사용할 수 없습니다.");
+    }
+    // 상호추리(하브레터스 삶이 있는 곳으로 ↔ 대악마 역추리)는 전용 추리 페이즈에서만 —
+    // 하브 생존 시 phase-advance 가 night_suspect 뒤에 night_deduce 를 끼운다(canon "매 밤
+    // 서로 정체 추리"). 밤 페이즈에선 차단, 추리 페이즈에선 추리만.
+    if (match.status === "night" && DEDUCE_ACTIONS.includes(actionType)) {
+      throw conflict("deduce_phase_only", "정체 추리는 추리 시간에 제출합니다.");
+    }
+    if (match.status === "night_deduce" && !DEDUCE_ACTIONS.includes(actionType)) {
+      throw conflict("invalid_phase", "지금은 정체 추리 시간입니다.");
+    }
+    // 하룻밤 1택(원문 "이변이 없으면 하룻밤에 능력 하나", 2026-07-02): 비-패시브 제출은 같은
+    // 캐논 카드(abilityGroup)끼리만 공존한다. 같은 능력 재제출(대상 변경 upsert)과 같은 카드의
+    // 분기(로잔느 만들어가는 미래, 라이너 의지/포효)는 허용, 다른 카드(능력↔능력2)는 거부.
+    if (match.status === "night" && !ability.passiveSlot) {
+      const { data: priorRows } = await supabase
+        .from("match_actions")
+        .select("action_type")
+        .eq("phase_id", currentPhase.id)
+        .eq("actor_user_id", actorUserId);
+      const roleDef = getRoleDefinition(actorRole);
+      const myGroup = ability.abilityGroup ?? ability.id;
+      for (const row of (priorRows ?? []) as Array<{ action_type: string }>) {
+        const prior = roleDef?.actions.night?.find((a) => a.id === row.action_type);
+        if (!prior || prior.passiveSlot) continue;
+        if ((prior.abilityGroup ?? prior.id) !== myGroup) {
+          throw conflict("one_ability_per_night", "하룻밤에는 능력 하나만 사용할 수 있습니다. 이미 다른 능력을 제출했어요.");
+        }
+      }
     }
     if (ability.maxUses != null) {
       const counters = (player.engine_state as { counters?: Record<string, number> } | null)?.counters;
@@ -387,6 +417,46 @@ export async function submitMatchAction(
     }, { onConflict: "phase_id, actor_user_id, action_type" });
 
   if (actionError) throw actionError;
+
+  // 투표류 전원-완료 조기 진행(2026-07-02): 처형 투표(vote)·찬반(verdict)·의심(suspect)에서
+  // 생존자 전원이 제출을 마치면 남은 시간을 기다리지 않고 페이즈를 마감한다 —
+  // expected_ended_at 을 지금으로 당겨 phase-advance 크론(10초)이 즉시 집어가게 한다.
+  // 단일 진행자 원칙 보존: 페이즈 전이는 여기서 직접 하지 않고 phase-advance 만 수행.
+  const VOTE_LIKE: Record<string, string[]> = {
+    vote: ["vote"],
+    verdict: ["verdict_approve", "verdict_reject"],
+    night_suspect: ["suspect"],
+  };
+  const voteTypes = VOTE_LIKE[match.status];
+  if (voteTypes?.includes(actionType)) {
+    const { data: aliveRows } = await supabase
+      .from("match_players")
+      .select("user_id")
+      .eq("match_id", matchId)
+      .eq("alive", true);
+    const { data: castRows } = await supabase
+      .from("match_actions")
+      .select("actor_user_id")
+      .eq("phase_id", currentPhase.id)
+      .in("action_type", voteTypes);
+    const aliveIds = new Set((aliveRows ?? []).map((r) => r.user_id as string));
+    const casters = new Set(
+      ((castRows ?? []) as Array<{ actor_user_id: string }>)
+        .map((r) => r.actor_user_id)
+        .filter((id) => aliveIds.has(id)),
+    );
+    if (aliveIds.size > 0 && casters.size >= aliveIds.size) {
+      const nowIso = new Date().toISOString();
+      const expected = currentPhase.expected_ended_at as string | null;
+      if (!expected || expected > nowIso) {
+        await supabase
+          .from("match_phases")
+          .update({ expected_ended_at: nowIso })
+          .eq("id", currentPhase.id)
+          .is("ended_at", null);
+      }
+    }
+  }
 
   return { investigationResult };
 }
