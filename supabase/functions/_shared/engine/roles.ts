@@ -74,7 +74,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         },
         // 낙인 — 원문 사탄의 마는 '능력 성공 발동'이 트리거이므로 낙인 성공에도 전원 -1 동반. AddTag
         // mephistoBrand: 낙인 적용자 표식(감시 게이트의 전역 조건) — '자기 직업 모르는 대상'의 backend 면.
-        { id: "daeakma_brand", name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }, { type: "AddTag", target: "Target", tag: "mephistoBrand" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
+        { id: "daeakma_brand", passiveSlot: true, name: "메피스토 낙인", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Rebrand", target: "Target" }, { type: "AddTag", target: "Target", tag: "mephistoBrand" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
         // 압도적 존재감(v2, 1회): 공포로 자신을 제외한 전원의 그 밤 능력을 봉인(Silence AllOthers
         // — 악마 자신은 영향 없음). priority 1 — 대상들 능력보다 먼저 봉인. 사탄의 마: 성공 시 전원 -1.
         { id: "daeakma_dominion", name: "압도적 존재감", targetType: "ALL", priority: 1, maxUses: 1, effects: [{ type: "Silence", target: "AllOthers" }, { type: "ModifyVoteValue", target: "AllOthers", amount: -1 }] },
@@ -83,7 +83,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 빗나가면 통지만(deduce_miss). Deduce effect 가 source.actualFaction='demon' 분기로 동작.
         // priority 4 — 동일 라운드 doctor_heal(3) 후 처리되어 치료가 먼저 들어가지만 Annihilate 가
         // PROTECTED 를 우회(engine death loop 의 annihilated 게이트).
-        { id: "demon_deduce", name: "역추리", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
+        { id: "demon_deduce", passiveSlot: true, name: "역추리", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
       ],
     },
   },
@@ -106,7 +106,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         {
           // 백호 소환: 1회 self 액션 — 천사팀 카운트 +3(생존 가산) + +3(생존 무관 지속). canon 자석 +3.
-          id: "rainer_summon",
+          id: "rainer_summon", passiveSlot: true,
           name: "백호 소환",
           targetType: "SELF",
           priority: 5,
@@ -122,7 +122,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 〈거친 포효〉를 즉시 자동 발동한다(countBonus -1 + 이 밤 지목 대상 최대 2명 clawed 표식
         // → 다음 아침 voteValueMod≥3 이면 소멸, phase-advance morning hook).
         {
-          id: "rainer_resolve",
+          id: "rainer_resolve", abilityGroup: "rainer_will",
           name: "강한 의지",
           targetType: "SINGLE_ALIVE",
           priority: 5,
@@ -145,7 +145,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         //   라이너 자신이 그 밤 지목한 대상을 자동으로 할퀴었으나, 원문은 '강한 의지 2회 → 2명 지목'
         //   이므로 플레이어가 명시 지목하는 액션으로 승격. 자동 경로는 미제출 시 폴백으로 유지.
         {
-          id: "rainer_roar",
+          id: "rainer_roar", abilityGroup: "rainer_will",
           name: "거친 포효",
           targetType: "SINGLE_ALIVE",
           priority: 5,
@@ -359,20 +359,20 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 지정 가능 수 = 1 + counters.deepsleepCount(살아있는 영면 1명당 +1) — 동적 멀티타깃.
         // 사용 횟수(nightmareUses) 풀: 5회 제한(match-start 5 주입). 발동 1회당 1 소비(1명이든 다수든
         // 한 발동=1 소비). 어둠이 내린 도시에서 0명 지목한 밤마다 +2 충전(상한 5, engine 아침 처리).
-        { id: "phantom_nightmare", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, targetCount: 1, targetCountCounter: "deepsleepCount", requiresCounter: { key: "nightmareUses", min: 1, consumeAmount: 1 }, effects: [{ type: "Nightmare", target: "Target" }] },
+        { id: "phantom_nightmare", abilityGroup: "phantom_nightmare_g", name: "악몽", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, targetCount: 1, targetCountCounter: "deepsleepCount", requiresCounter: { key: "nightmareUses", min: 1, consumeAmount: 1 }, effects: [{ type: "Nightmare", target: "Target" }] },
         // 영면 발동: 누적한 영면(deepsleep) 대상 전원을 일괄 처치. 기존 프리미티브 재사용 —
         // Kill(All) + onlyIfTargetCounter(deepsleep) 게이트로 영면자만 markedForDeath. 발동 후
         // deepsleepCount 0 리셋. 낮 처형 시간 즉시 발동은 match-action-core usableInDay 경로에서 처리.
-        { id: "phantom_reap", name: "영면 발동", targetType: "NONE", priority: 4, usableInDay: true, effects: [{ type: "Kill", target: "All", onlyIfTargetCounter: { key: "deepsleep", min: 1 } }], onFireSetCounter: { key: "deepsleepCount", value: 0 } },
+        { id: "phantom_reap", abilityGroup: "phantom_nightmare_g", name: "영면 발동", targetType: "NONE", priority: 4, usableInDay: true, effects: [{ type: "Kill", target: "All", onlyIfTargetCounter: { key: "deepsleep", min: 1 } }], onFireSetCounter: { key: "deepsleepCount", value: 0 } },
         // 침묵의 밤(패시브 능동화): 밤 종료 시 밤을 한 번 더 연다(악마팀 재행동). 대가 = 생존 천사팀
         // 소속 카운트 +1(GrantCount, onlyFactions angel — 천사팀 대응 여지) + 토론 +1분. extendNight
         // 표식을 phase-advance 가 읽어 다음 아침을 밤으로 전환 + 토론 가산(eclipse 유사, 소멸 없음).
-        { id: "phantom_silentnight", name: "침묵의 밤", targetType: "NONE", priority: 5, effects: [{ type: "GrantCount", target: "All", amount: 1, onlyFactions: ["angel"] }], onFireSetCounter: { key: "extendNight", value: 1 } },
+        { id: "phantom_silentnight", passiveSlot: true, name: "침묵의 밤", targetType: "NONE", priority: 5, effects: [{ type: "GrantCount", target: "All", amount: 1, onlyFactions: ["angel"] }], onFireSetCounter: { key: "extendNight", value: 1 } },
         // 어둠이 내린 도시(특수 패시브): 매 밤 천사팀 직업을 봉인(그 밤 한정 Silence). 지목 가능 수
         // = 2 + counters.sealCap. sealCap 은 밤 해소마다 +1 되어 다음 밤 봉인 상한을 키운다.
         // priority 1 — 대상 행동보다 먼저 봉인. '같은 대상 연속 지목 금지'와 '0명 지목 시
         // 악몽 +2' 도 match-action/engine 경로에서 검증·반영한다.
-        { id: "phantom_seal", name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, targetCount: 2, targetCountCounter: "sealCap", noConsecutiveTarget: true, effects: [{ type: "Silence", target: "Target" }] },
+        { id: "phantom_seal", passiveSlot: true, name: "어둠이 내린 도시", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, targetCount: 2, targetCountCounter: "sealCap", noConsecutiveTarget: true, effects: [{ type: "Silence", target: "Target" }] },
         { id: "phantom_eclipse", name: "일식", targetType: "SELF", priority: 5, maxUses: 1, effects: [{ type: "Eclipse", target: "self" }] },
       ],
     },
@@ -388,7 +388,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 혼령 방출(canon 다단계): 1회차 혼령 표식, 2회차(표식 보유)에 잠식=탈락+투표가치 조공(Haunt).
         { id: "malen_release", name: "혼령 방출", targetType: "SINGLE_ALIVE", priority: 4, excludeSelf: true, effects: [{ type: "Haunt", target: "Target" }] },
-        { id: "malen_possess", name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
+        { id: "malen_possess", passiveSlot: true, name: "빙의", targetType: "SINGLE_ALIVE", priority: 1, excludeSelf: true, effects: [{ type: "Possess", target: "Target" }] },
         // 신출귀몰(v2, 1회): 무대의 혼령 표식을 수거해 다음 밤 시체를 소환한다. 시체는 현재
         // deadCountBonus(사망 무관 악마팀 카운트)로 표현한다.
         { id: "malen_elusive", name: "신출귀몰", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "SummonCorpse", target: "All" }] },
@@ -412,12 +412,12 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "rosanne_hatred", name: "증오", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "VoteCrush", target: "Target" }] },
-        { id: "rosanne_resentment", name: "만들어가는 미래", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "AddTag", target: "Target", tag: "wonhan" }, { type: "GrantCount", target: "self", tag: "dreamMorning", amount: 1 }] },
+        { id: "rosanne_hatred", passiveSlot: true, name: "증오", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "VoteCrush", target: "Target" }] },
+        { id: "rosanne_resentment", abilityGroup: "rosanne_future", name: "만들어가는 미래", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "AddTag", target: "Target", tag: "wonhan" }, { type: "GrantCount", target: "self", tag: "dreamMorning", amount: 1 }] },
         // 라포르(만들어가는 미래 변주, 2인 지정 — 처형·탈락·소멸을 공유). futureCharge 1 소비.
-        { id: "rosanne_rapport", name: "라포르", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetCount: 2, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "LinkFate", target: "Target" }] },
+        { id: "rosanne_rapport", abilityGroup: "rosanne_future", name: "라포르", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, targetCount: 2, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "LinkFate", target: "Target" }] },
         // 외현기억(탈락자 1인 지정 — 다음 아침 부활 후 그 날 처형, 투표 재처형 시 효과 상실). futureCharge 1 소비.
-        { id: "rosanne_manifest", name: "외현기억", targetType: "SINGLE_DEAD", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "Manifest", target: "Target" }] },
+        { id: "rosanne_manifest", abilityGroup: "rosanne_future", name: "외현기억", targetType: "SINGLE_DEAD", priority: 5, excludeSelf: true, requiresCounter: { key: "futureCharge", min: 1, consumeAmount: 1 }, effects: [{ type: "Manifest", target: "Target" }] },
         // 건너뛰기(self, priority 0 = 최우선, 1회): 이 밤 발동한 다른 모든 효과를 취소(SkipNight).
         { id: "rosanne_skip", name: "건너뛰기", targetType: "SELF", priority: 0, maxUses: 1, effects: [{ type: "SkipNight", target: "self" }] },
       ],
@@ -435,7 +435,7 @@ export const CORE_ROLES: RoleDefinition[] = [
       night: [
         // 고요한 적막(v2 비례 충전): 투표·의심한 대상(substrate)에 달빛 + 달의 힘 비례 충전 —
         // 대상 1명당 +1(천사/중립), 악마면 +3(canon 달빛 +10%/악마 +30%, 100% = moonGauge 10).
-        { id: "luna_moonlight", name: "고요한 적막", targetType: "NONE", priority: 5, effects: [
+        { id: "luna_moonlight", abilityGroup: "luna_still", name: "고요한 적막", targetType: "NONE", priority: 5, effects: [
           { type: "Charge", target: "VoteTarget", tag: "moonGauge", amount: 1, demonAmount: 3 },
           { type: "Charge", target: "SuspectTarget", tag: "moonGauge", amount: 1, demonAmount: 3 },
           { type: "AddTag", target: "VoteTarget", tag: "moonlit" },
@@ -448,13 +448,13 @@ export const CORE_ROLES: RoleDefinition[] = [
         // *능력으로 증가한 투표가치(voteValueMod>0)를 마이너스 판정*(canon "패시브 제외 능력으로
         // 증가한 투표가치를 마이너스로 판정"). engine 이 state.modifiers.dawnRule=1 을 세팅 → tally
         // 가 그 라운드 voteValueMod 의 양수 부호를 반전(우노 명예 +10 → -10 처럼 표 경로 역전).
-        { id: "luna_dawn", name: "해가 저문다", targetType: "NONE", priority: 5, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
+        { id: "luna_dawn", abilityGroup: "luna_still", name: "해가 저문다", targetType: "NONE", priority: 5, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
         // 달이 차오른다(v2, 1회): 100% 충전 분기 ② — 그 밤 한정으로 악마(actualFaction='demon')의
         // 처치(Kill)가 달빛(moonlit 태그) 보유자 누구에게든 발동하면 *모든 달빛 대상*에 같은 효과
         // (canon "악마가 달빛 부여 대상 지목 시 달빛 부여 모두에게 같은 효과"). engine 이
         // state.modifiers.moonriseRule=1 → applyEffect Kill case 가 달빛 cascade. 그 밤 종료 시 자동 해제.
         // priority 2 — Silence(1) 후 처리(봉인된 루나는 발동 차단), Kill(4) 전 처리(cascade 활성 보장).
-        { id: "luna_moonrise", name: "달이 차오른다", targetType: "NONE", priority: 2, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
+        { id: "luna_moonrise", abilityGroup: "luna_still", name: "달이 차오른다", targetType: "NONE", priority: 2, maxUses: 1, requiresCounter: { key: "moonGauge", min: 10, consume: true }, effects: [] },
       ],
     },
   },
@@ -500,7 +500,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 따라서 자해 전환 트리거를 전역(생존자 누군가의 selfRecovered≥1)으로 본다 — 누군가 회복하면
         // VoteTarget 박해 대신 *자신*(엘런)에게 +3 누진 자해 박해로 영구 전환(approx). 정확한 "얻은
         // 투표가치" 동적 매핑은 후속 — 현재는 고정 +3 누진 근사.
-        { id: "ellen_persecute", name: "박해", targetType: "NONE", priority: 5, effects: [
+        { id: "ellen_persecute", passiveSlot: true, name: "박해", targetType: "NONE", priority: 5, effects: [
           { type: "ModifyReceivedVote", target: "VoteTarget", amount: 3, tag: "persecuteBias", oddDayOnly: true, skipIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
           { type: "ModifyReceivedVote", target: "self", amount: 3, tag: "persecuteBias", onlyIfAnyPlayerCounter: { key: "selfRecovered", min: 1 } },
         ] },
@@ -561,7 +561,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 삶이 있는 곳으로(v2, 양방향 상호추리): 하브 측 — 의심 가는 악마를 지목, 적중(처치자)이면
         // 자기 부정효과 정화(Deduce). 악마 측 — demon_deduce 액션(대악마 전용)이 하브를 지목·적중 시
         // 하브 다음 처치(Annihilate, 치료 무시). 새 effect 없음 — Deduce 가 source.actualFaction 으로 분기.
-        { id: "habreterus_deduce", name: "삶이 있는 곳으로", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
+        { id: "habreterus_deduce", passiveSlot: true, name: "삶이 있는 곳으로", targetType: "SINGLE_ALIVE", priority: 5, excludeSelf: true, effects: [{ type: "Deduce", target: "Target" }] },
       ],
     },
     // 임종 선언(canon): 그 라운드 누군가 탈락하면 callingPending +1. engine 이 hab 한정 후처리로
@@ -578,14 +578,14 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "mizlet_revive", name: "디저트 선물(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "mizlet_revive", abilityGroup: "mizlet_dessert", name: "디저트 선물(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
         // 디저트 선물 — 쿠키(원문 [천사]15): 그 밤 보호 + 디저트 태그 + 'cookie' 표식. 쿠키 핵심 절은
         // "대상이 탈락해도 그 밤 능력 발동" — cookie 표식 보유자는 *나중에* 탈락해도 그 밤 액션이 엔진
         // 루프의 source-alive 게이트를 우회한다(아래 cookie-act). 표식은 발동 시 소비, 지속(미사용 시
         // 잔존). '이미 탈락자인 경우 가장 가까운 밤에 하는 모든 활동에 참여'(원문) — allowDeadTarget 로
         // 탈락자 직접 지정 허용. 쿠키를 받은 탈락자는 cookie 표식으로 그 밤 죽음-게이트를 우회해
         // 자신의 액션을 발동한다(같은 밤 priority 3 쿠키가 대상의 액션보다 먼저 처리되면 표식이 선다).
-        { id: "mizlet_cookie", name: "디저트 선물(쿠키)", targetType: "SINGLE_ALIVE", priority: 3, allowDeadTarget: true, effects: [
+        { id: "mizlet_cookie", abilityGroup: "mizlet_dessert", name: "디저트 선물(쿠키)", targetType: "SINGLE_ALIVE", priority: 3, allowDeadTarget: true, effects: [
           { type: "Protect", target: "Target", duration: "1_NIGHT" },
           { type: "AddTag", target: "Target", tag: "dessert" },
           { type: "AddTag", target: "Target", tag: "cookie" },
@@ -594,7 +594,7 @@ export const CORE_ROLES: RoleDefinition[] = [
         // "능력으로 단일 대상 지정 시 '무시 불가' 버프" — pudding 표식 보유자의 단일 대상 능력은 봉인/
         // 지목(Silence·Suspected) 게이트를 한 번 우회한다(무시 불가). '탈락 시 탈락 시점을 밤으로 조정'
         // 절은 사망 기록 타이밍을 매치 전역에서 바꿔 아침/낮 흐름과 얽히므로 후속(defer + note).
-        { id: "mizlet_pudding", name: "디저트 선물(푸딩)", targetType: "SINGLE_ALIVE", priority: 3, effects: [
+        { id: "mizlet_pudding", abilityGroup: "mizlet_dessert", name: "디저트 선물(푸딩)", targetType: "SINGLE_ALIVE", priority: 3, effects: [
           { type: "Protect", target: "Target", duration: "1_NIGHT" },
           { type: "AddTag", target: "Target", tag: "dessert" },
           { type: "AddTag", target: "Target", tag: "pudding" },
@@ -620,13 +620,13 @@ export const CORE_ROLES: RoleDefinition[] = [
     passives: [],
     actions: {
       night: [
-        { id: "helen_revive", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
+        { id: "helen_revive", abilityGroup: "helen_sleep_g", name: "황금빛 수면(부활)", targetType: "SINGLE_DEAD", priority: 3, maxUses: 1, effects: [{ type: "Heal", target: "Target" }] },
         // 황금빛 수면(v2, canon [천사]17): 대상 수면 + 'remembered'(영혼 기억) + 투표가치 모두 소모하여
         // 헬렌과 접선(ConsumeVoteValue → 누적 가치 base 소모 + 대상에게 접선 통지) + 깨면 투표가치 +1
         // (GrantCount voteWeightBonus, 소모 뒤라 net base+1 — canon "깨어나면 투표가치 +1"). 연속 같은
         // 대상 2번 불가(noConsecutiveTarget). allowRememberedDead 로 탈락 후에도 지정 가능(기억된 플레이어
         // 재수면 → Sleep case 가 부활). '지정 대상' 해석은 현행(+1 본인) 유지.
-        { id: "helen_sleep", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, allowRememberedDead: true, noConsecutiveTarget: true, effects: [
+        { id: "helen_sleep", abilityGroup: "helen_sleep_g", name: "황금빛 수면", targetType: "SINGLE_ALIVE", priority: 3, allowRememberedDead: true, noConsecutiveTarget: true, effects: [
           { type: "Sleep", target: "Target" },
           { type: "AddTag", target: "Target", tag: "remembered" },
           { type: "ConsumeVoteValue", target: "Target" },
@@ -740,14 +740,14 @@ export const CORE_ROLES: RoleDefinition[] = [
         // 소나타(v2, canon [천사]30): 매료 3 누적(charmCount) 시 연주 — 전원 투표가치 +1(sonataVote,
         // 1일 — tally 가산, engine sonata 루프) + 루루 무적(Protect self). 매료는 charmCount consume +
         // charmed 라운드리셋으로 제거. '능력 지정 대상 +1 전원'은 후속(systemic). onFire 로 발동 신호.
-        { id: "luru_sonata", name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, onFireSetCounter: { key: "sonataFired", value: 1 }, effects: [{ type: "Protect", target: "self", duration: "1_NIGHT" }] },
+        { id: "luru_sonata", passiveSlot: true, name: "아름다운 영혼을 위한 소나타", targetType: "NONE", priority: 5, requiresCounter: { key: "charmCount", min: 3, consume: true }, onFireSetCounter: { key: "sonataFired", value: 1 }, effects: [{ type: "Protect", target: "self", duration: "1_NIGHT" }] },
         // 악보 교체(v2, 1회): 자투 악보 — 루루 자신의 투표가치 영구 +1(voteWeightBonus). canon 무투
         // (다음 아침 2회 투표)는 별도 능력(luru_mute) 로 분리. 다중 대상 투표·반론 등판은 후속.
-        { id: "luru_score", name: "악보 교체(자투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },
+        { id: "luru_score", abilityGroup: "luru_score_swap", name: "악보 교체(자투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteWeightBonus", amount: 1 }] },
         // 악보 교체 — 무투(v2, 1회): 다음 아침 처형 투표를 2회 행사. canon "무투(다음 아침 투표 2회)".
         // self voteCountBonus +1 — tally 가 voteValue * (1 + voteCountBonus) 로 가산(2배 효과).
         // phase-advance 가 처형 투표 종료 후 voteCountBonus 를 0 으로 소비(1회 한정).
-        { id: "luru_mute", name: "악보 교체(무투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteCountBonus", amount: 1 }] },
+        { id: "luru_mute", abilityGroup: "luru_score_swap", name: "악보 교체(무투)", targetType: "NONE", priority: 5, maxUses: 1, effects: [{ type: "GrantCount", target: "self", tag: "voteCountBonus", amount: 1 }] },
       ],
     },
   },

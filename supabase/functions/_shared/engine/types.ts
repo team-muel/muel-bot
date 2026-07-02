@@ -218,6 +218,14 @@ export interface ActiveAbility {
   // 보호가 실제로 공격을 막았을 때(attack_prevented) 시전자에게 카운터 보상(하브레터스 소명:
   // 생명의 언약 성공 시 투표가치 +3). Protect 효과가 그 밤 실제 살해를 무효화한 경우에만 적용.
   onSaveGrantSelf?: { counter: string; amount: number };
+  // 하룻밤 1택 규칙(2026-07-02, 원문 "이변이 없으면 하룻밤에 능력 하나"): 한 밤의 비-패시브
+  // 제출은 같은 캐논 카드(abilityGroup)끼리만 공존한다 — 다른 카드(능력↔능력2) 동시 제출은
+  // match-action 이 거부. 미지정 = 자기 id 가 곧 그룹(단독 카드). 그룹명은 gomdoriCodex 의
+  // 카드(actionTypes 묶음)와 1:1 — canon-engine-fidelity 가드가 동기화를 고정한다.
+  abilityGroup?: string;
+  // 캐논상 패시브/특수 패시브의 야간 발동 슬롯(낙인·소나타·어둠이 내린 도시 등) — 능력 픽이
+  // 아니므로 1택 카운트에서 제외한다. (상호추리 deduce 도 별도 페이즈 소관이라 제외.)
+  passiveSlot?: boolean;
 }
 
 export interface RoleDefinition {

@@ -92,6 +92,40 @@ for (const e of GOMDORI_CODEX) {
   }
 }
 
+// 4) 1택 그룹 동기화(2026-07-02, "이변이 없으면 하룻밤에 능력 하나"): 도감 한 카드가 배선한
+//    엔진 액션들(비-passiveSlot)은 같은 abilityGroup 을 공유해야 하고, 캐논 패시브 카드의
+//    슬롯은 engine passiveSlot=true 여야 한다 — match-action 1택 검증의 구조 가드.
+for (const e of GOMDORI_CODEX) {
+  const role = CORE_ROLES.find((r) => r.id === e.id);
+  if (!role) continue;
+  const night = role.actions.night ?? [];
+  for (const a of e.abilities) {
+    const defs = abilityActionIds(a)
+      .map((id) => night.find((n) => n.id === id))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d));
+    const nonPassive = defs.filter((d) => !d.passiveSlot);
+    const groups = new Set(nonPassive.map((d) => d.abilityGroup ?? d.id));
+    assert.ok(
+      groups.size <= 1,
+      `[1택 그룹] ${e.id} '${a.name}': 한 카드의 엔진 액션들이 서로 다른 abilityGroup (${[...groups].join(", ")})`,
+    );
+    if (PASSIVE_KINDS.has(a.kind)) {
+      for (const d of defs) {
+        assert.ok(
+          d.passiveSlot,
+          `[패시브 슬롯] ${e.id} '${a.name}'(${d.id}): 캐논 패시브 카드의 야간 슬롯은 passiveSlot=true 여야 함(1택 제외)`,
+        );
+      }
+    }
+  }
+  // 상호추리 슬롯은 항상 1택 제외(전용 추리 페이즈 소관).
+  for (const d of night) {
+    if (d.id === "habreterus_deduce" || d.id === "demon_deduce") {
+      assert.ok(d.passiveSlot, `[추리 슬롯] ${e.id}:${d.id} 는 passiveSlot=true 여야 함`);
+    }
+  }
+}
+
 // 등록한 의도 갭이 실제로 전부 존재하는지(오타·이미 전환 정리)도 고정
 for (const key of KNOWN_PASSIVE_SLOTS) {
   const [roleId, actionType] = key.split(":");

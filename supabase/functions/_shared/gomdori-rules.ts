@@ -19,6 +19,9 @@ export const GOMDORI_RULES = {
     // 4지선다라 12초면 충분(미선택은 랜덤 폴백). 밤 20초, 의심·투표 10초.
     roleAssign: { durationSec: 12 },
     nightSuspect: { durationSec: 10 },
+    // 상호추리(하브레터스↔악마) 전용 페이즈 — 하브 생존 시에만 끼어드는 시스템 구간.
+    // 페이스 프리셋 영향 밖(고정), 지목 두 명만 행동하므로 짧게.
+    nightDeduce: { durationSec: 15 },
     night: { durationSec: 20 },
     nightResolve: { durationSec: 3 },
     day: { durationSec: 180 },
@@ -110,6 +113,7 @@ export type GomdoriRules = typeof GOMDORI_RULES;
 export type PhaseDurationKey =
   | "roleAssign"
   | "nightSuspect"
+  | "nightDeduce"
   | "night"
   | "nightResolve"
   | "day"
@@ -127,6 +131,7 @@ export const PACE_PRESETS = GOMDORI_RULES.pace.presets;
 export const PACE_BASE_DURATIONS: PhaseDurations = {
   roleAssign: GOMDORI_RULES.phases.roleAssign.durationSec,
   nightSuspect: GOMDORI_RULES.phases.nightSuspect.durationSec,
+  nightDeduce: GOMDORI_RULES.phases.nightDeduce.durationSec,
   night: GOMDORI_RULES.phases.night.durationSec,
   nightResolve: GOMDORI_RULES.phases.nightResolve.durationSec,
   day: GOMDORI_RULES.phases.day.durationSec,
