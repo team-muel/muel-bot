@@ -21,6 +21,7 @@ import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { startFeedbackObserver } from './feedbackObserver.js';
 import { runProviderHealthcheck } from './providerHealthcheck.js';
 import { initPromptOverlays } from './promptOverlays.js';
+import { runSocialEval } from './socialEval.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -359,9 +360,15 @@ client.once(Events.ClientReady, async (readyClient) => {
   // DB 프롬프트 오버레이 로드(+5분 주기 리프레시) — 실패해도 기동은 계속.
   const supabaseForOverlays = getSupabaseClient();
   if (supabaseForOverlays) {
-    initPromptOverlays(supabaseForOverlays).catch((err) => {
-      console.warn('[prompt-overlays] init failed', err);
-    });
+    initPromptOverlays(supabaseForOverlays)
+      .then(() => {
+        // 소셜 골든셋 eval 은 오버레이 로드 *후* 에 실행 — 실제 배포 프롬프트와
+        // 동일 조건이어야 채점이 의미 있다. ENABLE_SOCIAL_EVAL=true 부팅에서만.
+        return runSocialEval(supabaseForOverlays);
+      })
+      .catch((err) => {
+        console.warn('[prompt-overlays/social-eval] init failed', err);
+      });
   }
 
   // 프로바이더 도달성 검증 — 설정된 프로바이더마다 초소형 프로브를 날려

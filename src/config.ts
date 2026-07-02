@@ -60,6 +60,8 @@ export const config = {
   // 후보 모델 실측용 추가 프로브: "provider:modelId" 콤마 목록 (예: "mindlogic:gpt-5.5,nvidia:z-ai/glm-5.1").
   // 코드 변경 없이 env 만으로 신규 모델의 도달성·레이턴시를 healthcheck 텔레메트리로 잰다.
   probeExtraModels: optionalEnv('PROBE_EXTRA_MODELS'),
+  // 소셜 골든셋 eval — 모델/프롬프트 변경 직후 한 부팅만 켜서 회귀 확인(기본 off).
+  enableSocialEval: booleanEnv('ENABLE_SOCIAL_EVAL', false),
   nvidiaHeavyModel: optionalEnv('NVIDIA_HEAVY_MODEL') ?? 'deepseek-ai/deepseek-v4-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
