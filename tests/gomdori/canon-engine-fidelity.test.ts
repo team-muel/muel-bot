@@ -39,17 +39,28 @@ const KNOWN_PASSIVE_SLOTS = new Set<string>([
   "ellen:ellen_persecute",     // 박해자 (self/자동 누진)
 ]);
 
+// 캐논상 *상대 직업* 카드에 서술되는 상호작용의 자기측 엔진 슬롯 — 도감 카드 없이 허용.
+// demon_deduce: 하브레터스 '삶이 있는 곳으로'(양방향 추리)의 악마측 발동. 캐논 대악마는
+// 4능력(사탄의 마/낙인/만악의 근원·감시/압도적 존재감)이라 별도 카드를 만들지 않는다.
+const KNOWN_COUNTERPART_SLOTS = new Set<string>(["demon:demon_deduce"]);
+
+const abilityActionIds = (a: { actionType?: string; actionTypes?: string[] }): string[] =>
+  [a.actionType, ...(a.actionTypes ?? [])].filter((id): id is string => Boolean(id));
+
 let passiveSlotCount = 0;
 
 for (const e of GOMDORI_CODEX) {
   const engine = engineActions[e.id] ?? new Set<string>();
   const canonActionTypes = new Map<string, { kind: string; name: string; status?: string }>();
   for (const a of e.abilities) {
-    if (a.actionType) canonActionTypes.set(a.actionType, { kind: a.kind, name: a.name, status: a.status });
+    for (const id of abilityActionIds(a)) {
+      canonActionTypes.set(id, { kind: a.kind, name: a.name, status: a.status });
+    }
   }
 
-  // 1) 엔진 밤 슬롯 ⊆ 도감 actionType (고아 슬롯 금지)
+  // 1) 엔진 밤 슬롯 ⊆ 도감 actionType (고아 슬롯 금지, 상대측 상호작용 슬롯은 예외 등록)
   for (const id of engine) {
+    if (KNOWN_COUNTERPART_SLOTS.has(`${e.id}:${id}`)) continue;
     assert.ok(
       canonActionTypes.has(id),
       `[고아 슬롯] ${e.id}: 엔진 액션 '${id}' 에 대응하는 도감 능력(actionType)이 없음`,
@@ -58,21 +69,23 @@ for (const e of GOMDORI_CODEX) {
 
   // 2) live + actionType 도감 능력은 엔진에 배선
   for (const a of e.abilities) {
-    if (a.actionType && a.status === "live") {
+    if (a.status !== "live") continue;
+    for (const id of abilityActionIds(a)) {
       assert.ok(
-        engine.has(a.actionType),
-        `[미구현 live] ${e.id}: 도감 '${a.name}'(${a.actionType}, live) 가 엔진 액션에 없음`,
+        engine.has(id),
+        `[미구현 live] ${e.id}: 도감 '${a.name}'(${id}, live) 가 엔진 액션에 없음`,
       );
     }
   }
 
   // 3) 패시브-as-슬롯 은 의도 등록된 것만
   for (const a of e.abilities) {
-    if (PASSIVE_KINDS.has(a.kind) && a.actionType) {
+    if (!PASSIVE_KINDS.has(a.kind)) continue;
+    for (const id of abilityActionIds(a)) {
       passiveSlotCount++;
       assert.ok(
-        KNOWN_PASSIVE_SLOTS.has(`${e.id}:${a.actionType}`),
-        `[패시브→슬롯] ${e.id}: 패시브 '${a.name}'(${a.actionType}) 가 사용 슬롯으로 노출됨 — ` +
+        KNOWN_PASSIVE_SLOTS.has(`${e.id}:${id}`),
+        `[패시브→슬롯] ${e.id}: 패시브 '${a.name}'(${id}) 가 사용 슬롯으로 노출됨 — ` +
           `의도면 KNOWN_PASSIVE_SLOTS 에 등록, 아니면 진짜 패시브로 전환(캐논 충실도)`,
       );
     }
@@ -84,7 +97,7 @@ for (const key of KNOWN_PASSIVE_SLOTS) {
   const [roleId, actionType] = key.split(":");
   const entry = GOMDORI_CODEX.find((e) => e.id === roleId);
   assert.ok(entry, `KNOWN_PASSIVE_SLOTS: 도감에 ${roleId} 없음`);
-  const ab = entry.abilities.find((a) => a.actionType === actionType);
+  const ab = entry.abilities.find((a) => abilityActionIds(a).includes(actionType));
   assert.ok(ab, `KNOWN_PASSIVE_SLOTS: ${roleId} 에 ${actionType} 능력 없음(전환됐으면 목록에서 제거)`);
   assert.ok(PASSIVE_KINDS.has(ab.kind), `KNOWN_PASSIVE_SLOTS: ${key} 는 더 이상 패시브 아님 — 목록에서 제거`);
 }
