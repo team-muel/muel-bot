@@ -264,6 +264,9 @@ export const generateMuelReply = async (
     provider: 'gemini' | 'nvidia' | 'mindlogic',
     modelName: string,
     modelTools: Record<string, any>,
+    // 실제 라우팅된 레인 — telemetry 의 model_lane 이 'chat' 으로 고정되면
+    // heavy/vision 턴이 안 보여 경로 검증이 불가능하다.
+    lane: MuelModelTask = CHAT_MODEL_TASK,
   ): Promise<MuelAgentResult> => {
     const { text, usage } = await generateText({
       model: aiModel,
@@ -305,7 +308,7 @@ export const generateMuelReply = async (
       provider,
       metadata: {
         taskType: 'chat',
-        modelLane: CHAT_MODEL_TASK,
+        modelLane: lane,
         inputTokens: tokens.inputTokens,
         outputTokens: tokens.outputTokens,
         totalTokens: tokens.totalTokens,
@@ -342,6 +345,7 @@ export const generateMuelReply = async (
           gemini.provider,
           gemini.modelId,
           agentTools,
+          chatLane,
         );
         return result;
       } catch (error) {

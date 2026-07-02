@@ -19,6 +19,7 @@ import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobW
 import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { startFeedbackObserver } from './feedbackObserver.js';
+import { runProviderHealthcheck } from './providerHealthcheck.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -353,6 +354,13 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   startProactiveScheduler(readyClient, getSupabaseClient());
   startFeedbackObserver(readyClient, getSupabaseClient());
+
+  // 프로바이더 도달성 검증 — 설정된 프로바이더마다 초소형 프로브를 날려
+  // muel_ai_events(source='healthcheck')로 적재. NVIDIA/MindLogic 경로가
+  // 실제로 응답을 반환하는지 텔레메트리에서 관측 가능해진다.
+  runProviderHealthcheck(getSupabaseClient()).catch((err) => {
+    console.warn('[provider-healthcheck] crashed', err);
+  });
 
   if (config.enableJobWorker) {
     runJobWorkerLoop().catch(err => {

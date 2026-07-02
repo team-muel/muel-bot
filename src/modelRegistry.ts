@@ -158,14 +158,62 @@ export const getMindlogicTextModel = (modelId: string, task: MuelModelTask): Res
   };
 };
 
+// heavy 레인 전용: NVIDIA 주력 + Gemini 역방향 폴백 — chat 레인 mindlogic 패턴과 동일.
+// getNvidiaTextModel(폴백 없음)은 getFallbackTextModel 의 2순위 레그용으로 남긴다
+// (거긴 이미 gemini 가 죽은 뒤라 역방향 폴백이 무의미).
+export const getNvidiaLaneModel = (task: MuelModelTask): ResolvedMuelModel | null => {
+  const nvidia = getNvidiaProvider();
+  if (!nvidia) return null;
+  const modelId = config.nvidiaHeavyModel;
+  const fullId = `nvidia:${modelId}`;
+  const primary = withTelemetry(nvidia(modelId) as any, { provider: 'nvidia', modelId: fullId, task });
+  const google = getGoogleProvider();
+  const geminiId = normalizeGeminiModelName(getModelIdForTask(task));
+  const reverseFallback = google
+    ? withTelemetry(google(geminiId) as any, { provider: 'gemini', modelId: geminiId, task })
+    : null;
+  return {
+    model: withFallback(primary, reverseFallback, { fromModelId: fullId, toModelId: geminiId, task }),
+    provider: 'nvidia',
+    modelId: fullId,
+    task,
+  };
+};
+
+// healthcheck 전용: 폴백 *없는* 단일 프로바이더 bare 모델. 프로브 성공/실패를
+// 해당 프로바이더에 정확히 귀속시키기 위해 withFallback 을 일부러 안 얹는다.
+export type BareProbeModel = { model: any; provider: MuelModelProvider; modelId: string };
+export const getBareTextModel = (provider: MuelModelProvider, modelId: string): BareProbeModel | null => {
+  switch (provider) {
+    case 'gemini': {
+      const google = getGoogleProvider();
+      if (!google) return null;
+      const id = normalizeGeminiModelName(modelId);
+      return { model: withTelemetry(google(id) as any, { provider, modelId: id, task: 'healthcheck' }), provider, modelId: id };
+    }
+    case 'mindlogic': {
+      const mindlogic = getMindlogicProvider();
+      if (!mindlogic) return null;
+      const fullId = `mindlogic:${modelId}`;
+      return { model: withTelemetry(mindlogic(modelId) as any, { provider, modelId: fullId, task: 'healthcheck' }), provider, modelId: fullId };
+    }
+    case 'nvidia': {
+      const nvidia = getNvidiaProvider();
+      if (!nvidia) return null;
+      const fullId = `nvidia:${modelId}`;
+      return { model: withTelemetry(nvidia(modelId) as any, { provider, modelId: fullId, task: 'healthcheck' }), provider, modelId: fullId };
+    }
+  }
+};
+
 // 레인 주력 모델. heavy 레인은 MUEL_HEAVY_PROVIDER=nvidia 면 NVIDIA(예: deepseek-v4-flash)로
-// 라우팅 — 단가가 Gemini 3.5-flash 보다 싸서 substantive 턴 실험용. NVIDIA 미가용 시 Gemini 로 폴백.
+// 라우팅 — 단가가 Gemini 3.5-flash 보다 싸서 substantive 턴 실험용. 실패 시 Gemini 역방향 폴백.
 // chat 레인은 MUEL_CHAT_PROVIDER=mindlogic 이면 MindLogic Sonnet(MINDLOGIC_CHAT_MODEL)으로
 // 라우팅 — 잡담 턴 소셜 캘리브레이션 개선용. MindLogic 미가용 시 Gemini 로 폴백.
 // 그 외 레인(vision 등)과 기본값은 Gemini.
 export const getLaneModel = (task: MuelModelTask): ResolvedMuelModel | null => {
   if (task === 'heavy' && config.heavyProvider === 'nvidia') {
-    return getNvidiaTextModel(config.nvidiaHeavyModel, task) ?? getGeminiTextModel(task);
+    return getNvidiaLaneModel(task) ?? getGeminiTextModel(task);
   }
   if (task === 'chat' && config.chatProvider === 'mindlogic') {
     return getMindlogicTextModel(config.mindlogicChatModel, task) ?? getGeminiTextModel(task);
