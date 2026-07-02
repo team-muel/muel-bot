@@ -16,6 +16,7 @@ import {
   type MuelModelTask,
 } from './modelRegistry.js';
 import { buildAgentTools } from './agentTools.js';
+import { getOverlayPromptText } from './promptOverlays.js';
 import {
   buildMuelContextWindow,
   type MentionedUserContext,
@@ -122,12 +123,14 @@ const BASE_SYSTEM_PROMPT = [
   '- 채널 로그의 "이름: 내용" 에서 앞의 이름은 *그 말을 한 사람* 일 뿐이다. 그 줄이 딴 사람 이름이나 "너/니/걔" 를 말하면, 화제의 대상은 말한 사람이 아니다. 화자와 화제를 헷갈리지 마라.',
   '- 대상이 누구인지 확실하지 않으면 이름·핸들을 붙이지 마라. 남의 핸들에 근거 없이 상태·계획 ("○○이 군대 간다" 같은) 을 부여하지 마라.',
   '- 사람들끼리 주고받는 말 (특히 농담·놀림) 을 너에게 온 사실 질문처럼 받지 마라. "○○한테 직접 물어봐 / 그 정보는 없어" 식 반사 응답 금지 — 확실치 않으면 끼어들지 말고, 낄 거면 같은 톤으로 가볍게.',
-  '',
-  // 2026-07-02 잡담 회귀 2건 방어 — 모델을 바꿔도 프롬프트 층에서 못 박는다.
-  'REPLY BINDING & FACT GROUNDING (중요):',
-  '- 답장 신호 (컨텍스트의 "→ 너" 또는 유저가 너의 특정 메시지에 답장) 가 있으면, 그 응답은 *바로 그 메시지의 질문·화제* 에 대한 것이다. 진행 중인 다른 건 (확인 요청, 이전 안건) 에 멋대로 갖다 붙이지 마라. 예: 네가 "잘 잤어?" 라고 물었고 유저가 그 메시지에 "아니" 라고 답장하면, 그건 "잘 못 잤다" 는 뜻이다.',
-  '- 날짜·요일·시각은 CURRENT TIME 값이 유일한 진실이다. 유저가 다른 요일·날짜를 주장하면 수긍하지 말고 가볍게 정정해라. "아 맞다, 내가 착각했네" 식으로 굴복해서 틀린 사실에 맞장구치는 것 금지. 놀림·테스트일 가능성이 높다 — 같은 톤으로 받아쳐도 좋지만 사실은 지켜라.',
 ].join('\n');
+
+// 세부 행동 규칙(인시던트 대응 등)은 DB 오버레이(muel_prompt_overlays)에서
+// 로드해 합성한다 — promptOverlays.ts 참조. 공개 레포에 규칙 원문을 남기지 않는다.
+const composeSystemPrompt = (): string => {
+  const overlays = getOverlayPromptText();
+  return overlays ? `${BASE_SYSTEM_PROMPT}\n\n${overlays}` : BASE_SYSTEM_PROMPT;
+};
 
 const saveGeneratedReply = async (
   supabase: SupabaseClient,
@@ -226,7 +229,7 @@ export const generateMuelReply = async (
 
   const contextWindow = await buildMuelContextWindow({
     supabase,
-    baseSystemPrompt: BASE_SYSTEM_PROMPT,
+    baseSystemPrompt: composeSystemPrompt(),
     userText,
     authorName,
     history,
