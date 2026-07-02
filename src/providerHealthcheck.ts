@@ -46,6 +46,24 @@ const buildProbes = (): Probe[] => {
       probes.push({ provider: 'nvidia', modelId: config.nvidiaModel, note: 'nvidia-fallback' });
     }
   }
+  // 후보 모델 실측 (PROBE_EXTRA_MODELS="provider:modelId,..."). 레인 교체 *전에*
+  // 도달성·레이턴시를 텔레메트리로 재는 용도 — env 만으로 붙였다 뗄 수 있다.
+  for (const raw of (config.probeExtraModels ?? '').split(',')) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const sep = entry.indexOf(':');
+    if (sep <= 0 || sep === entry.length - 1) {
+      console.warn('[provider-healthcheck] malformed PROBE_EXTRA_MODELS entry, skipping:', entry);
+      continue;
+    }
+    const provider = entry.slice(0, sep) as MuelModelProvider;
+    const modelId = entry.slice(sep + 1);
+    if (provider !== 'gemini' && provider !== 'mindlogic' && provider !== 'nvidia') {
+      console.warn('[provider-healthcheck] unknown provider in PROBE_EXTRA_MODELS, skipping:', entry);
+      continue;
+    }
+    probes.push({ provider, modelId, note: 'extra-probe' });
+  }
   return probes;
 };
 
