@@ -45,6 +45,8 @@ export type BuildMuelContextWindowOptions = {
   mentionedUsers?: MentionedUserContext[];
   guildTopology?: string;
   sourceUserId?: string;
+  /** P4 social-read 전처리 판독 섹션(포맷 완료 텍스트). 휘발 섹션으로 후미 배치. */
+  socialReadSection?: string;
 };
 
 const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
@@ -269,8 +271,9 @@ export const buildMuelContextWindow = async (
     ].join('\n'));
   }
 
-  // 휘발 섹션은 마지막 — 채널 활동(메시지마다 변동), 현재 시각(분마다 변동).
+  // 휘발 섹션은 마지막 — 채널 활동(메시지마다 변동), 판독, 현재 시각(분마다 변동).
   if (opts.channelActivity) pushSection('channelActivity', opts.channelActivity);
+  if (opts.socialReadSection) pushSection('socialRead', opts.socialReadSection);
   pushSection('time', formatCurrentTime());
 
   const diagnostics = {
