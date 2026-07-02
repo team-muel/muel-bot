@@ -67,9 +67,11 @@ export const runSocialRead = async (input: {
   }
 };
 
-/** 판독 결과를 시스템 프롬프트 섹션으로 포맷. low-commit 정책 포함. */
-export const formatSocialReadSection = (read: SocialRead): string => {
-  const lowCommit = read.confidence < LOW_COMMIT_CONFIDENCE || read.register === 'test';
+/** 판독 결과를 시스템 프롬프트 섹션으로 포맷. low-commit 정책 포함.
+ *  lowCommitMin: 채널별 임계 오버라이드(P6) — null 이면 전역 기본. */
+export const formatSocialReadSection = (read: SocialRead, lowCommitMin: number | null = null): string => {
+  const threshold = lowCommitMin ?? LOW_COMMIT_CONFIDENCE;
+  const lowCommit = read.confidence < threshold || read.register === 'test';
   const lines = [
     '--- SOCIAL READ (전처리 판독 — 이 판독을 전제로 응답해라) ---',
     `수신자=${read.addressee}, 레지스터=${read.register}, 확신도=${read.confidence.toFixed(2)}`,

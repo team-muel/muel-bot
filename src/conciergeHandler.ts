@@ -322,7 +322,10 @@ export const handleHubChannelMessage = async (
     const responsive = !!decision && RESPONSIVE_INTENTS.has(decision.intent);
     // A responsive intent only fires when the text shows a real surface cue that
     // it's FOR Muel — not peer banter the router mislabeled with high confidence.
-    const reflexSuppressed = responsive && !intentHasSurfaceCue(decision!.intent, userText);
+    // P6: 활기 우선 채널은 surface_cue_required=false 로 이 게이트를 끌 수 있다
+    // (라우터 confidence 게이트는 유지). 기본은 true — #211 동작 그대로.
+    const surfaceCueRequired = channelConfig?.surfaceCueRequired !== false;
+    const reflexSuppressed = responsive && surfaceCueRequired && !intentHasSurfaceCue(decision!.intent, userText);
     if (
       !decision ||
       !responsive ||
@@ -404,6 +407,8 @@ export const handleHubChannelMessage = async (
         guildTopology,
         userId,
         channelId,
+        // P6: 채널별 low-commit 임계(null=전역 기본).
+        { lowCommitMin: channelConfig?.lowCommitMin ?? null },
       ),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`hub generateMuelReply timed out after ${config.mentionReplyTimeoutMs}ms`)), config.mentionReplyTimeoutMs),
