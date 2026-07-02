@@ -200,6 +200,8 @@ export const generateMuelReply = async (
   guildTopology?: string,
   sourceUserId?: string,
   currentChannelId: string | null = null,
+  // P6 채널별 다이얼 — social-read low-commit 임계 오버라이드(null=전역 기본).
+  socialTuning: { lowCommitMin?: number | null } | null = null,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
   const preflightGuard = getPreflightGuard(userText);
@@ -249,7 +251,9 @@ export const generateMuelReply = async (
     mentionedUsers,
     guildTopology,
     sourceUserId,
-    socialReadSection: socialRead ? formatSocialReadSection(socialRead) : undefined,
+    socialReadSection: socialRead
+      ? formatSocialReadSection(socialRead, socialTuning?.lowCommitMin ?? null)
+      : undefined,
   });
   const {
     system,
