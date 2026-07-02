@@ -22,6 +22,12 @@ export interface CodexAbility {
   text: string;
   /** 엔진 action_type — 있으면 인게임에서 이 능력으로 직접 발동된다(능력) / 패시브의 야간 발동 표시. */
   actionType?: string;
+  /**
+   * 추가 엔진 action_type 배선 — 캐논이 한 카드에 여러 발동(예: 미즐렛 '디저트 선물'의
+   * 쿠키/푸딩, 루나 '고요한 적막'의 분기)을 담을 때 사용한다. 카드 수는 캐논 위계를
+   * 따르고, 엔진 슬롯 대응(canon-engine-fidelity 고아 슬롯 가드)은 이 목록으로 유지한다.
+   */
+  actionTypes?: string[];
   /** 구현 충실도(로컬 캐논 대비): live=캐논대로 / partial=핵심만 / planned=예정. */
   status?: "live" | "partial" | "planned";
 }
@@ -53,8 +59,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "romaz", name: "로마즈", faction: "angel", title: "용의자 색출 경찰", slot: "천사-2",
     summary: "매일 밤 용의자를 지목해 무게를 키우고, 조사장으로 악마를 색출해 신념으로 처단한다.",
     abilities: [
-      { kind: "패시브", name: "정의로운 경찰", text: "용의자로 지목한 대상은 +5 투표가치 / +10 의심가치를 받는 표로 가산합니다.", status: "live" },
-      { kind: "패시브", name: "감시소", text: "로마즈가 직전에 투표한 대상이 용의자라면 그 밤 구금됩니다(능력·효과 차단). 단, 용의자가 구금된 밤에 천사팀이 악마로부터 효과를 받으면 다음 하루는 누구도 구금할 수 없습니다.", status: "live" },
+      { kind: "패시브", name: "정의로운 경찰", text: "용의자로 지목한 대상은 +5 투표가치 / +10 의심가치를 받는 표로 가산합니다. 로마즈가 직전에 투표한 대상이 용의자라면 그 밤 구금됩니다(능력·효과 차단, 전원 통지). 단, 용의자가 구금된 밤에 천사팀이 악마로부터 효과를 받으면 다음 하루는 누구도 구금할 수 없습니다.", status: "live" },
       { kind: "능력", name: "용의자 색출", text: "대상을 하루 '용의자'로 지목하고 조사장 1장을 얻습니다. 조사장을 가진 채 색출하면 용의자가 악마인지 통지받습니다. 조사장 3장이면 용의자가 악마팀일 때 조건을 무시하고 구금(능력·효과 차단)합니다.", actionType: "romaz_suspect", status: "live" },
       { kind: "능력2", name: "신념", text: "용의자로 지목됐던 대상 중 1명을 탈락시킵니다(무시 불가). 이 탈락자가 천사팀이면 신념이 봉인되고 이후 구금할 수 없게 됩니다. 1회성입니다.", actionType: "romaz_conviction", status: "live" },
     ],
@@ -66,9 +71,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "rainer", name: "라이너", faction: "angel", title: "백호의 소환자", slot: "천사-13",
     summary: "수호신 백호를 불러 천사팀 카운트를 늘려 마을을 지킨다.",
     abilities: [
-      { kind: "패시브", name: "수호신 백호", text: "백호 소환 시 천사팀 카운트 +3을 얻고, 탈락 뒤에도 사후 지속 +3을 남깁니다. 1회성입니다.", actionType: "rainer_summon", status: "live" },
-      { kind: "능력", name: "거친 포효", text: "'강한 의지'를 2회 모으면 2명을 직접 지목해 백호 발톱을 새깁니다 — 천사팀 카운트 -1, 강한 의지 2 소비. 발톱이 새겨진 대상은 다음 아침 투표가치를 3 이상 얻으면 소멸합니다. (지목하지 않으면 그 밤 강한 의지 대상 중 최대 2명을 자동으로 할퀴는 폴백이 유지됩니다.)", actionType: "rainer_roar", status: "live" },
-      { kind: "능력", name: "강한 의지", text: "대상을 관찰하고 강한 의지 +1을 얻습니다(같은 대상 연속 지목 불가). 관찰 대상이 그 밤 탈락하면 강한 의지 +2가 추가됩니다.", actionType: "rainer_resolve", status: "live" },
+      { kind: "패시브", name: "수호신 백호", text: "백호 소환 시 천사팀 카운트 +3을 얻고, 탈락 뒤에도 사후 지속 +3이 남습니다(1회). 강한 의지를 2회 모으면 거친 포효가 발동합니다.", actionType: "rainer_summon", status: "live" },
+      { kind: "능력", name: "강한 의지", text: "대상을 관찰하고 강한 의지 +1을 얻습니다(같은 대상 연속 지목 불가). 관찰 대상이 그 밤 탈락하면 강한 의지 +2가 추가됩니다. 거친 포효 — 강한 의지 2회를 소비해 2명을 지목하면 백호가 발톱으로 그어냅니다(천사팀 카운트 -1). 발톱이 새겨진 대상은 다음 아침 투표가치를 3 이상 얻으면 소멸합니다.", actionType: "rainer_resolve", actionTypes: ["rainer_roar"], status: "live" },
       { kind: "능력2", name: "그날의 저항", text: "백호 한 마리를 추가 소환합니다 — 천사팀 카운트 +1 + 강한 의지 +1. 1회성이며 첫 밤에는 발동되지 않습니다.", actionType: "rainer_resistance", status: "live" },
     ],
     v1: "구현됨. rainer_summon — 1회 self 소환 액션으로 countBonus +3 / deadCountBonus +3 획득. rainer_resolve(강한 의지 v2): SINGLE_ALIVE, noConsecutiveTarget(같은 대상 연속 지목 불가). AddTag observedByRainer + self willCount +1. 관찰 대상이 그 밤 탈락하면 engine 후처리가 라이너 willCount +2 (canon '대상 탈락 시 강한 의지 +2') + rainer_will_surge 이벤트, 표식 1회 소비. rainer_resistance(그날의 저항 v2, 1회): SELF — deadCountBonus +1 + willCount +1 (백호 한 마리 추가 소환 근사 + 강한 의지 +1).",
@@ -80,8 +84,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "매일 밤 한 명의 정체를 조사한다. 단서를 모으면 사건의 전말로 발전.",
     abilities: [
       { kind: "패시브", name: "침착한 탐정", text: "누군가 탈락하면 투표 대상을 범인으로 지목하고, 범인이 그날 밤 지정한 대상이 도르단에게 비공개로 알려집니다.", status: "live" },
-      { kind: "능력", name: "단서 수집 / 사건의 전말", text: "단서 3개 이상에서 정밀 조사로 악마를 정확히 식별하면 사건의 전말이 발동 — 다음 아침을 생략하고 그 악마를 곧장 판결대에 세웁니다.", actionType: "police_investigate", status: "live" },
-      { kind: "능력2", name: "잠입 수사", text: "대상을 밤 동안 관찰합니다. 탈락과 연결되면 불심검문이 발동해 그 밤 부정 효과를 무시합니다.", actionType: "dordan_infiltrate", status: "live" },
+      { kind: "능력", name: "단서 수집 / 사건의 전말", text: "대상의 정체를 조사하고, 대상이 그 밤 능력을 발동했는지 확인합니다. 단서가 (5 - 탈락자 수)개(최소 1) 모이면 조사가 사건의 전말로 바뀝니다 — 대상이 악마라면 전원 통지 후 아침을 생략하고 곧장 판결대에 세웁니다.", actionType: "police_investigate", status: "live" },
+      { kind: "능력2", name: "잠입 수사", text: "대상을 밤 동안 관찰합니다. 관찰 대상이 탈락하거나 누군가를 탈락시키면 불심검문이 발동해 도르단은 그 밤 부정 효과를 모두 무시합니다.", actionType: "dordan_infiltrate", status: "live" },
     ],
     v1: "구현됨. police_investigate(악마/천사 판정) + 침착한 탐정 단서(death-hook: 탈락자 1명당 단서 +1) + culprit_target_revealed(탈락 발생 밤, 도르단의 투표 대상이 지정한 대상 private 통지). 단서 3개부터 정밀 조사(정확한 직업 통지) + 사건의 전말(정밀 조사로 악마 처치자 식별 시 matches.engine_state.caseClosed → phase-advance 가 아침 생략·그 악마 강제 판결). dordan_infiltrate 는 관찰 대상이 그 밤 탈락하면 stakeout_triggered 로 도르단 부정효과를 정화한다.",
     v2: "단서 카운터(탈락자 수 연동), 범인 지정 대상 통지, 사건의 전말(전원 통지·아침 생략·판결 강제), 잠입 수사(관찰→불심검문→부정효과 무시)까지 핵심 라이브.",
@@ -104,10 +108,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "디저트와 와인으로 사람을 살리는 가게. 게임이 어두워지면 다수를 부활시킨다.",
     abilities: [
       { kind: "패시브", name: "행복을 파는 가게", text: "탈락자가 생존자보다 많아지면 가장 최근 탈락 2명을 복귀(소멸·부활불가 무시)시키고 미즐렛은 탈락합니다. 1회성 역전 패시브입니다.", status: "live" },
-      { kind: "능력", name: "디저트 선물(부활)", text: "탈락한 한 명을 디저트로 되살립니다. 1회성입니다.", actionType: "mizlet_revive", status: "live" },
-      { kind: "능력", name: "디저트 선물(쿠키)", text: "대상에게 디저트(보호 + 'cookie' 표식)를 부여하고 미즐렛과의 채팅 회로를 엽니다. 쿠키 보유자는 그 밤 탈락해도 그 밤 능력이 발동됩니다. 이미 탈락한 대상에게도 직접 쿠키를 줄 수 있고, 그 탈락자는 가장 가까운 밤의 활동에 참여합니다.", actionType: "mizlet_cookie", status: "live" },
-      { kind: "능력", name: "디저트 선물(푸딩)", text: "대상에게 디저트(보호 + 'pudding' 표식)를 부여합니다. 푸딩 보유자가 단일 대상 능력을 쓰면 봉인·지목을 무시하고 발동합니다('무시 불가'). 푸딩 보유자가 처형으로 탈락하면 탈락 시점이 밤으로 조정됩니다.", actionType: "mizlet_pudding", status: "live" },
-      { kind: "능력2", name: "고급 와인", text: "전원의 부정 효과를 제거하고 디저트 보유자 전원과 와인 회식 채팅을 엽니다. 디저트를 받지 못한 대상은 투표가치 -1. 1회성입니다.", actionType: "mizlet_wine", status: "live" },
+      { kind: "능력", name: "디저트 선물", text: "대상에게 디저트를 제공합니다(탈락자에게도 직접 줄 수 있습니다). 쿠키 — 보호를 받고, 보유자는 그 밤 탈락해도 능력이 발동되며, 이미 탈락한 대상은 가장 가까운 밤 활동에 참여합니다. 푸딩 — 보호를 받고, 보유자의 단일 대상 능력은 봉인·지목을 무시하고 발동하며('무시 불가'), 처형으로 탈락하면 탈락 시점이 밤으로 조정됩니다. 디저트를 준 대상과는 다과회로 대화합니다.", actionTypes: ["mizlet_revive", "mizlet_cookie", "mizlet_pudding"], status: "live" },
+      { kind: "능력2", name: "고급 와인", text: "한 명을 지정합니다(우선적용). 디저트를 제공받은 대상이면 부정 효과가 씻기고 미즐렛과 밤 동안 대화합니다. 디저트가 없는 대상은 자신이 발동하는 부정 효과가 사라지고 투표가치가 1 감소합니다. 1회성입니다.", actionType: "mizlet_wine", status: "live" },
     ],
     v1: "구현됨. mizlet_revive(탈락자 부활, 1회) + 디저트 선물 쿠키/푸딩 분리(mizlet_cookie = 보호+디저트+cookie 표식, 보유 중 탈락해도 그 밤 발동 / mizlet_pudding = 보호+디저트+pudding 표식, 단일 대상 능력 봉인·지목 1회 우회 '무시 불가') + dessert_received 이벤트(variant 포함) = 미즐렛-대상 채팅 회로 신호 + 다수복귀 패시브(탈락자>생존자 시 가장 최근 탈락 2명 복귀[소멸·부활불가 무시] + 미즐렛 탈락, 1회, phase-advance night_resolve). mizlet_wine 은 전원 정화 + 디저트 미제공자 voteValueMod -1 + 디저트 보유 생존자 전원에 dessert_chat_open 이벤트(와인 회식 일괄 채팅 hook).",
     v2: "부활, 디저트 쿠키/푸딩 분리(쿠키 죽음-게이트 우회 코어 / 푸딩 무시 불가 코어), 다수 복귀 패시브, 고급 와인 정화/페널티, 디저트/와인 채팅 회로 이벤트 hook 까지 핵심 라이브. 쿠키 '이미 탈락자 직접 지정', 푸딩 '탈락 시점 밤 조정', 실제 채팅 회로 plumbing 은 후속.",
@@ -117,9 +119,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "helen", name: "헬렌", faction: "angel", title: "황금빛 수면", slot: "천사-17",
     summary: "추억·수면·부활의 천사. 죽음을 보류한다.",
     abilities: [
-      { kind: "패시브", name: "행복 쉼터 / 추억을 간직하는 법", text: "황금빛 수면을 받은 자는 영혼이 기억되어 탈락 후에도 다시 수면을 받을 수 있으며, 그때 발동되면 부활합니다. 소멸(annihilated)은 부활 불가입니다.", status: "live" },
-      { kind: "능력", name: "황금빛 수면(부활)", text: "한 번 잠들었던 추억된 탈락자를 다시 재워 부활시킵니다. 1회성입니다.", actionType: "helen_revive", status: "live" },
-      { kind: "능력", name: "황금빛 수면", text: "대상을 수면 상태로 만들어 부정 효과·죽음을 막고 영혼을 기억시킵니다. 한 번 기억된 자는 탈락 후에도 다시 잠들어 부활할 수 있습니다.", actionType: "helen_sleep", status: "live" },
+      { kind: "패시브", name: "행복 쉼터", text: "게임 시작 시 전원에게 헬렌의 존재가 통지됩니다. 황금빛 수면을 받은 자는 투표가치를 모두 소모하여 헬렌과 접선하고, 영혼이 기억됩니다. 영혼이 기억된 플레이어는 탈락 후에도 황금빛 수면을 받을 수 있습니다.", status: "live" },
+      { kind: "능력", name: "황금빛 수면", text: "대상을 재워 부정 효과와 죽음으로부터 지킵니다(행동은 봉인, 같은 대상 연속 불가). 깨어나면 투표가치 +1. 추억을 간직하는 법 — 영혼이 기억된 탈락자가 황금빛 수면으로 깨어나면 게임에 복귀합니다(소멸은 부활 불가).", actionType: "helen_sleep", actionTypes: ["helen_revive"], status: "live" },
       { kind: "능력2", name: "자유로운 새", text: "탈락자 한 명을 추가로 되살립니다. 1회성입니다.", actionType: "helen_freebird", status: "live" },
     ],
     v1: "구현됨. helen_revive(탈락자 부활, SINGLE_DEAD Heal·1회) + helen_sleep(v2: 생존자 황금빛 수면 — Sleep + AddTag remembered). allowRememberedDead 플래그로 탈락+remembered 대상도 helen_sleep 으로 재지정 가능. Sleep case 가 dead+remembered 면 부활(alive=true) 후 평소 수면 적용 — 추억을 간직하는 법(canon 수면으로 깨면 복귀). annihilated 는 부활 불가 게이트. helen_freebird(탈락자 추가 복귀, 1회).",
@@ -130,9 +131,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "uno", name: "우노", faction: "angel", title: "명예의 군인", slot: "천사-6",
     summary: "군인의 사명과 명예. 살아있는 한 천사팀 카운트를 더한다.",
     abilities: [
-      { kind: "패시브", name: "명예", text: "우노는 살아있는 한 천사팀 카운트 +5와 행사 투표가치 +5를 갖습니다. 이 투표가치는 사탄의 마(-1)를 뚫고 살아남아, 악마가 투표를 독점해도 우노만은 표를 행사할 수 있습니다.", status: "live" },
       { kind: "패시브", name: "군인의 사명", text: "투쟁 2회로 충전된 대상은 악마 효과 1회를 제거합니다.", status: "live" },
-      { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1과 사명 충전 +1을 부여합니다.", actionType: "uno_struggle", status: "live" },
+      { kind: "능력", name: "투쟁", text: "대상 소속 카운트 +1과 사명 충전 +1을 부여합니다. 투쟁을 발동하고 그 대상이 살아있는 동안 우노에게 명예가 적용됩니다 — 천사팀 카운트 +5와 행사 투표가치 +5. 이 투표가치는 사탄의 마(-1)를 뚫고 살아남아, 악마가 투표를 독점해도 우노만은 표를 행사할 수 있습니다.", actionType: "uno_struggle", status: "live" },
       { kind: "능력2", name: "용맹함", text: "자신을 정화하고 전원에게 투쟁을 발동합니다. 우노가 투표한 대상은 사망 기록과 소속이 공개·처형되고, 천사를 죽이면 우노가 다음 밤 봉인됩니다. 1회성입니다.", actionType: "uno_valor", status: "live" },
     ],
     v1: "구현됨. 명예 countBonus +5 + 투표가치 +5(배정 — 원문 [천사]6, 사탄의 마 -1 을 뚫는 천사 표 경로) + uno_struggle(투쟁: GrantCount + missionCharge 1, 2스택이면 악마 효과 1회 제거) + uno_valor(용맹함 1회: 자기 Cleanse + 전원 투쟁/missionCharge + 투표대상 소속 공개/처형 + 천사 살해 시 우노 다음 밤 봉인).",
@@ -167,10 +167,9 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     id: "luru", name: "루루", faction: "angel", title: "연주자", slot: "천사-30",
     summary: "선율로 사람을 매료시키는 연주자. 투표 권한을 양도받는다.",
     abilities: [
-      { kind: "패시브", name: "아름다운 영혼을 위한 소나타", text: "매료 3명 이상이면 즉시 연주가 시작되어 전원을 정화하고, 그 밤 루루를 무적으로 만듭니다.", actionType: "luru_sonata", status: "live" },
+      { kind: "패시브", name: "아름다운 영혼을 위한 소나타", text: "매료 3명 이상이면 즉시 연주가 시작됩니다 — 매료를 모두 소비하고, 하루 동안 전원의 투표가치와 능력 지정 가능 대상이 +1 늘어나며, 루루는 연주를 마치기 전까지 탈락하지 않습니다.", actionType: "luru_sonata", status: "live" },
       { kind: "능력", name: "영혼을 만지는 음색", text: "대상을 매료해 처형 투표 권한을 루루에게 양도시킵니다.", actionType: "luru_charm", status: "live" },
-      { kind: "능력2", name: "악보 교체 (자투)", text: "자투 악보로 자신의 투표가치를 +1 올립니다. 1회성입니다.", actionType: "luru_score", status: "live" },
-      { kind: "능력2", name: "악보 교체 (무투)", text: "무투 악보로 다음 아침의 처형·찬반 투표를 2배 행사합니다. 1회성입니다.", actionType: "luru_mute", status: "live" },
+      { kind: "능력2", name: "악보 교체", text: "게임 중 1회, 규칙을 깨고 원하는 악보의 효과를 차용합니다. 자투 — 자신의 투표가치 +1. 무투 — 다음 아침의 처형·찬반 투표를 2배 행사합니다.", actionTypes: ["luru_score", "luru_mute"], status: "live" },
     ],
     v1: "구현됨. luru_charm(매료 + charmCount 게이지 + 투표권 양도 voteWeightBonus) + luru_sonata(매료 3 누적 시: 전원 Cleanse + 자기 무적, requiresCounter·소비) + luru_score(악보 교체 자투, 1회: 자기 투표가치 +1) + luru_mute(악보 교체 무투 v2, 1회: 자기 voteCountBonus +1 → 다음 처형·찬반 투표 2배, phase-advance 가 vote 단계 종료 시 소비).",
     v2: "매료, 소나타, 악보 자투(+1), 악보 무투(투표 2배)까지 핵심 라이브. 자투 매료 비례 강화·다중 대상 투표·반론 등판은 후속(투표 시스템 재설계 필요).",
@@ -184,9 +183,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "사탄의 마", text: "대악마가 능력을 성공 발동시키면(처치·낙인·압도적 존재감) 자신을 제외한 전원의 투표가치가 -1 내려갑니다(악마 투표 독점 — 마을은 표로 악마를 처형할 수 없습니다). 생존 천사팀 전체의 투표가치가 0 이하로 떨어지면 모든 조사·취급 효과가 '악마' 로 판정되어 카운트와 승리 판정에도 자동 반영됩니다(살아있는 대악마가 영역을 유지하는 동안).", status: "live" },
       { kind: "특수 패시브", name: "메피스토의 낙인", text: "투표 대상에게 낙인을 통지하고, 대악마가 직업 삭제와 새 천사 직업 배정을 일으킵니다. 낙인을 받은 대상은 '낙인 적용자' 표식이 남아 감시의 조건이 됩니다.", actionType: "daeakma_brand", status: "live" },
-      { kind: "능력", name: "만악의 근원 / 감시", text: "대상을 탈락시킵니다. 낙인 적용자가 존재하면 감시가 추가되어 대악마가 다음 아침 2표를 행사합니다. (같은 대상 2표 시 무조건 반론은 후속)", actionType: "demon_kill", status: "partial" },
+      { kind: "능력", name: "만악의 근원 / 감시", text: "대상을 탈락시킵니다. 낙인 적용자가 존재하면 감시가 추가되어 대악마가 다음 아침 2표를 행사하고, 같은 대상을 두 번 투표하면 그 대상은 무조건 반론에 오릅니다.", actionType: "demon_kill", status: "partial" },
       { kind: "능력2", name: "압도적인 존재감", text: "자신을 제외한 전원을 압도해 그 밤 능력을 봉인합니다. 1회성입니다.", actionType: "daeakma_dominion", status: "live" },
-      { kind: "능력2", name: "역추리 (삶이 있는 곳으로)", text: "하브레터스로 의심되는 대상을 지목합니다. 적중하면 그 밤 치료 효과를 무시하고 다음 처치로 하브레터스를 탈락시킵니다.", actionType: "demon_deduce", status: "live" },
     ],
     v1: "구현됨. demon_kill(처치 + 사탄의 마 -1 + 감시: 낙인 적용자(mephistoBrand) 존재 시 self voteCountBonus +1) + daeakma_brand(낙인: Rebrand + mephistoBrand 표식 + 사탄의 마 -1) + daeakma_dominion(압도적 존재감 1회: 전원 봉인 Silence AllOthers + 사탄의 마 -1). 원문 사탄의 마 트리거='능력 성공 발동'이라 처치·낙인·존재감 각각에 ModifyVoteValue AllOthers -1 동반(능력당 1회). 가인 있으면 보호막 1. 사탄의 마 전역 판정(생존 천사팀 전원 투표가치 0 → 모든 조사 '악마', match-action-core) + 전역 취급 v2(engine.applySatanicRealm: 천사팀 전원 vote 0 ≤ 시 treatedAsFaction='demon' 플립). countTeams 가 treatedAsFaction 우선이라 승리 판정·기타 취급 효과에 자동 반영.",
     v2: "메피스토 낙인, 사탄의 마(능력 성공 발동마다 전원 -1 + 천사팀 전원 0 시 전역 악마 취급·승리 판정 자동 반영), 압도적 존재감, 감시 2표(낙인 적용자 존재 시 처치 발동하면 voteCountBonus +1 — onlyIfAnyPlayerTag 'mephistoBrand' 게이트, 루루 무투와 동일 라이프사이클로 phase-advance 가 처형 tally 직후 소비) 라이브. 원문 per-target 판정('이 효과로 한 대상이 0 되면 그 효과 무효 + 그 대상만 악마 취급')은 전역 근사로 처리 — 정밀 per-target 화는 후속. 감시의 '같은 대상 2표 시 무조건 반론'(강제 재심)은 verdict 반론 override 가 필요해 후속(루루 무투와 동일 blocker).",
@@ -198,8 +196,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     abilities: [
       { kind: "패시브", name: "침묵의 밤", text: "밤 종료 시 능력 사용 가능 밤을 한 번 더 열고, 생존 천사팀 카운트를 +1 보상합니다. 팬텀과 조력자는 접선할 수 없지만 서로의 정체와 직업은 통지됩니다.", actionType: "phantom_silentnight", status: "live" },
       { kind: "특수 패시브", name: "어둠이 내린 도시", text: "매 밤 직업 봉인 대상을 늘려갑니다. 전날 같은 대상은 연속 봉인할 수 없고, 무지목 시 악몽 충전으로 전환됩니다.", actionType: "phantom_seal", status: "live" },
-      { kind: "능력", name: "악몽", text: "대상을 악몽에 빠뜨리고, 연속되면 영면으로 격상합니다. 악몽은 아침 탈락으로 이어집니다.", actionType: "phantom_nightmare", status: "live" },
-      { kind: "능력2", name: "영면 발동", text: "쌓아둔 영면 대상을 한꺼번에 탈락시킵니다.", actionType: "phantom_reap", status: "live" },
+      { kind: "능력", name: "악몽", text: "대상을 악몽에 빠뜨립니다(5회 제한). 악몽은 아침 탈락으로 이어지고, 같은 대상을 다시 지정하면 영면으로 격상됩니다. 영면은 팬텀이 원할 때 한꺼번에 처리하며, 살려두는 동안 악몽 지정 가능 대상이 +1 늘어납니다.", actionType: "phantom_nightmare", actionTypes: ["phantom_reap"], status: "live" },
       { kind: "능력2", name: "일식", text: "다음 아침을 밤으로 변경합니다. 대신 아침이 오면 팬텀은 소멸합니다. 1회성입니다.", actionType: "phantom_eclipse", status: "live" },
     ],
     v1: "구현됨. phantom_nightmare(지정 밤→다음 밤 악몽→다음 아침 탈락, 5회 제한), 재지정 영면(deepsleep) + phantom_reap 일괄 처치, phantom_seal(동적 다중 봉인: 2+sealCap, 아침마다 성장, 무지목 시 악몽 +2), phantom_silentnight(밤 연장+천사 카운트 보상), phantom_eclipse(아침→밤 전환+자기 소멸).",
@@ -224,11 +221,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "꿈을 길게 끄는 독립 솔로. 아침을 일곱 번 맞으면 홀로 승리한다.",
     abilities: [
       { kind: "패시브", name: "백일몽", text: "아침을 일곱 번 맞이하면 즉시 단독 승리합니다. 대신 토론은 1분으로 짧아지고 무투에 참여할 수 없습니다.", status: "live" },
-      { kind: "특수 패시브", name: "증오", text: "로잔느가 지목한 대상의 투표가치를 1 낮추고, 투표가치가 0이 되면 그 대상을 즉시 처형합니다.", actionType: "rosanne_hatred", status: "live" },
-      { kind: "특수 패시브", name: "조망", text: "로잔느가 살아있는 동안, 타인에게 능력을 적용한 플레이어는 그 밤 투표가치가 1 낮아집니다(지정한 타인 수만큼 추가로 낮아지며, 이 효과로 1 미만으로는 내려가지 않습니다).", status: "live" },
-      { kind: "능력", name: "만들어가는 미래", text: "원한을 새깁니다(르상티망). 대상에 원한 표식을 남기고 로잔느의 아침을 한 번 더 끌어옵니다. 대신 원한을 받은 생존자 1명당 로잔느가 투표에서 받는 가치가 1 증가합니다('만들어가는 미래' 충전 1 소비).", actionType: "rosanne_resentment", status: "live" },
-      { kind: "능력", name: "라포르", text: "두 사람의 운명을 묶습니다. 한쪽이 처형·탈락·소멸하면 다른 쪽도 같은 운명을 맞습니다('만들어가는 미래' 충전 1 소비).", actionType: "rosanne_rapport", status: "live" },
-      { kind: "능력", name: "외현기억", text: "탈락자 한 명을 지목해 매 아침 되살리고 그 날의 끝에 다시 처형합니다. 투표로 한 번 더 처형되면 효과가 사라지고 다시 지목할 수 없습니다('만들어가는 미래' 충전 1 소비).", actionType: "rosanne_manifest", status: "live" },
+      { kind: "특수 패시브", name: "조망 수용 / 증오", text: "증오 — 로잔느가 지목한 대상의 투표가치를 1 낮추고, 투표가치가 0이 되면 그 대상을 즉시 처형합니다. 조망 수용 — 로잔느가 살아있는 동안, 타인에게 능력을 적용한 플레이어는 그 밤 투표가치가 지정한 타인 수만큼 낮아집니다(이 효과로 1 미만으로는 내려가지 않습니다).", actionType: "rosanne_hatred", status: "live" },
+      { kind: "능력", name: "만들어가는 미래", text: "충전을 1 소비해 셋 중 하나를 폅니다(하룻밤에 여러 번 가능). 르상티망 — 대상에 원한을 새기고 로잔느의 아침을 한 번 더 끌어옵니다(원한 보유 생존자 1명당 로잔느가 받는 투표가치 +1). 라포르 — 두 사람의 운명을 묶어 한쪽이 처형·탈락·소멸하면 다른 쪽도 같은 운명을 맞습니다. 외현기억 — 탈락자를 매 아침 되살려 그 날의 끝에 처형합니다(투표로 다시 처형되면 효과가 사라지고 재지정 불가). 충전은 누군가 처형되거나, 아침이 끝나거나, 하루가 지날 때 쌓입니다.", actionTypes: ["rosanne_resentment", "rosanne_rapport", "rosanne_manifest"], status: "live" },
       { kind: "능력2", name: "건너뛰기", text: "이번 밤에 발동한 다른 모든 효과와 통지를 전부 다음 밤으로 넘겨버립니다(1회성, 최우선). 미뤄진 액션은 다음 밤 시작에 그대로 다시 발동됩니다. 게임 종료 시까지 건너뛰기를 남긴 채 승리하면 조력자가 패배로 판정됩니다.", actionType: "rosanne_skip", status: "live" },
     ],
     v1: "구현됨(악마-5 분류, faction demon — 단 백일몽 단독승 독립 솔로라 countTeams 팀집계 제외. besto 교체). 백일몽(아침 7회 도달 시 checkWinCondition 단독 승리, dreamMorning 카운터) + rosanne_hatred(증오 = 대상 투표가치 -1 = VoteCrush, 0 도달 즉시 처형) + rosanne_resentment(만들어가는 미래 르상티망 약식 = futureCharge 1 소비 + 대상 '원한'(wonhan) 표식 + 자기 dreamMorning +1 = 아침 한 번 더) + 조망(특수 패시브 = 로잔느 생존 중 타인에게 능력을 적용한 시전자 투표가치 -1/대상수, 1 미만 불가 = engine 전역 cast cost) + rosanne_rapport(라포르 = 2인 LinkFate, 한쪽 밤 탈락·소멸 시 상대 전파) + rosanne_manifest(외현기억 = 탈락자 manifestMemory, phase-advance morning hook 이 bounded[manifestCycles<2] 부활→그 날 끝 재처형, 투표 재처형 시 효과 상실+재지정 불가). 받는가치 다운사이드는 후속.",
@@ -254,10 +248,8 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "천사를 악마로 만드는 달의 사제. 아서(천사-14)의 거울 짝.",
     abilities: [
       { kind: "패시브", name: "달빛이 비치는 우물", text: "루나가 투표·의심한 대상에게 달빛을 남기고, 달의 힘이 10 이상 차면 셋 중 하나(공포·해가 저문다·달이 차오른다) 효과를 발동합니다.", status: "live" },
-      { kind: "능력", name: "고요한 적막", text: "달빛 대상 수에 따라 달의 힘을 충전합니다(천사·중립 +1, 악마 +3). 100% 달성 시 셋 중 하나로 분기 발동합니다.", actionType: "luna_moonlight", status: "live" },
-      { kind: "능력2", name: "공포 속에 밀어 넣다", text: "대상에게 달빛 저주를 남깁니다. 달의 힘이 가득 차면 대상은 직업을 잃고 악마팀이 됩니다. 1회 제한입니다.", actionType: "luna_corrupt", status: "live" },
-      { kind: "능력2", name: "해가 저문다", text: "다음 처형/찬반 투표에서 능력으로 증가한 투표가치(우노 명예·아서 위용 등)를 마이너스로 판정합니다. 1회 제한이며 달의 힘 10을 소비합니다.", actionType: "luna_dawn", status: "live" },
-      { kind: "능력2", name: "달이 차오른다", text: "이번 밤 한정 — 악마의 처치가 달빛 대상에 발동하면 모든 달빛 대상에 같은 효과로 cascade됩니다. 1회 제한이며 달의 힘 10을 소비합니다.", actionType: "luna_moonrise", status: "live" },
+      { kind: "능력", name: "고요한 적막", text: "달빛 부여 대상 1명당 달의 힘을 충전합니다(천사·중립 +1, 악마 +3, 탈락자 제외). 가득 차면(10) 셋 중 하나를 선택해 발동합니다 — 공포 속에 밀어 넣다 / 해가 저문다(다음 처형·찬반 투표에서 능력으로 증가한 투표가치를 마이너스로 판정) / 달이 차오른다(그 밤 악마의 처치가 달빛 대상에 발동하면 모든 달빛 대상에 같은 효과). 충전은 공유 풀이라 셋 중 한 번만 발동됩니다.", actionType: "luna_moonlight", actionTypes: ["luna_dawn", "luna_moonrise"], status: "live" },
+      { kind: "능력2", name: "공포 속에 밀어 넣다", text: "대상에게 달빛 저주를 남깁니다. 달의 힘이 가득 차면 대상은 직업을 잃고 악마팀이 됩니다. 1회 제한이며 달의 힘 10을 소비합니다.", actionType: "luna_corrupt", status: "live" },
     ],
     v1: "구현됨. luna_moonlight(고요한 적막 — 투표/의심 대상에 달빛 태그, 천사/중립 +1, 악마 +3 비례 충전) + luna_corrupt(공포 — moonGauge 10 이상 시 천사→악마팀 타락, 1회 제한) + luna_dawn(해가 저문다 v2, 1회: state.modifiers.dawnRule=1 → 다음 처형/찬반 투표에서 능력으로 증가한 voteValueMod>0 와 prowess 부호 반전, phase-advance verdict 종료 시 소비) + luna_moonrise(달이 차오른다 v2, priority 2: state.modifiers.moonriseRule=1 → 같은 밤 악마 Kill 이 moonlit 대상에 발동하면 모든 달빛 대상 cascade markedForDeath, 그 밤 종료 시 해제). 셋(corrupt/dawn/moonrise) 모두 moonGauge 100% 소비 — 같은 풀에서 하나만 선택.",
     v2: "달빛 비례 충전·공포 타락(1회)·해가 저문다 능력보너스 부호 반전·달이 차오른다 cascade 까지 핵심 라이브.",
