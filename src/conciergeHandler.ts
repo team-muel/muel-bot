@@ -433,6 +433,7 @@ export const handleHubChannelMessage = async (
     const inputTokens = pickNumberField(meta, 'inputTokens');
     const outputTokens = pickNumberField(meta, 'outputTokens');
     const totalTokens = pickNumberField(meta, 'totalTokens');
+    const contextWindowDiag = (meta as Record<string, unknown>)['contextWindow'] ?? null;
 
     const aiEventId = await logMuelAiEvent(supabase, {
       source: 'discord_hub',
@@ -446,6 +447,8 @@ export const handleHubChannelMessage = async (
       provider: reply.provider,
       model: reply.model,
       latencyMs: Date.now() - startedAt,
+      // 회계 수리(P2): 허브 이벤트에 lightweight_turn 이 안 실려 잡담/실질 구분 불가였다.
+      lightweightTurn: Boolean((contextWindowDiag as { lightweightTurn?: boolean } | null)?.lightweightTurn),
       taskType,
       modelLane,
       fallbackReason,
@@ -458,6 +461,7 @@ export const handleHubChannelMessage = async (
         routerConfidence: decision.confidence,
         channelResponsiveMin: responsiveMin,
         discordMessageId: message.id,
+        contextWindow: contextWindowDiag,
       },
     });
 

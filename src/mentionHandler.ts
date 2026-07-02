@@ -516,6 +516,8 @@ export const handleMuelMention = async (
         discordMessageId: message.id,
         routerIntent: routerDecision?.intent ?? null,
         routerConfidence: routerDecision?.confidence ?? null,
+        // 섹션별 컨텍스트 회계 — P2: 이전엔 생성만 되고 적재가 안 돼 쿼리 불가였다.
+        contextWindow: pickUnknownField(meta, 'contextWindow') ?? null,
       },
     });
 

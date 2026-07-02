@@ -76,6 +76,28 @@ const fetchDirectMemos = async (supabase: SupabaseClient, userId: string): Promi
 };
 
 /**
+ * 직접 지침만 포맷해 반환 — 임베딩 호출 없음(저비용). lightweight 잡담 턴 전용.
+ *
+ * Why: semantic memory 주입은 비-lightweight 턴 전용인데 실트래픽이 거의 전부
+ * lightweight 라 30일간 retrieval 0건 — 읽기 경로가 통째로 죽어 있었다.
+ * /메모·Weave 로 남긴 직접 지침만이라도 잡담 턴에 저비용으로 살린다.
+ */
+export async function retrieveDirectMemoText(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string> {
+  const directLines = await fetchDirectMemos(supabase, userId);
+  if (directLines.length === 0) return '';
+  return [
+    '사용자가 너에게 직접 남긴 지침 (별도 언급 없이 항상 반영):',
+    ...directLines.map((c) => `- ${c}`),
+    '',
+    "If the user's current message contradicts any stored memory, follow the current message.",
+    'Do not mention that you are using memory.',
+  ].join('\n');
+}
+
+/**
  * Retrieve long-term + user-directed memory for a user, formatted for the system prompt.
  * - 사용자 직접 지침(muel_user_memos): 항상 우선 주입 (/메모·Weave 알려주기 → 실제 반영).
  * - 의미 기반 장기 기억(muel_memory_entries): 임베딩 유사도 임계 이상만 주입.
