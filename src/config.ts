@@ -62,6 +62,8 @@ export const config = {
   probeExtraModels: optionalEnv('PROBE_EXTRA_MODELS'),
   // 소셜 골든셋 eval — 모델/프롬프트 변경 직후 한 부팅만 켜서 회귀 확인(기본 off).
   enableSocialEval: booleanEnv('ENABLE_SOCIAL_EVAL', false),
+  // P4 social-read 전처리 — 잡담 턴 생성 전 저가 판독 1홉(수신자/레지스터/확신도).
+  enableSocialRead: booleanEnv('MUEL_SOCIAL_READ', true),
   nvidiaHeavyModel: optionalEnv('NVIDIA_HEAVY_MODEL') ?? 'deepseek-ai/deepseek-v4-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),

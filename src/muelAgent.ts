@@ -19,8 +19,10 @@ import { buildAgentTools } from './agentTools.js';
 import { getOverlayPromptText } from './promptOverlays.js';
 import {
   buildMuelContextWindow,
+  isLightweightTurn,
   type MentionedUserContext,
 } from './muelContextWindow.js';
+import { runSocialRead, formatSocialReadSection } from './socialRead.js';
 
 export type MuelAgentResult = {
   text: string;
@@ -230,6 +232,12 @@ export const generateMuelReply = async (
     };
   }
 
+  // P4 social-read: 잡담 턴에서 생성 전에 저가 판독 1홉 — 수신자/레지스터/확신도를
+  // 명시 주입하고, 저확신이면 low-commit 정책. 실패·비활성 시 섹션 생략(동작 불변).
+  const socialRead = isLightweightTurn(userText)
+    ? await runSocialRead({ userText, authorName, channelActivity })
+    : null;
+
   const contextWindow = await buildMuelContextWindow({
     supabase,
     baseSystemPrompt: composeSystemPrompt(),
@@ -241,6 +249,7 @@ export const generateMuelReply = async (
     mentionedUsers,
     guildTopology,
     sourceUserId,
+    socialReadSection: socialRead ? formatSocialReadSection(socialRead) : undefined,
   });
   const {
     system,
