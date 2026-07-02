@@ -20,6 +20,7 @@ import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { startFeedbackObserver } from './feedbackObserver.js';
 import { runProviderHealthcheck } from './providerHealthcheck.js';
+import { initPromptOverlays } from './promptOverlays.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -354,6 +355,14 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   startProactiveScheduler(readyClient, getSupabaseClient());
   startFeedbackObserver(readyClient, getSupabaseClient());
+
+  // DB 프롬프트 오버레이 로드(+5분 주기 리프레시) — 실패해도 기동은 계속.
+  const supabaseForOverlays = getSupabaseClient();
+  if (supabaseForOverlays) {
+    initPromptOverlays(supabaseForOverlays).catch((err) => {
+      console.warn('[prompt-overlays] init failed', err);
+    });
+  }
 
   // 프로바이더 도달성 검증 — 설정된 프로바이더마다 초소형 프로브를 날려
   // muel_ai_events(source='healthcheck')로 적재. NVIDIA/MindLogic 경로가
