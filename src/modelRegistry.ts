@@ -136,12 +136,39 @@ export const getNvidiaTextModel = (modelId: string, task: MuelModelTask): Resolv
   };
 };
 
+// chat 레인 전용: MindLogic 게이트웨이 주력 + Gemini 역방향 폴백(telemetry 포함).
+// Why: 잡담/lightweight 턴의 소셜 캘리브레이션(반어·드립·답장대상 신호 활용)은 모델 체급 문제라
+// chat 레인만 Sonnet 계열로 올린다. router/extract/summary 는 기계적 작업이라 Gemini flash 유지.
+// 폴백 방향 주의: 기본 레인은 gemini→mindlogic 인데 여기서는 mindlogic→gemini 로 뒤집는다.
+export const getMindlogicTextModel = (modelId: string, task: MuelModelTask): ResolvedMuelModel | null => {
+  const mindlogic = getMindlogicProvider();
+  if (!mindlogic) return null;
+  const fullId = `mindlogic:${modelId}`;
+  const primary = withTelemetry(mindlogic(modelId) as any, { provider: 'mindlogic', modelId: fullId, task });
+  const google = getGoogleProvider();
+  const geminiId = normalizeGeminiModelName(getModelIdForTask(task));
+  const reverseFallback = google
+    ? withTelemetry(google(geminiId) as any, { provider: 'gemini', modelId: geminiId, task })
+    : null;
+  return {
+    model: withFallback(primary, reverseFallback, { fromModelId: fullId, toModelId: geminiId, task }),
+    provider: 'mindlogic',
+    modelId: fullId,
+    task,
+  };
+};
+
 // 레인 주력 모델. heavy 레인은 MUEL_HEAVY_PROVIDER=nvidia 면 NVIDIA(예: deepseek-v4-flash)로
 // 라우팅 — 단가가 Gemini 3.5-flash 보다 싸서 substantive 턴 실험용. NVIDIA 미가용 시 Gemini 로 폴백.
-// 그 외 레인(chat/vision 등)과 기본값은 Gemini.
+// chat 레인은 MUEL_CHAT_PROVIDER=mindlogic 이면 MindLogic Sonnet(MINDLOGIC_CHAT_MODEL)으로
+// 라우팅 — 잡담 턴 소셜 캘리브레이션 개선용. MindLogic 미가용 시 Gemini 로 폴백.
+// 그 외 레인(vision 등)과 기본값은 Gemini.
 export const getLaneModel = (task: MuelModelTask): ResolvedMuelModel | null => {
   if (task === 'heavy' && config.heavyProvider === 'nvidia') {
     return getNvidiaTextModel(config.nvidiaHeavyModel, task) ?? getGeminiTextModel(task);
+  }
+  if (task === 'chat' && config.chatProvider === 'mindlogic') {
+    return getMindlogicTextModel(config.mindlogicChatModel, task) ?? getGeminiTextModel(task);
   }
   return getGeminiTextModel(task);
 };

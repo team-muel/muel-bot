@@ -51,6 +51,10 @@ export const config = {
   nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'meta/llama-3.2-90b-vision-instruct',
   mindlogicApiKey: optionalEnv('MINDLOGIC_API_KEY'),
   mindlogicModel: optionalEnv('MINDLOGIC_MODEL') ?? 'gemini-2.5-flash',
+  // chat 레인 프로바이더 스위치 — 잡담/lightweight 턴의 소셜 캘리브레이션(반어·드립·답장 문맥)
+  // 개선용. mindlogic 이면 chat 레인만 MindLogic 게이트웨이의 Sonnet 계열로 라우팅.
+  chatProvider: (optionalEnv('MUEL_CHAT_PROVIDER') ?? 'gemini') as 'gemini' | 'mindlogic',
+  mindlogicChatModel: optionalEnv('MINDLOGIC_CHAT_MODEL') ?? 'claude-sonnet-5',
   nvidiaHeavyModel: optionalEnv('NVIDIA_HEAVY_MODEL') ?? 'deepseek-ai/deepseek-v4-flash',
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
