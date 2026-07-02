@@ -25,38 +25,51 @@ const toVectorLiteral = (values: number[]): string => {
   return `[${values.map((value) => Number(value).toFixed(8)).join(',')}]`;
 };
 
+const EMBED_RETRY_DELAYS_MS = [1_000, 3_000];
+
 export const embedMuelText = async (
   text: string,
 ): Promise<number[] | null> => {
   const input = text.trim();
   if (!config.googleGenerativeAiApiKey || !input) return null;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.muelEmbeddingModel}:embedContent`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': config.googleGenerativeAiApiKey,
-    },
-    body: JSON.stringify({
-      content: {
-        parts: [{ text: input.slice(0, 8000) }],
+  // 429/5xx 에 짧은 백오프 재시도 — extract_memory 잡이 임베딩 429 로 조용히
+  // 실패하는 사례가 텔레메트리에 잡혀서(2026-07-02 감사) 단발 호출을 보강.
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= EMBED_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, EMBED_RETRY_DELAYS_MS[attempt - 1]));
+    }
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.muelEmbeddingModel}:embedContent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': config.googleGenerativeAiApiKey,
       },
-      output_dimensionality: config.muelEmbeddingDimensions,
-    }),
-    signal: AbortSignal.timeout(12_000),
-  });
+      body: JSON.stringify({
+        content: {
+          parts: [{ text: input.slice(0, 8000) }],
+        },
+        output_dimensionality: config.muelEmbeddingDimensions,
+      }),
+      signal: AbortSignal.timeout(12_000),
+    });
 
-  const data = (await response.json()) as GeminiEmbeddingResponse;
-  if (!response.ok) {
-    throw new Error(`Gemini embedding HTTP ${response.status}: ${data.error?.message ?? 'unknown error'}`);
+    const data = (await response.json()) as GeminiEmbeddingResponse;
+    if (!response.ok) {
+      lastError = new Error(`Gemini embedding HTTP ${response.status}: ${data.error?.message ?? 'unknown error'}`);
+      const retryable = response.status === 429 || response.status >= 500;
+      if (retryable && attempt < EMBED_RETRY_DELAYS_MS.length) continue;
+      throw lastError;
+    }
+
+    const values = data.embedding?.values ?? data.embeddings?.[0]?.values ?? null;
+    if (!values || values.length !== config.muelEmbeddingDimensions) {
+      throw new Error(`Gemini embedding returned ${values?.length ?? 0} dimensions, expected ${config.muelEmbeddingDimensions}`);
+    }
+    return values;
   }
-
-  const values = data.embedding?.values ?? data.embeddings?.[0]?.values ?? null;
-  if (!values || values.length !== config.muelEmbeddingDimensions) {
-    throw new Error(`Gemini embedding returned ${values?.length ?? 0} dimensions, expected ${config.muelEmbeddingDimensions}`);
-  }
-
-  return values;
+  throw lastError ?? new Error('Gemini embedding failed');
 };
 
 export const storeMessageEmbedding = async (

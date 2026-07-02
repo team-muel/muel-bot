@@ -132,6 +132,9 @@ const composeSystemPrompt = (): string => {
   return overlays ? `${BASE_SYSTEM_PROMPT}\n\n${overlays}` : BASE_SYSTEM_PROMPT;
 };
 
+/** 소셜 골든셋 eval 이 실제 배포 프롬프트(베이스+오버레이)와 동일 조건으로 돌 수 있게 노출. */
+export const getComposedBaseSystemPrompt = (): string => composeSystemPrompt();
+
 const saveGeneratedReply = async (
   supabase: SupabaseClient,
   chatId: string,
