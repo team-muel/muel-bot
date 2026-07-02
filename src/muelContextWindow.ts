@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CAPABILITY_BOUNDARIES_COMPACT, formatCapabilityRegistryForPrompt } from './capabilities.js';
 import { retrieveRelevantMemories, retrieveDirectMemoText } from './memoryRetriever.js';
+import { fetchSocialProfileText } from './socialProfile.js';
 import type { UIMessage, UserHistorySummary } from './muelConversationStore.js';
 
 export type MentionedUserContext = {
@@ -219,6 +220,14 @@ export const buildMuelContextWindow = async (
   if (opts.guildTopology) pushSection('guildTopology', opts.guildTopology);
 
   pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName));
+
+  // P5 소셜 프로필 — 유저의 대화 레지스터(반말/드립 성향 등). 잡담 개인화 재료라
+  // lightweight 턴에도 주입한다(단일 select, 저비용·실패 무해).
+  if (opts.sourceUserId) {
+    const profileText = await fetchSocialProfileText(opts.supabase, opts.sourceUserId, opts.authorName);
+    if (profileText) pushSection('socialProfile', profileText);
+  }
+
   pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? []));
 
   // Memory — lightweight 턴은 직접 지침(muel_user_memos)만 저비용 주입(임베딩 X),
