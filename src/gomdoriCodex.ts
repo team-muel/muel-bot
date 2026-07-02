@@ -67,7 +67,7 @@ export const GOMDORI_CODEX: CodexEntry[] = [
     summary: "수호신 백호를 불러 천사팀 카운트를 늘려 마을을 지킨다.",
     abilities: [
       { kind: "패시브", name: "수호신 백호", text: "백호 소환 시 천사팀 카운트 +3을 얻고, 탈락 뒤에도 사후 지속 +3을 남깁니다. 1회성입니다.", actionType: "rainer_summon", status: "live" },
-      { kind: "능력", name: "거친 포효", text: "'강한 의지'를 2회 모으면(willCount≥2) 2명을 직접 지목해 백호 발톱을 새깁니다 — 천사팀 카운트 -1, 강한 의지 2 소비. 발톱이 새겨진 대상은 다음 아침 투표가치를 3 이상 얻으면 소멸합니다. (지목하지 않으면 그 밤 강한 의지 대상 중 최대 2명을 자동으로 할퀴는 폴백이 유지됩니다.)", actionType: "rainer_roar", status: "live" },
+      { kind: "능력", name: "거친 포효", text: "'강한 의지'를 2회 모으면 2명을 직접 지목해 백호 발톱을 새깁니다 — 천사팀 카운트 -1, 강한 의지 2 소비. 발톱이 새겨진 대상은 다음 아침 투표가치를 3 이상 얻으면 소멸합니다. (지목하지 않으면 그 밤 강한 의지 대상 중 최대 2명을 자동으로 할퀴는 폴백이 유지됩니다.)", actionType: "rainer_roar", status: "live" },
       { kind: "능력", name: "강한 의지", text: "대상을 관찰하고 강한 의지 +1을 얻습니다(같은 대상 연속 지목 불가). 관찰 대상이 그 밤 탈락하면 강한 의지 +2가 추가됩니다.", actionType: "rainer_resolve", status: "live" },
       { kind: "능력2", name: "그날의 저항", text: "백호 한 마리를 추가 소환합니다 — 천사팀 카운트 +1 + 강한 의지 +1. 1회성이며 첫 밤에는 발동되지 않습니다.", actionType: "rainer_resistance", status: "live" },
     ],
