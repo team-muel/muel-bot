@@ -12,9 +12,21 @@ const MEMORY_OBSERVE_THRESHOLD = 0.3;
 const MEMORY_OBSERVE_COUNT = 8;
 
 // 사용자가 /메모 또는 Weave '알려주기' 로 직접 남긴 지침. 의미 유사도와 무관하게
-// 항상 우선 주입한다(직접 지시라 늘 유효). 너무 많으면 프롬프트 비대 → 최근 N 개로 제한.
+// 우선 주입하되, *신뢰도 감쇠 모델* 을 통과한 것만: 메모는 100%로 시작해
+// 이후 발화에서 재등장하면 리셋(memoryWorker reinforcement), 안 나타나면
+// 반감기 14일로 감쇠(바닥 3%). 유효 신뢰도는 읽기 시 재계산 — 캐시 스테일 무관.
 const DIRECT_MEMO_LIMIT = 8;
 const DIRECT_MEMO_MAX_CHARS = 300;
+const DIRECT_MEMO_HALF_LIFE_DAYS = 14;
+const DIRECT_MEMO_CONFIDENCE_FLOOR = 0.03;
+const DIRECT_MEMO_MIN_CONFIDENCE = 0.2;
+
+const effectiveMemoConfidence = (lastReinforcedAt: string | null): number => {
+  if (!lastReinforcedAt) return 1.0;
+  const days = (Date.now() - new Date(lastReinforcedAt).getTime()) / 86_400_000;
+  if (!Number.isFinite(days) || days < 0) return 1.0;
+  return Math.max(DIRECT_MEMO_CONFIDENCE_FLOOR, Math.pow(0.5, days / DIRECT_MEMO_HALF_LIFE_DAYS));
+};
 
 type ObservedMemory = { content: string; similarity: number };
 
@@ -57,18 +69,23 @@ const fetchDirectMemos = async (supabase: SupabaseClient, userId: string): Promi
   try {
     const { data, error } = await supabase
       .from('muel_user_memos')
-      .select('content')
+      .select('content, last_reinforced_at')
       .eq('discord_user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(DIRECT_MEMO_LIMIT);
+      .limit(20);
     if (error) {
       console.warn('[memory-retrieval] user_memos fetch failed', error);
       return [];
     }
     return (data ?? [])
-      .map((m: { content: string | null }) => (m.content ?? '').trim())
-      .filter((c): c is string => c.length > 0)
-      .map((c) => (c.length > DIRECT_MEMO_MAX_CHARS ? `${c.slice(0, DIRECT_MEMO_MAX_CHARS - 1)}…` : c));
+      .map((m: { content: string | null; last_reinforced_at: string | null }) => ({
+        content: (m.content ?? '').trim(),
+        confidence: effectiveMemoConfidence(m.last_reinforced_at),
+      }))
+      .filter((m) => m.content.length > 0 && m.confidence >= DIRECT_MEMO_MIN_CONFIDENCE)
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, DIRECT_MEMO_LIMIT)
+      .map(({ content: c }) => (c.length > DIRECT_MEMO_MAX_CHARS ? `${c.slice(0, DIRECT_MEMO_MAX_CHARS - 1)}…` : c));
   } catch (err) {
     console.warn('[memory-retrieval] user_memos fetch threw', err);
     return [];
