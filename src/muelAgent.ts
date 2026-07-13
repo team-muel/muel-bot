@@ -16,7 +16,7 @@ import {
   type MuelModelTask,
 } from './modelRegistry.js';
 import { buildAgentTools } from './agentTools.js';
-import { getOverlayPromptText } from './promptOverlays.js';
+import { getOverlayPromptText, hasOverlayKeyPrefix } from './promptOverlays.js';
 import {
   buildMuelContextWindow,
   isLightweightTurn,
@@ -77,7 +77,11 @@ const getLocalFallbackReply = (userText: string): string | null => {
   return null;
 };
 
-const BASE_SYSTEM_PROMPT = [
+// 2026-07-13 중앙화: 베이스 페르소나의 단일 출처는 muel_prompt_overlays(base-* rows,
+// priority 10~60)다. 아래 상수는 DB 캐시에 base-* 가 없을 때(부팅 직후 최초 로드
+// 실패 등)만 쓰는 *폴백 사본* — 페르소나 수정은 여기가 아니라 DB 에서 하라.
+// DB 반영은 5분 리프레시로 라이브. (이 사본은 드리프트 방지를 위해 수정 금지.)
+const FALLBACK_BASE_SYSTEM_PROMPT = [
   'You are Muel (뮤엘). You are not a generic chatbot or a utility. You are a character who lives in this Discord server.',
   'You are the common face across this community: conversation, support, news, memory, and quietly tending Weave when it is relevant.',
   'You were made by 생강 (team-muel). If asked who you are, say only that you are Muel and that you can help people in this server. Do not volunteer creator, name-origin, Weave, Gomdori, or product-introduction details in a first self-introduction; do not bring it up unless the user asks or the current task is actually about Weave.',
@@ -127,11 +131,14 @@ const BASE_SYSTEM_PROMPT = [
   '- 사람들끼리 주고받는 말 (특히 농담·놀림) 을 너에게 온 사실 질문처럼 받지 마라. "○○한테 직접 물어봐 / 그 정보는 없어" 식 반사 응답 금지 — 확실치 않으면 끼어들지 말고, 낄 거면 같은 톤으로 가볍게.',
 ].join('\n');
 
-// 세부 행동 규칙(인시던트 대응 등)은 DB 오버레이(muel_prompt_overlays)에서
-// 로드해 합성한다 — promptOverlays.ts 참조. 공개 레포에 규칙 원문을 남기지 않는다.
+// 시스템 프롬프트 전체(베이스 페르소나 base-* + 세부 행동 규칙)를 DB 오버레이
+// (muel_prompt_overlays, priority 오름차순)에서 합성한다 — promptOverlays.ts 참조.
+// base-* 가 캐시에 있으면 DB 가 단일 출처(오버레이 텍스트가 곧 전체 프롬프트),
+// 없으면 코드 폴백 사본 + 잔여 오버레이로 합성해 부팅 실패 시에도 동작한다.
 const composeSystemPrompt = (): string => {
   const overlays = getOverlayPromptText();
-  return overlays ? `${BASE_SYSTEM_PROMPT}\n\n${overlays}` : BASE_SYSTEM_PROMPT;
+  if (hasOverlayKeyPrefix('base-')) return overlays;
+  return overlays ? `${FALLBACK_BASE_SYSTEM_PROMPT}\n\n${overlays}` : FALLBACK_BASE_SYSTEM_PROMPT;
 };
 
 /** 소셜 골든셋 eval 이 실제 배포 프롬프트(베이스+오버레이)와 동일 조건으로 돌 수 있게 노출. */
