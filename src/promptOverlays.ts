@@ -21,6 +21,7 @@ const REFRESH_MS = 5 * 60_000;
 type OverlayRow = { key: string; content: string; priority: number };
 
 let cachedText = '';
+let cachedKeys: string[] = [];
 let cachedCount = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -37,6 +38,7 @@ const refresh = async (supabase: SupabaseClient): Promise<void> => {
     }
     const rows = (data ?? []) as OverlayRow[];
     cachedText = rows.map((r) => r.content.trim()).filter(Boolean).join('\n\n');
+    cachedKeys = rows.map((r) => r.key);
     if (rows.length !== cachedCount) {
       console.log('[prompt-overlays] loaded', { count: rows.length, keys: rows.map((r) => r.key) });
     }
@@ -57,3 +59,11 @@ export const initPromptOverlays = async (supabase: SupabaseClient): Promise<void
 
 /** 캐시된 오버레이 합성 텍스트. 로드 전/실패 시 빈 문자열. */
 export const getOverlayPromptText = (): string => cachedText;
+
+/**
+ * 해당 프리픽스의 오버레이가 로드돼 있는지. 베이스 페르소나(base-*)가 DB로
+ * 중앙화(2026-07-13)되면서, 캐시에 base-* 가 있으면 DB 가 시스템 프롬프트의
+ * 단일 출처이고 없으면(부팅 직후 최초 로드 실패 등) 코드 폴백을 쓴다.
+ */
+export const hasOverlayKeyPrefix = (prefix: string): boolean =>
+  cachedKeys.some((k) => k.startsWith(prefix));
