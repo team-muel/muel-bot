@@ -286,11 +286,14 @@ export const handleMuelMention = async (
       discordUserId: message.author.id,
     });
 
+    // 이 핸들러에 도달한 메시지는 전부 명시적 호출(mention/DM/reply/!muel)이라
+    // 일반 임계(spamBlockMinConfidence) 대신 상향 임계를 쓴다 — 사용자가 일부러
+    // 부른 메시지를 오분류로 침묵시키는 비용이 크다(reflection 제안 07-10).
     if (
       config.spamBlockEnabled &&
       routerDecision &&
       routerDecision.intent === 'spam' &&
-      routerDecision.confidence >= config.spamBlockMinConfidence
+      routerDecision.confidence >= config.spamBlockMentionMinConfidence
     ) {
       // Silently drop. No Discord reply (per "응답 생략" decision). Audit row
       // captures the denial with router metadata for review.
@@ -310,6 +313,7 @@ export const handleMuelMention = async (
           discordMessageId: message.id,
           routerIntent: routerDecision.intent,
           routerConfidence: routerDecision.confidence,
+          spamBlockThreshold: config.spamBlockMentionMinConfidence,
         },
       });
       void logMuelAgentAction(supabase, {

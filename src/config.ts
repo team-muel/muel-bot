@@ -73,6 +73,10 @@ export const config = {
   mentionImageReplyTimeoutMs: Number(process.env.MENTION_IMAGE_REPLY_TIMEOUT_MS ?? 35_000),
   spamBlockEnabled: booleanEnv('MUEL_SPAM_BLOCK_ENABLED', true),
   spamBlockMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MIN_CONFIDENCE ?? 0.75),
+  // 명시적 호출(mention/DM/reply/!muel) 경로 전용 상향 임계. 사용자가 일부러 부른
+  // 메시지를 spam 오분류로 침묵시키는 비용이 커서(reflection 제안 07-10, 실제 침묵 2건)
+  // 확실한 spam(>=0.95)만 차단한다.
+  spamBlockMentionMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MENTION_MIN_CONFIDENCE ?? 0.95),
   enableJobWorker: booleanEnv('ENABLE_JOB_WORKER', booleanEnv('ENABLE_MEMORY_WORKER', true)),
   enableYoutubeMonitor: booleanEnv('ENABLE_YOUTUBE_MONITOR', true),
   enableHttpInteractions: booleanEnv('ENABLE_HTTP_INTERACTIONS', false),
