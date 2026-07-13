@@ -20,7 +20,7 @@ const MIN_SAMPLE_LINES = 3;
 
 const profileSchema = z.object({
   register_summary: z.string().max(240).describe(
-    '이 유저와 대화할 때 유용한 레지스터 요약 1~2문장: 말투(반말/존대), 장난·드립 성향과 이 유저에게 먹히는 유머 결, 이모지·밈 습관, 봇을 대하는 태도. 민감정보 금지.',
+    '이 유저와 대화할 때 유용한 레지스터 요약 1~2문장: 말투(반말/존대), 장난·드립 성향, 이모지·밈 습관, 봇을 대하는 태도. 민감정보 금지.',
   ),
 });
 
@@ -50,8 +50,8 @@ export const maybeUpdateSocialProfile = async (
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       prompt: [
         '아래는 한 Discord 유저의 최근 발화 샘플이다. 이 유저와 잡담할 때 유용한',
-        '"대화 레지스터 프로필"을 1~2문장으로 써라: 말투(반말/존대), 장난·드립 성향과',
-        '이 유저에게 먹히는 유머 결, 이모지·밈 습관, 봇(Muel)을 대하는 태도.',
+        '"대화 레지스터 프로필"을 1~2문장으로 써라: 말투(반말/존대), 장난·드립 성향,',
+        '이모지·밈 습관, 봇(Muel)을 대하는 태도.',
         '절대 포함 금지: 실명·신원, 건강, 정치·종교, 위치, 직장 내부 정보 등 민감정보.',
         '',
         ...userLines.slice(-30).map((l) => `- ${l.slice(0, 200)}`),
