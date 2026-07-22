@@ -102,7 +102,7 @@ const backfillChannel = async (
       return;
     }
 
-    for (const message of rows) await store.ingestMessage(message, 'backfill');
+    await store.ingestBackfillPage(rows);
 
     const oldest = rows[0];
     cursor = oldest.id;
