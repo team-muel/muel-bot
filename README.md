@@ -72,6 +72,7 @@ Archivist (optional; setting `OWNED_GUILD_ID` enables it):
 - `ARCHIVE_SALT` — stable HMAC secret for pseudonymous author grouping; never rotate it
 - `ARCHIVE_ENC_KEY` — AES-256-GCM key (32 bytes as hex, base64, or UTF-8)
 - `ARCHIVE_POLICY_URL` — Notion transparency page linked by the guild-only `/정책` command
+- `ARCHIVE_PERSONAL_TOKEN` — separate bearer token for owner-only, read-only REST/MCP access; rotate without changing archive encryption keys
 - `ENABLE_ARCHIVE_BACKFILL` — defaults to `true`; walks every channel to its first API-visible message
 - `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`, `NCP_OBJ_ENDPOINT`, `NCP_OBJ_BUCKET` — NCP Object Storage attachment mirror
 
@@ -93,6 +94,17 @@ For an approved erasure request, run this from an environment that has the produ
 ```bash
 npm run archive:tombstone -- <discord_message_id> erasure_request
 ```
+
+### Personal GPT / Claude access
+
+The service role key stays server-side. When `ARCHIVE_PERSONAL_TOKEN` is set, the owner can query only the privacy-masked `archive.v_messages` view through these bearer-authenticated, read-only endpoints:
+
+- `POST /archive/mcp` — stateless Streamable HTTP MCP for Claude or another MCP client
+- `GET /archive/openapi.json` — OpenAPI document for a GPT Action
+- `GET /archive/search?q=...` — text search, optionally filtered by `channel_id`, `from`, `to`, and `limit`
+- `GET /archive/recent`, `/archive/context/{message_id}`, `/archive/channels`, `/archive/stats`
+
+Configure the client with `https://muel-bot.onrender.com/archive/mcp` or import `https://muel-bot.onrender.com/archive/openapi.json`, then provide `Authorization: Bearer <ARCHIVE_PERSONAL_TOKEN>`. The token grants access to private guild conversation history: keep it out of prompts, source control, and shared GPTs/connectors. All queries are pinned server-side to `OWNED_GUILD_ID`; raw identity ciphertext and service-role credentials are never returned.
 
 ## Mention Replies
 

@@ -69,6 +69,8 @@ services:
         sync: false
       - key: ARCHIVE_POLICY_URL
         sync: false
+      - key: ARCHIVE_PERSONAL_TOKEN
+        sync: false
       - key: ENABLE_ARCHIVE_BACKFILL
         value: "true"
       - key: ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS

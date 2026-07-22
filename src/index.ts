@@ -53,6 +53,10 @@ import {
   buildArchivePolicyCommand,
   handleArchivePolicyCommand,
 } from './archivist/policy.js';
+import {
+  getArchiveOpenApiDocument,
+  handleArchivePersonalRequest,
+} from './archivist/personalAccess.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -715,6 +719,20 @@ const server = http.createServer((request, response) => {
 
   if (request.url === '/discord/interactions' && request.method === 'POST') {
     void handleDiscordInteractions(request, response);
+    return;
+  }
+
+  if (request.url === '/archive/openapi.json' && request.method === 'GET') {
+    response.writeHead(200, {
+      'content-type': 'application/json',
+      'cache-control': 'public, max-age=300',
+    });
+    response.end(JSON.stringify(getArchiveOpenApiDocument(request)));
+    return;
+  }
+
+  if (request.url?.startsWith('/archive/')) {
+    void handleArchivePersonalRequest(request, response);
     return;
   }
 
