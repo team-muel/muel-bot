@@ -72,7 +72,7 @@ Archivist (optional; setting `OWNED_GUILD_ID` enables it):
 - `ARCHIVE_SALT` — stable HMAC secret for pseudonymous author grouping; never rotate it
 - `ARCHIVE_ENC_KEY` — AES-256-GCM key (32 bytes as hex, base64, or UTF-8)
 - `ARCHIVE_POLICY_URL` — Notion transparency page linked by the guild-only `/정책` command
-- `ENABLE_ARCHIVE_BACKFILL` / `ARCHIVE_BACKFILL_DAYS` — defaults to `true` / `365`
+- `ENABLE_ARCHIVE_BACKFILL` — defaults to `true`; walks every channel to its first API-visible message
 - `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`, `NCP_OBJ_ENDPOINT`, `NCP_OBJ_BUCKET` — NCP Object Storage attachment mirror
 
 ### Archivist database preflight

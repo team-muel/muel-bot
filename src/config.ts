@@ -102,7 +102,6 @@ export const config = {
   archiveEncKey: optionalEnv('ARCHIVE_ENC_KEY'),
   archivePolicyUrl: optionalEnv('ARCHIVE_POLICY_URL'),
   archiveBackfillEnabled: booleanEnv('ENABLE_ARCHIVE_BACKFILL', true),
-  archiveBackfillDays: Number(process.env.ARCHIVE_BACKFILL_DAYS ?? 365),
   archiveAttachmentCopyIntervalMs: Number(process.env.ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS ?? 30_000),
   ncpAccessKey: optionalEnv('NCP_ACCESS_KEY'),
   ncpSecretKey: optionalEnv('NCP_SECRET_KEY'),

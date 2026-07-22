@@ -71,8 +71,6 @@ services:
         sync: false
       - key: ENABLE_ARCHIVE_BACKFILL
         value: "true"
-      - key: ARCHIVE_BACKFILL_DAYS
-        value: "365"
       - key: ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS
         value: "30000"
       - key: NCP_ACCESS_KEY

@@ -36,7 +36,6 @@ const canFetchMessages = (channel: GuildBasedChannel): channel is GuildTextBased
 const collectArchivedThreads = async (
   guild: Guild,
   baseChannels: Iterable<GuildBasedChannel>,
-  cutoff: number,
 ): Promise<GuildBasedChannel[]> => {
   const threads = new Map<string, GuildBasedChannel>();
   try {
@@ -65,7 +64,7 @@ const collectArchivedThreads = async (
             (a.archiveTimestamp ?? a.createdTimestamp ?? Infinity)
               < (b.archiveTimestamp ?? b.createdTimestamp ?? Infinity) ? a : b);
           const oldestAt = (oldest as any).archiveTimestamp ?? (oldest as any).createdTimestamp ?? 0;
-          if (!page.hasMore || oldestAt < cutoff) break;
+          if (!page.hasMore || !Number.isFinite(oldestAt) || oldestAt <= 0) break;
           const nextBefore = new Date(oldestAt);
           if (before && nextBefore.getTime() >= before.getTime()) break;
           before = nextBefore;
@@ -87,7 +86,6 @@ const collectArchivedThreads = async (
 const backfillChannel = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
-  cutoff: number,
 ): Promise<void> => {
   await store.upsertChannel(channel);
   const state = await store.getChannelBackfillState(channel.id);
@@ -104,17 +102,16 @@ const backfillChannel = async (
       return;
     }
 
-    const inWindow = rows.filter((message) => message.createdTimestamp >= cutoff);
-    for (const message of inWindow) await store.ingestMessage(message, 'backfill');
+    for (const message of rows) await store.ingestMessage(message, 'backfill');
 
     const oldest = rows[0];
     cursor = oldest.id;
-    const done = page.size < 100 || oldest.createdTimestamp < cutoff;
+    const done = page.size < 100;
     await store.saveChannelBackfillState(channel.id, cursor, done);
     console.log('[archivist] backfill page', {
       channelId: channel.id,
       fetched: page.size,
-      archived: inWindow.length,
+      archived: rows.length,
       cursor,
       done,
     });
@@ -134,8 +131,7 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
     for (const channel of fetched.values()) {
       if (channel) baseChannels.push(channel);
     }
-    const cutoff = Date.now() - Math.max(1, config.archiveBackfillDays) * 24 * 60 * 60 * 1_000;
-    const threads = await collectArchivedThreads(guild, baseChannels, cutoff);
+    const threads = await collectArchivedThreads(guild, baseChannels);
     const candidates = new Map<string, GuildTextBasedChannel>();
     for (const channel of [...baseChannels, ...threads]) {
       if (canFetchMessages(channel)) candidates.set(channel.id, channel);
@@ -144,7 +140,7 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
     let failed = 0;
     for (const channel of candidates.values()) {
       try {
-        await backfillChannel(store, channel, cutoff);
+        await backfillChannel(store, channel);
       } catch (error) {
         failed += 1;
         console.warn('[archivist] channel backfill failed; cursor remains resumable', {
