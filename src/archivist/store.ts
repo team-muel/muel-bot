@@ -186,6 +186,81 @@ export class ArchiveStore {
     await this.ingestAttachments(message);
   }
 
+  /**
+   * Backfill is page-oriented, so persist a Discord page in a handful of
+   * PostgREST requests instead of doing two or three network round trips per
+   * message. Stream events still use ingestMessage for their single-row
+   * ordering and edit protection.
+   */
+  async ingestBackfillPage(messages: Message<true>[]): Promise<void> {
+    if (messages.length === 0) return;
+    const owned = messages.filter((message) => this.owns(message.guildId));
+    if (owned.length === 0) return;
+    await this.upsertChannel(owned[0].channel);
+
+    const authorRefs = new Map<string, string>();
+    for (const message of owned) {
+      if (authorRefs.has(message.author.id)) continue;
+      authorRefs.set(message.author.id, await this.upsertAuthor(message, 'backfill'));
+    }
+
+    const messageIds = owned.map((message) => message.id);
+    const { data: existingRows, error: existingError } = await this.db
+      .from('messages')
+      .select('message_id, source, tombstoned')
+      .in('message_id', messageIds);
+    throwIfError('backfill page message lookup failed', existingError);
+    const existing = new Map((existingRows ?? []).map((row: any) => [String(row.message_id), row]));
+
+    const rows = owned.flatMap((message) => {
+      const current = existing.get(message.id) as { source?: string; tombstoned?: boolean } | undefined;
+      if (current?.tombstoned || current?.source === 'stream') return [];
+      return [{
+        message_id: message.id,
+        channel_id: message.channelId,
+        guild_id: message.guildId,
+        author_ref: authorRefs.get(message.author.id),
+        content: message.content || null,
+        created_at: message.createdAt.toISOString(),
+        edited_at: message.editedAt?.toISOString() ?? null,
+        reply_to_message_id: message.reference?.messageId ?? null,
+        msg_type: MessageType[message.type] ?? String(message.type),
+        has_attachments: message.attachments.size > 0,
+        meta: {
+          pinned: message.pinned,
+          system: message.system,
+          webhook_id: message.webhookId,
+          flags: message.flags.bitfield.toString(),
+        },
+        source: 'backfill' as const,
+      }];
+    });
+    if (rows.length > 0) {
+      const { error } = await this.db.from('messages').upsert(rows, { onConflict: 'message_id' });
+      throwIfError('backfill page message upsert failed', error);
+    }
+
+    const candidates = owned.flatMap((message) => [...message.attachments.values()].map((attachment) => ({
+      message_id: message.id,
+      discord_url: attachment.url,
+      filename: attachment.name,
+      content_type: attachment.contentType,
+      size_bytes: attachment.size,
+    })));
+    if (candidates.length === 0) return;
+    const { data: existingAttachments, error: attachmentLookupError } = await this.db
+      .from('attachments')
+      .select('message_id, discord_url')
+      .in('message_id', messageIds);
+    throwIfError('backfill page attachment lookup failed', attachmentLookupError);
+    const seen = new Set((existingAttachments ?? []).map((row: any) => `${row.message_id}\0${row.discord_url}`));
+    const missing = candidates.filter((row) => !seen.has(`${row.message_id}\0${row.discord_url}`));
+    if (missing.length > 0) {
+      const { error } = await this.db.from('attachments').insert(missing);
+      throwIfError('backfill page attachment insert failed', error);
+    }
+  }
+
   private async ingestAttachments(message: Message<true>): Promise<void> {
     for (const attachment of message.attachments.values()) {
       const { data: prior, error: priorError } = await this.db
