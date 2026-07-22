@@ -6,6 +6,7 @@ import {
   type GuildMember,
 } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
+import { getArchiveOnboardingNotice } from './archivist/index.js';
 
 export const WELCOME_COMMAND_NAME = '환영';
 const EPHEMERAL = MessageFlags.Ephemeral;
@@ -93,8 +94,12 @@ export const postWelcomeIfConfigured = async (member: GuildMember): Promise<void
     const channel = await member.guild.channels.fetch(data.channel_id).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
+    const archiveNotice = getArchiveOnboardingNotice(member.guild.id);
     await channel.send({
-      content: `${member} 어서 와. 나 뮤엘이야 — 여기 상주하면서 같이 떠들어. 뭐 할 수 있는지는 /도움말, 내가 너희를 어떻게 보는지는 Weave에서 볼 수 있어.`,
+      content: [
+        `${member} 어서 와. 나 뮤엘이야 — 여기 상주하면서 같이 떠들어. 뭐 할 수 있는지는 /도움말, 내가 너희를 어떻게 보는지는 Weave에서 볼 수 있어.`,
+        archiveNotice,
+      ].filter(Boolean).join('\n'),
       allowedMentions: { users: [member.id] },
     });
   } catch (err) {

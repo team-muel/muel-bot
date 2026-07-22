@@ -66,6 +66,34 @@ Optional:
 - `DISCORD_APPLICATION_PUBLIC_KEY` — required when `ENABLE_HTTP_INTERACTIONS=true`
 - `GOMDORI_APPLICATION_PUBLIC_KEY` — optional second signature key for Gomdori HTTP interactions
 
+Archivist (optional; setting `OWNED_GUILD_ID` enables it):
+
+- `OWNED_GUILD_ID` — the single operator-owned guild accepted by every archive handler
+- `ARCHIVE_SALT` — stable HMAC secret for pseudonymous author grouping; never rotate it
+- `ARCHIVE_ENC_KEY` — AES-256-GCM key (32 bytes as hex, base64, or UTF-8)
+- `ARCHIVE_POLICY_URL` — Notion transparency page linked by the guild-only `/정책` command
+- `ENABLE_ARCHIVE_BACKFILL` / `ARCHIVE_BACKFILL_DAYS` — defaults to `true` / `365`
+- `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`, `NCP_OBJ_ENDPOINT`, `NCP_OBJ_BUCKET` — NCP Object Storage attachment mirror
+
+### Archivist database preflight
+
+The `archive` schema must be listed in **Supabase → Data API → Exposed schemas**. The server-side service role also needs access; do not grant these privileges to `anon` or `authenticated`:
+
+```sql
+grant usage on schema archive to service_role;
+grant select, insert, update, delete on all tables in schema archive to service_role;
+grant usage, select on all sequences in schema archive to service_role;
+grant execute on all routines in schema archive to service_role;
+```
+
+`archive.guilds` remains the database allowlist. If the configured guild is absent, or the schema is not exposed, the archivist fails its startup preflight without stopping the rest of Muel.
+
+For an approved erasure request, run this from an environment that has the production archive variables. It removes the archived body through `archive.tombstone_message` while preserving the thread skeleton:
+
+```bash
+npm run archive:tombstone -- <discord_message_id> erasure_request
+```
+
 ## Mention Replies
 
 Muel responds when mentioned in a server channel. This requires the Discord Developer Portal **Message Content Intent** to be enabled for the bot application, and the Render service must have `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` set.

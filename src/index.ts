@@ -39,6 +39,20 @@ import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, h
 import { handleMemoProposalButton, isMemoProposalButton } from './memoProposal.js';
 import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
 import { CODEX_COMMAND_NAME, buildCodexSlashCommand, handleCodexCommand, handleCodexSelect, isCodexSelect } from './gomdoriCodexHandler.js';
+import {
+  archiveMemberAdd,
+  archiveMemberRemove,
+  archiveMessageCreate,
+  archiveMessageDelete,
+  archiveMessageUpdate,
+  getArchivistStatus,
+  startArchivist,
+} from './archivist/index.js';
+import {
+  ARCHIVE_POLICY_COMMAND_NAME,
+  buildArchivePolicyCommand,
+  handleArchivePolicyCommand,
+} from './archivist/policy.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -63,12 +77,15 @@ const getRuntimeStatus = () => {
   if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');
   if (lastRegistrationError) degradedReasons.push(`command_registration:${lastRegistrationError}`);
+  const archivist = getArchivistStatus();
+  if (archivist.enabled && !archivist.ready) degradedReasons.push(`archivist:${archivist.lastError ?? 'not_ready'}`);
 
   return {
     ok: degradedReasons.length === 0,
     degradedReasons,
     youtubeMonitor,
     jobWorker,
+    archivist,
   };
 };
 
@@ -308,6 +325,15 @@ const registerCommands = async (readyClient: Client<true>): Promise<void> => {
       note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
     });
     await cleanupLegacyGuildCommands(readyClient, rest);
+    if (config.ownedGuildId) {
+      await rest.put(Routes.applicationGuildCommands(readyClient.application.id, config.ownedGuildId), {
+        body: [buildArchivePolicyCommand()],
+      });
+      console.log('[archivist] replaced owned-guild commands', {
+        guildId: config.ownedGuildId,
+        commands: [ARCHIVE_POLICY_COMMAND_NAME],
+      });
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const responseBody = (error as { rawError?: unknown }).rawError;
@@ -342,6 +368,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
   configureJobWorker(readyClient);
+  void startArchivist(readyClient);
 
   try {
     await registerCommands(readyClient);
@@ -450,6 +477,11 @@ if (!config.enableHttpInteractions) {
       return;
     }
 
+    if (interaction.commandName === ARCHIVE_POLICY_COMMAND_NAME) {
+      await handleArchivePolicyCommand(interaction);
+      return;
+    }
+
     await interaction.reply({
       ...renderDiscordMessage([{
         type: 'info-card',
@@ -466,6 +498,9 @@ client.on(Events.MessageCreate, async (message) => {
   if (!client.isReady()) {
     return;
   }
+  void archiveMessageCreate(message).catch((error) => {
+    console.warn('[archivist] messageCreate failed', { messageId: message.id, error });
+  });
   if (message.author.bot) {
     return;
   }
@@ -510,6 +545,22 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+  try {
+    await archiveMessageUpdate(oldMessage, newMessage);
+  } catch (error) {
+    console.warn('[archivist] messageUpdate failed', { messageId: newMessage.id, error });
+  }
+});
+
+client.on(Events.MessageDelete, async (message) => {
+  try {
+    await archiveMessageDelete(message);
+  } catch (error) {
+    console.warn('[archivist] messageDelete failed', { messageId: message.id, error });
+  }
+});
+
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   try {
     if (user.bot) return;
@@ -540,6 +591,11 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    await archiveMemberAdd(member);
+  } catch (error) {
+    console.warn('[archivist] guildMemberAdd restore failed', { userId: member.id, error });
+  }
   if (member.user.bot) return;
   try {
     await member.send(MUEL_WELCOME_DM);
@@ -553,6 +609,14 @@ client.on(Events.GuildMemberAdd, async (member) => {
     });
   }
   await postWelcomeIfConfigured(member);
+});
+
+client.on(Events.GuildMemberRemove, async (member) => {
+  try {
+    await archiveMemberRemove(member);
+  } catch (error) {
+    console.warn('[archivist] guildMemberRemove mask failed', { userId: member.id, error });
+  }
 });
 
 client.on(Events.Error, (error) => {
@@ -717,6 +781,7 @@ const server = http.createServer((request, response) => {
     uptimeSeconds: Math.floor(process.uptime()),
     youtubeMonitor: runtime.youtubeMonitor,
     jobWorker: runtime.jobWorker,
+    archivist: runtime.archivist,
     runtime: {
       enableJobWorker: config.enableJobWorker,
       enableYoutubeMonitor: config.enableYoutubeMonitor,
