@@ -94,4 +94,17 @@ export const config = {
   aiqDefaultAgentType: optionalEnv('AIQ_DEFAULT_AGENT_TYPE') ?? 'deep_researcher',
   aiqTopicMaxChars: Number(process.env.AIQ_TOPIC_MAX_CHARS ?? 2_000),
   aiqEnabled: booleanEnv('AIQ_ENABLED', true),
+  // Operator-owned guild archival. OWNED_GUILD_ID is the feature switch: when
+  // it is unset, every archivist handler is a no-op and existing deployments
+  // keep their current behaviour.
+  ownedGuildId: optionalEnv('OWNED_GUILD_ID'),
+  archiveSalt: optionalEnv('ARCHIVE_SALT'),
+  archiveEncKey: optionalEnv('ARCHIVE_ENC_KEY'),
+  archivePolicyUrl: optionalEnv('ARCHIVE_POLICY_URL'),
+  archiveBackfillEnabled: booleanEnv('ENABLE_ARCHIVE_BACKFILL', true),
+  archiveAttachmentCopyIntervalMs: Number(process.env.ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS ?? 30_000),
+  ncpAccessKey: optionalEnv('NCP_ACCESS_KEY'),
+  ncpSecretKey: optionalEnv('NCP_SECRET_KEY'),
+  ncpObjectEndpoint: optionalEnv('NCP_OBJ_ENDPOINT') ?? 'https://kr.object.ncloudstorage.com',
+  ncpObjectBucket: optionalEnv('NCP_OBJ_BUCKET') ?? 'muel-archive',
 };

@@ -12,6 +12,7 @@ import {
   SUBSCRIBE_ACTION_REMOVE,
 } from './subscribe.js';
 import { getDeferredEphemeralInteractionResponse } from './jobWorker.js';
+import { ARCHIVE_POLICY_COMMAND_NAME, buildArchivePolicyHttpResponse } from './archivist/policy.js';
 
 const INTERACTION_PING = 1;
 const INTERACTION_APPLICATION_COMMAND = 2;
@@ -115,6 +116,14 @@ export const handleDiscordInteractions = async (request: IncomingMessage, respon
 
   if (commandName === '도움말') {
     json(response, 200, { type: 4, data: { content: HELP_TEXT, flags: EPHEMERAL_FLAG } });
+    return;
+  }
+
+  if (commandName === ARCHIVE_POLICY_COMMAND_NAME) {
+    json(response, 200, {
+      type: 4,
+      data: buildArchivePolicyHttpResponse(interaction.guild_id),
+    });
     return;
   }
 
