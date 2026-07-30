@@ -3,7 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionF
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { activateHubChannel, deactivateHubChannel } from './hubChannels.js';
 import { logMuelAgentAction } from './agentActions.js';
-import { flavorError } from './errorFlavor.js';
+import { errorDetail, flavorError } from './errorFlavor.js';
 
 const PREFIX = 'muel:action';
 const HUB_ON = 'hub_on';
@@ -142,7 +142,7 @@ export const handleMuelActionButton = async (
       discordUserId: interaction.user.id,
       metadata: {
         triggerKind: 'action_confirmation',
-        errorMessage: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
+        errorMessage: errorDetail(error).slice(0, 240),
       },
     });
   }

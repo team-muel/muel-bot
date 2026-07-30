@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { errorDetail, errorTypeName } from './errorFlavor.js';
 
 export type MuelAiEventStatus = 'success' | 'fallback' | 'error';
 
@@ -118,22 +119,11 @@ export type ResolvedModelSummary = {
 export const classifyAiError = (
   err: unknown,
 ): { errorClass: string; errorMessage: string; isSchemaFailure: boolean; status: MuelAiEventStatus } => {
-  const errorClass = err instanceof Error ? err.name : ((err as any)?.constructor?.name || typeof err);
-  const errorMessage = err instanceof Error ? err.message : (() => {
-    const message = (err as any)?.message;
-    if (typeof message === "string" && message.trim().length > 0) {
-      return message;
-    }
-    try {
-      const serialized = JSON.stringify(err);
-      if (serialized && serialized !== "{}" && serialized !== "[object Object]") {
-        return serialized;
-      }
-    } catch {
-      // Fall through to String(err).
-    }
-    return String(err);
-  })();
+  // Single source of truth with errorFlavor so the Discord copy, the console
+  // line and this telemetry row always agree — and so a transport-level
+  // postgrest failure never lands as errorClass='Object'/'[object Object]'.
+  const errorClass = errorTypeName(err);
+  const errorMessage = errorDetail(err);
   const isSchemaFailure =
     errorClass === 'AI_NoObjectGeneratedError' || errorMessage.includes('did not match schema');
   return { errorClass, errorMessage, isSchemaFailure, status: isSchemaFailure ? 'fallback' : 'error' };

@@ -6,7 +6,7 @@ import { prepareChatTurn, getUserHistorySummary } from './muelConversationStore.
 import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
 import { deliverOverflowChunks } from './rendering/discordDelivery.js';
-import { flavorError } from './errorFlavor.js';
+import { errorDetail, flavorError } from './errorFlavor.js';
 import { formatForContext } from './channelBuffer.js';
 import { formatGuildTopology } from './guildTopology.js';
 import { config } from './config.js';
@@ -166,7 +166,7 @@ export const handleHubSlashInteraction = async (
         discordGuildId: guildId,
         discordChannelId: channelId,
         discordUserId: interaction.user.id,
-        metadata: { errorMessage: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240) },
+        metadata: { errorMessage: errorDetail(error).slice(0, 240) },
       });
     }
     return;
@@ -202,7 +202,7 @@ export const handleHubSlashInteraction = async (
         discordGuildId: guildId,
         discordChannelId: channelId,
         discordUserId: interaction.user.id,
-        metadata: { errorMessage: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240) },
+        metadata: { errorMessage: errorDetail(error).slice(0, 240) },
       });
     }
     return;
