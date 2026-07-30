@@ -66,8 +66,9 @@ assert(
 );
 
 assert(
-  'actionDraft uses schema-first AI SDK object classification, not executor heuristics',
-  /generateObject\(/.test(actionDraft) &&
+  'actionDraft uses schema-first AI SDK structured classification, not executor heuristics',
+  /generateText\(/.test(actionDraft) &&
+    /repairedObjectOutput\(ActionDraftSchema\)/.test(actionDraft) &&
     /ActionDraftSchema/.test(actionDraft) &&
     /hub_activate/.test(actionDraft) &&
     /hub_deactivate/.test(actionDraft) &&

@@ -18,9 +18,8 @@
 
 import { wrapLanguageModel } from 'ai';
 
-// AI SDK v6 의 LanguageModel union 이 LanguageModelV2/V3 + string 까지 포함.
-// wrapLanguageModel 는 V3 인스턴스만 받기 때문에 wrapper signature 는 `any` 로 받고
-// 호출자가 적절히 cast. 우리는 modelRegistry 의 provider 가 반환한 object 만 wrap.
+// Provider wrappers and the fallback marker intentionally stay structurally
+// typed because Muel combines Google and OpenAI-compatible model instances.
 type WrappableLM = any;
 
 const fmtMs = (ms: number): string => `${ms.toFixed(0)}ms`;
@@ -51,8 +50,7 @@ export const withTelemetry = (model: WrappableLM, ctx: TelemetryContext): Wrappa
   return wrapLanguageModel({
     model,
     middleware: {
-      // @ts-ignore AI SDK v6 middleware typing 이 일부 wrapper 와 미세 차이 — 정성적 cast.
-      wrapGenerate: async ({ doGenerate, params }: { doGenerate: () => Promise<any>; params: any }) => {
+      wrapGenerate: async ({ doGenerate }) => {
         const startedAt = Date.now();
         try {
           const result = await doGenerate();
@@ -79,8 +77,7 @@ export const withTelemetry = (model: WrappableLM, ctx: TelemetryContext): Wrappa
           throw err;
         }
       },
-      // @ts-ignore
-      wrapStream: async ({ doStream, params }: { doStream: () => Promise<any>; params: any }) => {
+      wrapStream: async ({ doStream }) => {
         const startedAt = Date.now();
         try {
           const result = await doStream();
@@ -160,8 +157,7 @@ export const withFallback = (
   return wrapLanguageModel({
     model: primary,
     middleware: {
-      // @ts-ignore AI SDK v6 middleware typing 미세 차이 — 정성적 cast.
-      wrapGenerate: async ({ doGenerate, params }: { doGenerate: () => Promise<any>; params: any }) => {
+      wrapGenerate: async ({ doGenerate, params }) => {
         try {
           return await doGenerate();
         } catch (err) {
@@ -176,8 +172,7 @@ export const withFallback = (
           return markFallback(result, ctx);
         }
       },
-      // @ts-ignore
-      wrapStream: async ({ doStream, params }: { doStream: () => Promise<any>; params: any }) => {
+      wrapStream: async ({ doStream, params }) => {
         try {
           return await doStream();
         } catch (err) {

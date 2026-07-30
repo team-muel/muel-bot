@@ -1,6 +1,6 @@
 import type { ButtonInteraction, Client, Message } from 'discord.js';
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
-import { generateText, stepCountIs } from 'ai';
+import { generateText, isStepCount } from 'ai';
 import { getSupabaseClient } from './supabase.js';
 import { config } from './config.js';
 import { enqueueJob } from './muelJobs.js';
@@ -111,11 +111,11 @@ const generateGroundedBrief = async (topic: string): Promise<string | null> => {
     const { text, finishReason } = await generateText({
       model: gemini.model,
       tools,
-      stopWhen: stepCountIs(3),
+      stopWhen: isStepCount(3),
       temperature: 0.4,
       maxOutputTokens: 1024,
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
-      system: [
+      instructions: [
         '너는 Muel이야. 주어진 주제의 현재 맥락을 한국어로 간결히 정리해.',
         '핵심 사실 3~5개를 짧은 불릿으로. 가능하면 끝에 출처 링크를 붙여.',
         '검색 결과에 있는 사실·날짜·숫자만 써. 모르면 모른다고 해. 지어내지 마.',

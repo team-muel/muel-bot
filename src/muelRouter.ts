@@ -1,9 +1,9 @@
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
-import { repairJsonText } from './aiRepair.js';
+import { repairedObjectOutput } from './aiRepair.js';
 
 /**
  * Stage 3.1 — Router lane as classifier-only observer.
@@ -83,11 +83,10 @@ export const classifyMentionIntent = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage, providerMetadata } = await generateObject({
+    const { output: object, usage, providerMetadata } = await generateText({
       model: routerModel.model,
       maxRetries: 1,
-      schema: RouterSchema,
-      experimental_repairText: repairJsonText,
+      output: repairedObjectOutput(RouterSchema),
       // thinkingBudget:0 은 2.5-flash 의 구조화 출력 스키마 준수를 무너뜨려(라우터 No-object 에러 급증). 소량 thinking 부여.
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 512 } } },
       temperature: 0,

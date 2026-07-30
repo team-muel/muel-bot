@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
@@ -6,7 +6,7 @@ import { embedMuelText } from './muelEmbeddings.js';
 import { insertWeaveNode } from './weaveNodes.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
-import { repairJsonText } from './aiRepair.js';
+import { repairedObjectOutput } from './aiRepair.js';
 import { maybeUpdateSocialProfile } from './socialProfile.js';
 
 type MemoryWorkerStatus = {
@@ -180,10 +180,9 @@ export async function processMemoryJob(job: any) {
   const extractStartedAt = Date.now();
   let extractResult;
   try {
-    extractResult = await generateObject({
+    extractResult = await generateText({
       model: extractModel.model,
-      schema: extractMemorySchema,
-      experimental_repairText: repairJsonText,
+      output: repairedObjectOutput(extractMemorySchema),
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       prompt: `${SYSTEM_PROMPT}${memoBlock}\n\nCONVERSATION:\n${conversationText}`,
     });
@@ -217,10 +216,10 @@ export async function processMemoryJob(job: any) {
     usage: extractResult.usage,
     providerMetadata: extractResult.providerMetadata,
     chatId,
-    metadata: { step: 'extract', messageId, candidateCount: extractResult.object.memories?.length ?? 0 },
+    metadata: { step: 'extract', messageId, candidateCount: extractResult.output.memories?.length ?? 0 },
   });
 
-  const object = extractResult.object;
+  const object = extractResult.output;
 
   // 직메모 confidence 갱신 — 재등장이면 100% 리셋, 아니면 시간 감쇠(반감기 14일,
   // 바닥 3%)를 캐시 컬럼에 반영. 주입 필터의 진실은 읽기 시 재계산(memoryRetriever)
@@ -285,11 +284,10 @@ export async function processMemoryJob(job: any) {
       const mergeStartedAt = Date.now();
       let mergeResult;
       try {
-        mergeResult = await generateObject({
+        mergeResult = await generateText({
           model: extractModel.model,
-          schema: mergeMemorySchema,
-        experimental_repairText: repairJsonText,
-        providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
+          output: repairedObjectOutput(mergeMemorySchema),
+          providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
           prompt: `You are managing an AI's long-term memory for a user.
 A new memory candidate has been extracted:
 "${memory.content}"
@@ -320,7 +318,7 @@ Task:
         });
         // merge schema 실패 → action='insert' default 로 진행 (안전한 쪽: 중복 가능성 약간 ↑ 보다 메모 누락이 더 큼).
         if (isSchemaFailure) {
-          mergeResult = { object: { action: 'insert' as const, mergedContent: '', targetId: null }, usage: undefined, providerMetadata: undefined };
+          mergeResult = { output: { action: 'insert' as const, mergedContent: '', targetId: null }, usage: undefined, providerMetadata: undefined };
         } else {
           throw aiError;
         }
@@ -335,10 +333,10 @@ Task:
         usage: mergeResult.usage,
         providerMetadata: (mergeResult as { providerMetadata?: unknown }).providerMetadata,
         chatId,
-        metadata: { step: 'merge', messageId, action: mergeResult.object.action },
+        metadata: { step: 'merge', messageId, action: mergeResult.output.action },
       });
 
-      const mergeDecision = mergeResult.object;
+      const mergeDecision = mergeResult.output;
       finalAction = mergeDecision.action;
       finalContent = mergeDecision.mergedContent || memory.content;
       targetId = mergeDecision.targetId;

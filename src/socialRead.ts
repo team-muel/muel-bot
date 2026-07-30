@@ -14,7 +14,7 @@
  * 킬스위치: MUEL_SOCIAL_READ=false.
  */
 
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getLaneModel } from './modelRegistry.js';
@@ -45,9 +45,9 @@ export const runSocialRead = async (input: {
   if (!lane) return null;
   const startedAt = Date.now();
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: lane.model,
-      schema: socialReadSchema,
+      output: Output.object({ schema: socialReadSchema }),
       maxRetries: 0,
       prompt: [
         '너는 Discord 대화 판독기다. 아래 채널 맥락과 방금 도착한 메시지를 보고,',

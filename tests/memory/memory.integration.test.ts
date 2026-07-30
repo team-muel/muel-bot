@@ -10,8 +10,8 @@
  * Use them to validate prompt quality, dimension alignment, and gate logic.
  */
 
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { generateObject, embed } from 'ai';
+import { createGoogle } from '@ai-sdk/google';
+import { generateText, embed, Output } from 'ai';
 import { z } from 'zod';
 
 const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
@@ -20,7 +20,7 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const google = createGoogleGenerativeAI({ apiKey });
+const google = createGoogle({ apiKey });
 const model = google(process.env.MUEL_EXTRACT_MODEL ?? process.env.MUEL_AI_MODEL ?? 'gemini-3.6-flash');
 const embeddingModel = google.textEmbeddingModel('gemini-embedding-001');
 
@@ -141,9 +141,9 @@ async function run() {
   for (const tc of cases) {
     process.stdout.write(`\n🔍 Test: ${tc.name} ... `);
     try {
-      const { object } = await generateObject({
+      const { output: object } = await generateText({
         model,
-        schema: extractMemorySchema,
+        output: Output.object({ schema: extractMemorySchema }),
         prompt: `${SYSTEM_PROMPT}\n\nCONVERSATION:\n${tc.conversation}`,
       });
       tc.assert(object.memories);

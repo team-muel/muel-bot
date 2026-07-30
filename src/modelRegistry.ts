@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createGoogle } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { config } from './config.js';
 import { withTelemetry, withFallback } from './aiMiddleware.js';
@@ -30,7 +30,7 @@ export const getGenerationProviderOptions = (
   return undefined;
 };
 
-let googleProvider: ReturnType<typeof createGoogleGenerativeAI> | null = null;
+let googleProvider: ReturnType<typeof createGoogle> | null = null;
 let nvidiaProvider: ReturnType<typeof createOpenAICompatible> | null = null;
 let mindlogicProvider: ReturnType<typeof createOpenAICompatible> | null = null;
 
@@ -40,7 +40,7 @@ export const normalizeGeminiModelName = (modelName: string): string =>
 const getGoogleProvider = () => {
   if (!config.googleGenerativeAiApiKey) return null;
   if (!googleProvider) {
-    googleProvider = createGoogleGenerativeAI({ apiKey: config.googleGenerativeAiApiKey });
+    googleProvider = createGoogle({ apiKey: config.googleGenerativeAiApiKey });
   }
   return googleProvider;
 };
@@ -242,7 +242,6 @@ export const getGoogleSearchTool = () => {
   const google = getGoogleProvider();
   if (!google) return null;
   try {
-    // @ts-ignore Optional provider helper exists only in some @ai-sdk/google versions.
     return google.tools?.googleSearch?.({}) ?? null;
   } catch (error) {
     console.warn('[model-registry] failed to attach googleSearch tool', error);
