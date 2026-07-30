@@ -10,6 +10,7 @@ import { splitForDiscord } from './rendering/discordText.js';
 import { DISCORD_LIMITS } from './rendering/discordLimits.js';
 import {
   getFallbackTextModel,
+  getGenerationProviderOptions,
   getGeminiTextModel,
   getGoogleSearchTool,
   getLaneModel,
@@ -228,9 +229,9 @@ export const generateMuelReply = async (
     };
   }
 
-  if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) {
+  if (!config.googleGenerativeAiApiKey && !config.mindlogicApiKey && !config.nvidiaApiKey) {
     return {
-      text: localFallback ?? 'AI 응답 엔진이 아직 연결되지 않았어. GEMINI_API_KEY 또는 NVIDIA_API_KEY를 설정해야 해.',
+      text: localFallback ?? 'AI 응답 엔진이 아직 연결되지 않았어. Gemini, MindLogic 또는 NVIDIA API 키를 설정해야 해.',
       model: localFallback ? 'local-fallback' : 'not-configured',
       provider: 'none',
       metadata: {
@@ -323,6 +324,7 @@ export const generateMuelReply = async (
       },
       temperature: 0.7,
       maxOutputTokens: 2048,
+      providerOptions: getGenerationProviderOptions(provider, modelName),
     });
 
     const finalText = sanitizeModelOutput(text);
@@ -348,51 +350,47 @@ export const generateMuelReply = async (
     };
   };
 
-  // 1. Primary: single-shot Gemini on the chat lane.
-  if (config.googleGenerativeAiApiKey) {
-    // Casual/lightweight turns stay on the cheap lane; substantive turns get
-    // the stronger reasoning model.
-    const chatLane: MuelModelTask = hasImage
-      ? 'vision'
-      : lightweightTurn
-        ? CHAT_MODEL_TASK
-        : 'heavy';
-    const gemini = getLaneModel(chatLane);
-    if (gemini) {
-      try {
-        // Web search (Google grounding) is always attached so the model can answer
-        // current-events / news / general-knowledge questions instead of refusing.
-        // DB tools stay gated behind shouldEnableTools for cost.
-        const agentTools: Record<string, any> = toolsEnabled ? { ...tools } : {};
-        // Google grounding 은 Gemini 전용 — NVIDIA 레인엔 안 붙인다.
-        if (gemini.provider === 'gemini') {
-          const googleSearch = getGoogleSearchTool();
-          if (googleSearch) {
-            agentTools.googleSearch = googleSearch;
-          }
+  // 1. Primary lane: provider switches choose MindLogic chat, NVIDIA heavy, or
+  // Gemini. Casual/lightweight turns stay on chat; substantive turns use heavy.
+  const chatLane: MuelModelTask = hasImage
+    ? 'vision'
+    : lightweightTurn
+      ? CHAT_MODEL_TASK
+      : 'heavy';
+  const primary = getLaneModel(chatLane);
+  if (primary) {
+    try {
+      // Web search (Google grounding) is Gemini-only. DB tools remain gated.
+      const agentTools: Record<string, any> = toolsEnabled ? { ...tools } : {};
+      if (primary.provider === 'gemini') {
+        const googleSearch = getGoogleSearchTool();
+        if (googleSearch) {
+          agentTools.googleSearch = googleSearch;
         }
-        const result = await tryGenerate(
-          gemini.model,
-          gemini.provider,
-          gemini.modelId,
-          agentTools,
-          chatLane,
-        );
-        return result;
-      } catch (error) {
-        const reason = describeError(error);
-        providerFailures.push(`gemini:${gemini.modelId}:${reason}`);
-        console.warn('[muel-agent] Gemini failed, escalating to fallback:', gemini.modelId, reason);
       }
-    } else {
-      providerFailures.push('gemini:provider-unavailable');
+      return await tryGenerate(
+        primary.model,
+        primary.provider,
+        primary.modelId,
+        agentTools,
+        chatLane,
+      );
+    } catch (error) {
+      const reason = describeError(error);
+      providerFailures.push(`${primary.provider}:${primary.modelId}:${reason}`);
+      console.warn(
+        '[muel-agent] primary lane failed, escalating to fallback:',
+        primary.provider,
+        primary.modelId,
+        reason,
+      );
     }
   } else {
-    providerFailures.push('gemini:not-configured');
+    providerFailures.push(`${chatLane}:provider-unavailable`);
   }
 
-  // 2. Fallback: NVIDIA single attempt. Verification deferred (key currently inactive).
-  if (config.nvidiaApiKey) {
+  // 2. Cross-provider fallback: MindLogic gateway first, then NVIDIA NIM.
+  if (config.mindlogicApiKey || config.nvidiaApiKey) {
     const fallback = getFallbackTextModel(CHAT_MODEL_TASK);
     if (fallback) {
       try {
@@ -404,12 +402,12 @@ export const generateMuelReply = async (
         return result;
       } catch (error) {
         const reason = describeError(error);
-        providerFailures.push(`nvidia:${config.nvidiaModel}:${reason}`);
-        console.warn('[muel-agent] NVIDIA NIM failed:', reason);
+        providerFailures.push(`${fallback.provider}:${fallback.modelId}:${reason}`);
+        console.warn('[muel-agent] fallback provider failed:', fallback.provider, fallback.modelId, reason);
       }
     }
   } else {
-    providerFailures.push('nvidia:not-configured');
+    providerFailures.push('fallback:not-configured');
   }
 
   console.error('[muel-agent] all providers failed', {

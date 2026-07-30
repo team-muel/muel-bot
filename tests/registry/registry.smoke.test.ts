@@ -14,9 +14,11 @@ import {
   getModelIdForTask,
   getGeminiTextModel,
   getFallbackTextModel,
+  getGenerationProviderOptions,
   getPrimaryTextModel,
   normalizeGeminiModelName,
 } from '../../src/modelRegistry.js';
+import { config } from '../../src/config.js';
 
 let passed = 0;
 let failed = 0;
@@ -92,9 +94,14 @@ if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY) {
   );
 }
 
-// 4. getFallbackTextModel returns NVIDIA model when key present, null otherwise.
+// 4. Cross-provider fallback prefers MindLogic, then NVIDIA.
 const fallback = getFallbackTextModel('chat');
-if (process.env.NVIDIA_API_KEY) {
+if (process.env.MINDLOGIC_API_KEY) {
+  assert(
+    'getFallbackTextModel prefers MindLogic when its key is present',
+    fallback !== null && fallback.provider === 'mindlogic',
+  );
+} else if (process.env.NVIDIA_API_KEY) {
   assert(
     'getFallbackTextModel returns NVIDIA model when key present',
     fallback !== null && fallback.provider === 'nvidia',
@@ -106,15 +113,47 @@ if (process.env.NVIDIA_API_KEY) {
   );
 }
 
-// 5. getPrimaryTextModel prefers Gemini and falls back to NVIDIA.
+// 5. getPrimaryTextModel prefers Gemini and follows the fallback chain otherwise.
 const primary = getPrimaryTextModel('chat');
 if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY) {
   assert('getPrimaryTextModel picks gemini when available', primary?.provider === 'gemini');
+} else if (process.env.MINDLOGIC_API_KEY) {
+  assert('getPrimaryTextModel picks mindlogic when only MindLogic is configured', primary?.provider === 'mindlogic');
 } else if (process.env.NVIDIA_API_KEY) {
   assert('getPrimaryTextModel picks nvidia when only NVIDIA configured', primary?.provider === 'nvidia');
 } else {
   assert('getPrimaryTextModel returns null with no providers', primary === null);
 }
+
+// 6. Provider defaults match the production routing contract.
+if (!process.env.MINDLOGIC_MODEL) {
+  assert('MindLogic fallback defaults to Gemini 3.6 Flash', config.mindlogicModel === 'gemini-3.6-flash');
+}
+if (!process.env.MINDLOGIC_CHAT_MODEL) {
+  assert('MindLogic chat defaults to GPT-5.6 Sol', config.mindlogicChatModel === 'gpt-5.6-sol');
+}
+if (!process.env.NVIDIA_MODEL) {
+  assert('NVIDIA fallback defaults to DeepSeek V4 Pro', config.nvidiaModel === 'deepseek-ai/deepseek-v4-pro');
+}
+if (!process.env.NVIDIA_HEAVY_MODEL) {
+  assert('NVIDIA heavy defaults to DeepSeek V4 Flash', config.nvidiaHeavyModel === 'deepseek-ai/deepseek-v4-flash');
+}
+
+// 7. Provider-specific request options preserve tool compatibility.
+const gpt56Options = getGenerationProviderOptions('mindlogic', 'mindlogic:gpt-5.6-sol');
+assert(
+  'MindLogic GPT-5.6 disables Chat Completions reasoning for tool compatibility',
+  gpt56Options?.mindlogic?.reasoningEffort === 'none',
+);
+assert(
+  'MindLogic Gemini fallback does not receive GPT-only reasoning options',
+  getGenerationProviderOptions('mindlogic', 'mindlogic:gemini-3.6-flash') === undefined,
+);
+const deepseekOptions = getGenerationProviderOptions('nvidia', 'nvidia:deepseek-ai/deepseek-v4-flash');
+assert(
+  'NVIDIA DeepSeek V4 uses bounded non-thinking mode',
+  (deepseekOptions?.nvidia?.chat_template_kwargs as { thinking?: boolean } | undefined)?.thinking === false,
+);
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed`);
