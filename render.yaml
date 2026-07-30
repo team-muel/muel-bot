@@ -71,6 +71,8 @@ services:
         value: "true"
       - key: ENABLE_HTTP_INTERACTIONS
         value: "false"
+      - key: DISCORD_COMPONENTS_V2
+        value: cards
       - key: MENTION_REPLY_TIMEOUT_MS
         value: "15000"
       - key: AIQ_POLL_TIMEOUT_MS

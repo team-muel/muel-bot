@@ -8,6 +8,7 @@ import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import { renderDiscordComponentsV2WithFallback } from './rendering/discordComponentsV2.js';
 import { insertWeaveNode } from './weaveNodes.js';
 import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 import { enqueueJob } from './muelJobs.js';
@@ -562,7 +563,10 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     }
     const intent: MuelRenderablePart[] = [intentBase];
 
-    const sentMessage = await channel.send(renderDiscordMessage(intent));
+    const communityMessage = config.discordComponentsV2Mode === 'off'
+      ? renderDiscordMessage(intent)
+      : renderDiscordComponentsV2WithFallback(intent);
+    const sentMessage = await channel.send(communityMessage);
 
     // ADR-002: 커뮤니티 게시글을 weave 지식 노드로 (community). fire-and-forget.
     void insertWeaveNode({

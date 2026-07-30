@@ -45,7 +45,7 @@ function formatUnixAsKoreanRelative(unixTime: number): string {
   return `${Math.floor(diff / 31536000)}년 전`;
 }
 
-function formatPublishedAtForFooter(text: string | undefined): string {
+export function formatPublishedAtForFooter(text: string | undefined): string {
   const raw = text?.trim();
   if (!raw) return '';
 
@@ -87,7 +87,7 @@ function sectionsToFields(sections: CardSection[] | undefined): APIEmbedField[] 
   return fields;
 }
 
-function extractYouTubeVideoId(url: string | undefined, fallbackId?: string): string | null {
+export function extractYouTubeVideoId(url: string | undefined, fallbackId?: string): string | null {
   if (fallbackId) return fallbackId;
   if (!url) return null;
   const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
