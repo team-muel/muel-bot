@@ -1,9 +1,13 @@
-import { Client, Message } from 'discord.js';
+import { Client } from 'discord.js';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
-import { scrapeLatestCommunityPostByInnerTube, type ScrapedCommunityPost } from './youtubeCommunityScraper.js';
+import {
+  scrapeLatestCommunityPostByChannelId,
+  scrapeLatestCommunityPostByInnerTube,
+  type ScrapedCommunityPost,
+} from './youtubeCommunityScraper.js';
 import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
 import { cachePost } from './youtubePostCache.js';
@@ -14,10 +18,17 @@ import type { MuelRenderablePart, RenderTone } from './rendering/types.js';
 import { enqueueJob } from './muelJobs.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
-import { fetchYouTubeChannelMetadata, fetchYouTubeVideoMetadata, type YouTubeChannelMetadata, type YouTubeVideoMetadata } from './youtubeMetadataClient.js';
+import {
+  fetchYouTubeChannelMetadata,
+  fetchYouTubeUploadsPlaylistItems,
+  fetchYouTubeVideoMetadata,
+  type YouTubeVideoMetadata,
+} from './youtubeMetadataClient.js';
 import { buildVideoItemInput, claimYouTubeDelivery, upsertYouTubeItem } from './youtubeItemStore.js';
 import { postOverflowToThread } from './rendering/discordDelivery.js';
 import { safeBreakIndex } from './rendering/discordText.js';
+import { renewYouTubeWebSubSubscriptions } from './youtubeWebSub.js';
+import { runYouTubeApiDataLifecycle } from './youtubeLifecycle.js';
 
 type SourceRow = {
   id: number;
@@ -27,6 +38,7 @@ type SourceRow = {
   is_active: boolean;
   last_post_id: string | null;
   last_post_signature: string | null;
+  last_check_at: string | null;
 };
 
 type LatestEntry = {
@@ -40,14 +52,10 @@ type LatestEntry = {
   images?: string[];
 };
 
-type LatestWithMetadata = {
-  latest: LatestEntry;
-  channelId: string;
-  videoMetadata: YouTubeVideoMetadata | null;
-  channelMetadata: YouTubeChannelMetadata | null;
-};
-
 let timer: NodeJS.Timeout | null = null;
+let webSubTimer: NodeJS.Timeout | null = null;
+let lifecycleTimer: NodeJS.Timeout | null = null;
+let lifecycleRunning = false;
 let running = false;
 let lastTickStartedAt: string | null = null;
 let lastTickFinishedAt: string | null = null;
@@ -138,7 +146,7 @@ const isYouTubeRow = (row: SourceRow): boolean => {
 const loadRows = async (): Promise<SourceRow[]> => {
   const { data, error } = await getSupabaseClient()
     .from('sources')
-    .select('id,channel_id,name,url,is_active,last_post_id,last_post_signature')
+    .select('id,channel_id,name,url,is_active,last_post_id,last_post_signature,last_check_at')
     .eq('is_active', true);
 
   if (error) {
@@ -148,7 +156,44 @@ const loadRows = async (): Promise<SourceRow[]> => {
   return ((data ?? []) as SourceRow[]).filter(isYouTubeRow);
 };
 
-const fetchLatestVideo = async (channelId: string): Promise<LatestEntry | null> => {
+export const parseYouTubeVideoFeed = (xml: string): LatestEntry[] => {
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)];
+  return entries.flatMap((match) => {
+    const entry = match[1] ?? '';
+    const id = extractTag(entry, 'yt:videoId') || extractTag(entry, 'id').split(':').pop() || '';
+    if (!id) return [];
+    const title = extractTag(entry, 'title');
+    const author = extractTag(entry, 'name') || 'YouTube Channel';
+    const published = extractTag(entry, 'published');
+    return [{
+      id,
+      title: title || 'YouTube video',
+      content: title || '',
+      link: `https://www.youtube.com/watch?v=${id}`,
+      author,
+      published,
+    }];
+  });
+};
+
+export const selectUnseenVideoEntries = (
+  entries: LatestEntry[],
+  previousVideoId: string | null,
+): LatestEntry[] => {
+  const chronological = [...entries].sort((left, right) => {
+    const leftTime = Date.parse(left.published);
+    const rightTime = Date.parse(right.published);
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
+    return 0;
+  });
+  if (chronological.length === 0) return [];
+  if (!previousVideoId) return [chronological[chronological.length - 1]!];
+  const previousIndex = chronological.findIndex((entry) => entry.id === previousVideoId);
+  if (previousIndex < 0) return [];
+  return chronological.slice(previousIndex + 1);
+};
+
+const fetchRecentVideos = async (channelId: string): Promise<LatestEntry[]> => {
   const response = await fetchWithTimeout(
     `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`,
     {
@@ -161,34 +206,57 @@ const fetchLatestVideo = async (channelId: string): Promise<LatestEntry | null> 
   );
 
   if (!response.ok) {
-    return null;
+    return [];
   }
 
-  const xml = await response.text();
-  const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/i);
-  if (!entryMatch?.[1]) {
-    return null;
+  return parseYouTubeVideoFeed(await response.text());
+};
+
+const recoverVideoEntries = async (
+  channelId: string,
+  row: SourceRow,
+  feedEntries: LatestEntry[],
+): Promise<LatestEntry[]> => {
+  if (!config.youtubeDataApiKey) {
+    return feedEntries.slice(0, 1);
   }
 
-  const entry = entryMatch[1];
-  const id = extractTag(entry, 'yt:videoId') || extractTag(entry, 'id').split(':').pop() || '';
-  const title = extractTag(entry, 'title');
-  const author = extractTag(entry, 'name') || 'YouTube Channel';
-  const published = extractTag(entry, 'published');
+  try {
+    const channel = await fetchYouTubeChannelMetadata(channelId);
+    if (!channel?.uploadsPlaylistId) return feedEntries.slice(0, 1);
+    const uploads = await fetchYouTubeUploadsPlaylistItems(channel.uploadsPlaylistId, 50);
+    const entries = uploads.map((item): LatestEntry => ({
+      id: item.videoId,
+      title: item.title,
+      content: item.description || item.title,
+      link: `https://www.youtube.com/watch?v=${item.videoId}`,
+      author: item.channelTitle ?? 'YouTube Channel',
+      published: item.publishedAt ?? '',
+    }));
+    const fromPrevious = selectUnseenVideoEntries(entries, row.last_post_id);
+    if (fromPrevious.length > 0) return fromPrevious;
 
-  if (!id) {
-    return null;
+    const cutoff = row.last_check_at ? Date.parse(row.last_check_at) : Number.NaN;
+    if (Number.isFinite(cutoff)) {
+      return entries
+        .filter((entry) => {
+          const published = Date.parse(entry.published);
+          return Number.isFinite(published) && published > cutoff;
+        })
+        .sort((left, right) => Date.parse(left.published) - Date.parse(right.published));
+    }
+    const newest = [...entries].sort(
+      (left, right) => Date.parse(left.published) - Date.parse(right.published),
+    ).at(-1);
+    return newest ? [newest] : feedEntries.slice(0, 1);
+  } catch (error) {
+    console.warn('[youtube] uploads playlist reconciliation failed', {
+      channelId,
+      sourceId: row.id,
+      error,
+    });
+    return feedEntries.slice(0, 1);
   }
-
-  return {
-    id,
-    title: title || 'YouTube video',
-    content: title || '',
-    link: `https://www.youtube.com/watch?v=${id}`,
-    author,
-    published,
-    isShorts: await detectShortsVideo(id),
-  };
 };
 
 const toLatestEntry = (post: ScrapedCommunityPost): LatestEntry => ({
@@ -237,38 +305,23 @@ const displayLink = (latest: LatestEntry): string => {
 const threadTitle = (prefix: string, latest: LatestEntry): string =>
   truncate(`${prefix} ${latest.title || latest.author}`, 90);
 
-const fetchLatest = async (row: SourceRow): Promise<LatestWithMetadata | null> => {
+const fetchLatestCommunityPost = async (
+  row: SourceRow,
+): Promise<{ latest: LatestEntry; channelId: string } | null> => {
   const channelId = await parseYouTubeChannelId(row.url);
   if (!channelId) {
     return null;
   }
 
-  if (getMode(row) === 'posts') {
-    const post = await scrapeLatestCommunityPostByInnerTube(channelId, config.youtubeFetchTimeoutMs);
-    return post
-      ? { latest: toLatestEntry(post), channelId, videoMetadata: null, channelMetadata: null }
-      : null;
-  }
-
-  const latest = await fetchLatestVideo(channelId);
-  if (!latest) return null;
-
-  let videoMetadata: YouTubeVideoMetadata | null = null;
-  let channelMetadata: YouTubeChannelMetadata | null = null;
-  if (config.youtubeDataApiKey) {
-    try {
-      videoMetadata = await fetchYouTubeVideoMetadata(latest.id);
-    } catch (error) {
-      console.warn('[youtube] video metadata fetch failed', error);
-    }
-    try {
-      channelMetadata = await fetchYouTubeChannelMetadata(videoMetadata?.channelId ?? channelId);
-    } catch (error) {
-      console.warn('[youtube] channel metadata fetch failed', error);
-    }
-  }
-
-  return { latest, channelId, videoMetadata, channelMetadata };
+  if (!config.youtubeCommunityEnabled) return null;
+  const post = await scrapeLatestCommunityPostByInnerTube(
+    channelId,
+    config.youtubeFetchTimeoutMs,
+  ) ?? await scrapeLatestCommunityPostByChannelId(
+    channelId,
+    config.youtubeFetchTimeoutMs,
+  );
+  return post ? { latest: toLatestEntry(post), channelId } : null;
 };
 
 const CommunityPostSchema = z.object({
@@ -370,26 +423,6 @@ ${rawContent}`,
   }
 };
 
-const buildThreadBody = (mode: 'posts' | 'shorts', latest: LatestEntry, overflow?: string): string => {
-  if (mode === 'shorts') {
-    return [
-      `# ${latest.title}`,
-      '',
-      displayLink(latest),
-      '',
-      [latest.author, latest.published].filter(Boolean).join(' | '),
-    ].filter(Boolean).join('\n');
-  }
-
-  return [
-    overflow || '',
-    '',
-    displayLink(latest),
-    '',
-    [latest.author, latest.published].filter(Boolean).join(' | '),
-  ].filter(Boolean).join('\n');
-};
-
 const updateRow = async (row: SourceRow, latest: LatestEntry): Promise<void> => {
   const common = {
     last_check_status: 'success',
@@ -436,55 +469,34 @@ const updateRowError = async (row: SourceRow, error: unknown): Promise<void> => 
     .eq('id', row.id);
 };
 
-const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'skipped'> => {
-  const mode = getMode(row);
-  const fetched = await fetchLatest(row);
-  if (!fetched) {
+const processVideoRow = async (client: Client, row: SourceRow): Promise<number> => {
+  const channelId = await parseYouTubeChannelId(row.url);
+  if (!channelId) {
     await updateRowNoLatest(row);
-    return 'skipped';
-  }
-  const { latest, channelId, videoMetadata, channelMetadata } = fetched;
-
-  if (mode === 'posts') {
-    await upsertYouTubeItem(getSupabaseClient(), {
-      sourceId: row.id,
-      kind: 'community_post',
-      youtubeId: latest.id,
-      channelId,
-      channelTitle: latest.author,
-      title: latest.title,
-      description: latest.content,
-      url: displayLink(latest),
-      publishedAt: latest.published || null,
-      isShorts: false,
-      raw: {
-        source: 'youtube_innertube',
-        images: latest.images ?? [],
-      },
-    });
-  } else {
-    await upsertYouTubeItem(
-      getSupabaseClient(),
-      buildVideoItemInput({
-        sourceId: row.id,
-        latest: {
-          ...latest,
-          link: displayLink(latest),
-          isShorts: isShortsEntry(latest),
-        },
-        metadata: videoMetadata,
-        channel: channelMetadata,
-      }),
-    );
+    return 0;
   }
 
-  const previous = mode === 'posts' ? row.last_post_signature : row.last_post_id;
-  if (previous === latest.id) {
-    // Only update DB occasionally (e.g., 1% chance) to show it's alive, or just don't update to save DB writes
-    if (Math.random() < 0.05) {
-      await updateRow(row, latest);
+  const entries = await fetchRecentVideos(channelId);
+  if (entries.length === 0) {
+    await updateRowNoLatest(row);
+    return 0;
+  }
+
+  let candidates = selectUnseenVideoEntries(entries, row.last_post_id);
+  if (
+    candidates.length === 0
+    && row.last_post_id
+    && !entries.some((entry) => entry.id === row.last_post_id)
+  ) {
+    candidates = await recoverVideoEntries(channelId, row, entries);
+  }
+  if (candidates.length === 0) {
+    // This is the critical quota fast path: unchanged feeds do not touch the
+    // Data API, video watch HTML, or the YouTube item table.
+    if (entries.some((entry) => entry.id === row.last_post_id) && Math.random() < 0.05) {
+      await updateRow(row, entries.find((entry) => entry.id === row.last_post_id)!);
     }
-    return 'skipped';
+    return 0;
   }
 
   const channel = await client.channels.fetch(row.channel_id!);
@@ -492,132 +504,234 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
     throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
   }
 
+  let sent = 0;
+  for (const candidate of candidates) {
+    // Shorts remain a discovery by-product. Probe only a genuinely new upload,
+    // then advance the source cursor without caching or delivering it.
+    const isShorts = await detectShortsVideo(candidate.id);
+    const latest: LatestEntry = { ...candidate, isShorts };
+    if (config.youtubeSuppressShorts && isShorts) {
+      await updateRow(row, latest);
+      continue;
+    }
+
+    let videoMetadata: YouTubeVideoMetadata | null = null;
+    if (config.youtubeDataApiKey) {
+      try {
+        videoMetadata = await fetchYouTubeVideoMetadata(latest.id);
+      } catch (error) {
+        console.warn('[youtube] video metadata fetch failed', error);
+      }
+    }
+
+    await upsertYouTubeItem(
+      getSupabaseClient(),
+      buildVideoItemInput({
+        sourceId: row.id,
+        latest: {
+          ...latest,
+          link: displayLink(latest),
+          isShorts,
+        },
+        metadata: videoMetadata,
+        channel: null,
+      }),
+    );
+
+    const claimed = await claimYouTubeDelivery(getSupabaseClient(), {
+      sourceId: row.id,
+      youtubeId: latest.id,
+      kind: isShorts ? 'shorts' : 'video',
+      channelId: row.channel_id,
+    });
+    if (!claimed) {
+      await updateRow(row, latest);
+      continue;
+    }
+
+    const intent: MuelRenderablePart[] = [{
+      type: 'video-card',
+      title: videoMetadata?.title ?? latest.title,
+      author: videoMetadata?.channelTitle ?? latest.author,
+      url: displayLink(latest),
+      isShorts,
+      videoId: latest.id,
+      publishedAt: videoMetadata?.publishedAt ?? latest.published,
+      actionButtons: config.aiqEnabled
+        ? [{
+            label: '이 소식 더 알아보기',
+            customId: `research:enrich:youtube_video:${latest.id}`,
+            style: 'secondary' as const,
+          }]
+        : undefined,
+    }];
+    await channel.send(renderDiscordMessage(intent));
+
+    void insertWeaveNode({
+      sourceKind: 'community_video',
+      visibility: 'community',
+      title: videoMetadata?.title ?? latest.title,
+      body: videoMetadata?.description || latest.title,
+      tags: [videoMetadata?.channelTitle ?? latest.author].filter(Boolean),
+      sourceRef: {
+        youtube_id: latest.id,
+        channel_id: channelId,
+        url: displayLink(latest),
+        is_shorts: isShorts,
+      },
+    });
+
+    if (latest.content) {
+      cachePost({
+        id: latest.id,
+        title: latest.title,
+        content: latest.content,
+        author: latest.author,
+        link: latest.link,
+        published: latest.published,
+        cachedAt: Date.now(),
+      });
+    }
+    await updateRow(row, latest);
+    sent += 1;
+  }
+  return sent;
+};
+
+const processCommunityRow = async (client: Client, row: SourceRow): Promise<number> => {
+  const fetched = await fetchLatestCommunityPost(row);
+  if (!fetched) {
+    await updateRowNoLatest(row);
+    return 0;
+  }
+  const { latest, channelId } = fetched;
+
+  if (row.last_post_signature === latest.id) {
+    if (Math.random() < 0.05) {
+      await updateRow(row, latest);
+    }
+    return 0;
+  }
+
+  const channel = await client.channels.fetch(row.channel_id!);
+  if (!channel || !('send' in channel) || typeof channel.send !== 'function') {
+    throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
+  }
+
+  await upsertYouTubeItem(getSupabaseClient(), {
+    sourceId: row.id,
+    kind: 'community_post',
+    youtubeId: latest.id,
+    channelId,
+    channelTitle: latest.author,
+    title: latest.title,
+    description: latest.content,
+    url: displayLink(latest),
+    publishedAt: latest.published || null,
+    isShorts: false,
+    raw: {
+      source: 'youtube_community_experimental',
+      images: latest.images ?? [],
+    },
+  });
+
   // Idempotency gate: atomically claim this item BEFORE sending. If it was
   // already delivered (crash-after-send, job retry, or a concurrent poller) the
   // claim fails and we skip re-sending — this is the fix for duplicate posts.
   // We still persist the cheap marker so the fast path skips it next tick.
-  const deliveryKind = mode === 'posts' ? 'community_post' : (isShortsEntry(latest) ? 'shorts' : 'video');
   const claimed = await claimYouTubeDelivery(getSupabaseClient(), {
     sourceId: row.id,
     youtubeId: latest.id,
-    kind: deliveryKind,
+    kind: 'community_post',
     channelId: row.channel_id,
   });
   if (!claimed) {
     await updateRow(row, latest);
-    return 'skipped';
+    return 0;
   }
 
-  if (mode === 'posts') {
-    const { preview, overflow } = splitCommunityBody(latest.content);
-    
-    let intentBase: MuelRenderablePart = {
-      type: 'youtube-community-post-card',
-      id: latest.id,
-      tone: 'neutral',
-      authorName: latest.author,
-      body: preview,
-      sourceUrl: displayLink(latest),
-      publishedAt: latest.published,
-      imageUrls: latest.images,
+  const { preview, overflow } = splitCommunityBody(latest.content);
+
+  let intentBase: MuelRenderablePart = {
+    type: 'youtube-community-post-card',
+    id: latest.id,
+    tone: 'neutral',
+    authorName: latest.author,
+    body: preview,
+    sourceUrl: displayLink(latest),
+    publishedAt: latest.published,
+    imageUrls: latest.images,
+    metadata: {
+      editor: 'heuristic',
+      editedAt: new Date().toISOString(),
+    },
+  };
+
+  // Attempt to use AI to edit the post
+  const aiResult = await editCommunityPost(latest.author, latest.content);
+  if (aiResult) {
+    intentBase = {
+      ...intentBase,
+      title: aiResult.data.title,
+      subtitle: aiResult.data.subtitle,
+      body: aiResult.data.body,
+      highlights: aiResult.data.highlights,
       metadata: {
-        editor: 'heuristic',
+        editor: 'ai',
+        editorModel: aiResult.modelId,
         editedAt: new Date().toISOString(),
-      }
+      },
     };
-    
-    // Attempt to use AI to edit the post
-    const aiResult = await editCommunityPost(latest.author, latest.content);
-    if (aiResult) {
-      intentBase = {
-        ...intentBase,
-        title: aiResult.data.title,
-        subtitle: aiResult.data.subtitle,
-        body: aiResult.data.body,
-        highlights: aiResult.data.highlights,
-        metadata: {
-          editor: 'ai',
-          editorModel: aiResult.modelId,
-          editedAt: new Date().toISOString(),
-        }
-      };
-    } else {
-      // Fallback heuristic
-      const firstNewline = preview.indexOf('\n');
-      if (firstNewline !== -1) {
-        const firstLine = preview.slice(0, firstNewline).trim();
-        if (firstLine.length > 0 && firstLine.length <= 100) {
-          intentBase.title = firstLine;
-          intentBase.body = preview.slice(firstNewline + 1).trim();
-        }
-      } else if (preview.length > 0 && preview.length <= 100) {
-        intentBase.title = preview;
-        intentBase.body = '';
-      }
-    }
-
-    if (config.aiqEnabled) {
-      (intentBase as any).actionButtons = [
-        { label: '이 소식 더 알아보기', customId: `research:enrich:youtube_post:${latest.id}`, style: 'secondary' as const },
-      ];
-    }
-    const intent: MuelRenderablePart[] = [intentBase];
-
-    const communityMessage = config.discordComponentsV2Mode === 'off'
-      ? renderDiscordMessage(intent)
-      : renderDiscordComponentsV2WithFallback(intent);
-    const sentMessage = await channel.send(communityMessage);
-
-    // ADR-002: 커뮤니티 게시글을 weave 지식 노드로 (community). fire-and-forget.
-    void insertWeaveNode({
-      sourceKind: 'community_post',
-      visibility: 'community',
-      title: latest.title,
-      body: latest.content || latest.title,
-      tags: [latest.author].filter(Boolean),
-      sourceRef: { youtube_id: latest.id, channel_id: channelId, url: displayLink(latest) },
-    });
-
-    if (overflow) {
-      await postOverflowToThread(sentMessage, threadTitle('이어서 보기', latest), overflow, {
-        footer: displayLink(latest),
-      });
-    }
-
   } else {
-    const intent: MuelRenderablePart[] = [
-      {
-        type: 'video-card',
-        title: latest.title,
-        author: latest.author,
-        url: displayLink(latest),
-        isShorts: isShortsEntry(latest),
-        videoId: latest.id,
-        publishedAt: latest.published,
-        actionButtons: config.aiqEnabled
-          ? [{ label: '이 소식 더 알아보기', customId: `research:enrich:youtube_video:${latest.id}`, style: 'secondary' as const }]
-          : undefined,
+    // Fallback heuristic
+    const firstNewline = preview.indexOf('\n');
+    if (firstNewline !== -1) {
+      const firstLine = preview.slice(0, firstNewline).trim();
+      if (firstLine.length > 0 && firstLine.length <= 100) {
+        intentBase.title = firstLine;
+        intentBase.body = preview.slice(firstNewline + 1).trim();
       }
-    ];
-    
-    await channel.send(renderDiscordMessage(intent));
-
-    // ADR-002: 커뮤니티 영상을 weave 지식 노드로 (community). fire-and-forget.
-    void insertWeaveNode({
-      sourceKind: 'community_video',
-      visibility: 'community',
-      title: latest.title,
-      body: latest.title,
-      tags: [latest.author].filter(Boolean),
-      sourceRef: { youtube_id: latest.id, channel_id: channelId, url: displayLink(latest), is_shorts: isShortsEntry(latest) },
-    });
-    // No thread on video/shorts cards. The card itself carries title + thumbnail +
-    // "영상 보기" link button — a thread that just re-pastes the same URL forces
-    // Discord to draw a second auto-embed (the duplicate observed in production).
-    // Community-post overflow threads are still created in their own branch above.
+    } else if (preview.length > 0 && preview.length <= 100) {
+      intentBase.title = preview;
+      intentBase.body = '';
+    }
   }
 
-  // Cache post content for Muel context
+  if (config.aiqEnabled) {
+    (intentBase as any).actionButtons = [
+      {
+        label: '이 소식 더 알아보기',
+        customId: `research:enrich:youtube_post:${latest.id}`,
+        style: 'secondary' as const,
+      },
+    ];
+  }
+  const intent: MuelRenderablePart[] = [intentBase];
+
+  const communityMessage = config.discordComponentsV2Mode === 'off'
+    ? renderDiscordMessage(intent)
+    : renderDiscordComponentsV2WithFallback(intent);
+  const sentMessage = await channel.send(communityMessage);
+
+  void insertWeaveNode({
+    sourceKind: 'community_post',
+    visibility: 'community',
+    title: latest.title,
+    body: latest.content || latest.title,
+    tags: [latest.author].filter(Boolean),
+    sourceRef: {
+      youtube_id: latest.id,
+      channel_id: channelId,
+      url: displayLink(latest),
+    },
+  });
+
+  if (overflow) {
+    await postOverflowToThread(sentMessage, threadTitle('이어서 보기', latest), overflow, {
+      footer: displayLink(latest),
+    });
+  }
+
   if (latest.content) {
     cachePost({
       id: latest.id,
@@ -631,7 +745,14 @@ const processRow = async (client: Client, row: SourceRow): Promise<'sent' | 'ski
   }
 
   await updateRow(row, latest);
-  return 'sent';
+  return 1;
+};
+
+const processRow = async (client: Client, row: SourceRow): Promise<number> => {
+  if (getMode(row) === 'videos') {
+    return processVideoRow(client, row);
+  }
+  return processCommunityRow(client, row);
 };
 
 export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
@@ -649,10 +770,7 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
 
     for (const row of rows) {
       try {
-        const result = await processRow(client, row);
-        if (result === 'sent') {
-          sent += 1;
-        }
+        sent += await processRow(client, row);
       } catch (error) {
         console.warn(`[youtube] row ${row.id} failed`, error);
         await updateRowError(row, error);
@@ -677,38 +795,71 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
   }
 };
 
+export const requestYouTubeMonitorSync = (
+  client: Client,
+  trigger: 'timer' | 'websub' = 'timer',
+): void => {
+  if (!config.enableJobWorker) {
+    void runYouTubeMonitorTick(client);
+    return;
+  }
+
+  const bucketSize = trigger === 'websub' ? 15_000 : config.youtubeMonitorIntervalMs;
+  const bucket = Math.floor(Date.now() / Math.max(bucketSize, 1));
+  void enqueueJob(
+    getSupabaseClient(),
+    'sync_youtube_sources',
+    { requestedAt: new Date().toISOString(), trigger },
+    `sync_youtube_sources:${trigger}:${bucket}`,
+  ).catch((error) => {
+    console.warn('[youtube] failed to enqueue sync job', error);
+  });
+};
+
 export const startYouTubeMonitor = (client: Client): void => {
   if (timer) {
     return;
   }
 
-  const supabase = getSupabaseClient();
-  const runDirectTick = () => {
-    void runYouTubeMonitorTick(client);
+  const requestTick = () => {
+    requestYouTubeMonitorSync(client);
+  };
+  const renewWebSub = () => {
+    void renewYouTubeWebSubSubscriptions()
+      .then(({ attempted, accepted }) => {
+        if (attempted > 0) {
+          console.log('[youtube-websub] renewal requested', { attempted, accepted });
+        }
+      })
+      .catch((error) => {
+        console.warn('[youtube-websub] renewal failed', error);
+      });
+  };
+  const runLifecycle = () => {
+    if (lifecycleRunning) return;
+    lifecycleRunning = true;
+    void runYouTubeApiDataLifecycle()
+      .then((result) => {
+        if (result.metadataRefreshed || result.deleted || result.statsRefreshed) {
+          console.log('[youtube-lifecycle] maintenance complete', result);
+        }
+      })
+      .catch((error) => {
+        console.warn('[youtube-lifecycle] maintenance failed', error);
+      })
+      .finally(() => {
+        lifecycleRunning = false;
+      });
   };
 
-  if (!config.enableJobWorker) {
-    runDirectTick();
-    timer = setInterval(runDirectTick, config.youtubeMonitorIntervalMs);
-    return;
+  requestTick();
+  timer = setInterval(requestTick, config.youtubeMonitorIntervalMs);
+  if (config.youtubeWebSubEnabled && config.youtubeWebSubCallbackUrl) {
+    renewWebSub();
+    webSubTimer = setInterval(renewWebSub, config.youtubeWebSubRenewIntervalMs);
   }
-
-  const enqueueTick = () => {
-    const bucket = Math.floor(Date.now() / Math.max(config.youtubeMonitorIntervalMs, 1));
-    void enqueueJob(
-      supabase,
-      'sync_youtube_sources',
-      { requestedAt: new Date().toISOString() },
-      `sync_youtube_sources:${bucket}`,
-    ).catch((error) => {
-      console.warn('[youtube] failed to enqueue sync job', error);
-    });
-  };
-
-  enqueueTick();
-  timer = setInterval(() => {
-    enqueueTick();
-  }, config.youtubeMonitorIntervalMs);
+  runLifecycle();
+  lifecycleTimer = setInterval(runLifecycle, config.youtubeLifecycleIntervalMs);
 };
 
 export const getYouTubeMonitorStatus = () => ({
@@ -720,4 +871,9 @@ export const getYouTubeMonitorStatus = () => ({
   lastTickMessage,
   lastTickChecked,
   lastTickSent,
+  webSubEnabled: config.youtubeWebSubEnabled,
+  webSubConfigured: Boolean(config.youtubeWebSubCallbackUrl),
+  webSubRenewing: Boolean(webSubTimer),
+  lifecycleRunning,
+  lifecycleScheduled: Boolean(lifecycleTimer),
 });

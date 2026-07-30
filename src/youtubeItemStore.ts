@@ -20,6 +20,8 @@ export type YouTubeItemUpsert = {
   statistics?: Record<string, string | null>;
   topicCategories?: string[];
   raw?: Record<string, unknown>;
+  apiRefreshedAt?: string | null;
+  statsRefreshedAt?: string | null;
 };
 
 export type StoredYouTubeItem = {
@@ -39,6 +41,8 @@ export type StoredYouTubeItem = {
   statistics: Record<string, string | null> | null;
   topic_categories: string[] | null;
   metadata: Record<string, unknown> | null;
+  api_refreshed_at: string | null;
+  stats_refreshed_at: string | null;
   created_at: string;
 };
 
@@ -77,6 +81,8 @@ export async function upsertYouTubeItem(
         statistics: input.statistics ?? {},
         topic_categories: input.topicCategories ?? [],
         metadata: input.raw ?? {},
+        api_refreshed_at: input.apiRefreshedAt ?? null,
+        stats_refreshed_at: input.statsRefreshedAt ?? input.apiRefreshedAt ?? null,
         last_seen_at: new Date().toISOString(),
       },
       { onConflict: 'kind,youtube_id' },
@@ -181,6 +187,7 @@ export function buildResearchTopicFromItem(originTable: string, item: StoredYouT
     ? item.kind === 'shorts' ? 'YouTube 쇼츠' : 'YouTube 영상'
     : 'YouTube 커뮤니티 게시글';
   const stats = item.statistics ?? {};
+  const youtubeMetadata = item.metadata?.youtube as Record<string, unknown> | undefined;
   const fields = [
     `조사 대상: ${label}`,
     item.channel_title ? `채널: ${item.channel_title}` : '',
@@ -193,6 +200,14 @@ export function buildResearchTopicFromItem(originTable: string, item: StoredYouT
     item.duration ? `길이: ${item.duration}` : '',
     [stats.viewCount ? `조회수 ${stats.viewCount}` : '', stats.likeCount ? `좋아요 ${stats.likeCount}` : '', stats.commentCount ? `댓글 ${stats.commentCount}` : ''].filter(Boolean).join(', '),
     item.topic_categories?.length ? `YouTube topic categories: ${item.topic_categories.join(', ')}` : '',
+    youtubeMetadata?.liveBroadcastContent && youtubeMetadata.liveBroadcastContent !== 'none'
+      ? `라이브 상태: ${String(youtubeMetadata.liveBroadcastContent)}`
+      : '',
+    youtubeMetadata?.containsSyntheticMedia === true ? 'YouTube 표시: 합성·변형 미디어 포함' : '',
+    youtubeMetadata?.hasPaidProductPlacement === true ? 'YouTube 표시: 유료 프로모션 포함' : '',
+    youtubeMetadata?.brandPartnerChannelId
+      ? `브랜드 파트너 채널: ${String(youtubeMetadata.brandPartnerChannelId)}`
+      : '',
   ].filter(Boolean);
 
   return `${fields.join('\n')}\n\n위 사전 정보를 기준으로 배경, 최근 동향, 공식 발표, 관련 맥락, 사용자 반응을 한국어로 정리하고 출처를 인용해줘. 사전 정보와 충돌하는 내용은 검증해서 알려줘.`;
@@ -213,6 +228,7 @@ export function buildVideoItemInput(args: {
   channel: YouTubeChannelMetadata | null;
 }): YouTubeItemUpsert {
   const metadata = args.metadata;
+  const refreshedAt = metadata ? new Date().toISOString() : null;
   return {
     sourceId: args.sourceId,
     kind: args.latest.isShorts ? 'shorts' : 'video',
@@ -236,7 +252,9 @@ export function buildVideoItemInput(args: {
     raw: {
       source: 'videos.xml+youtube_data_api',
       channel: args.channel,
-      metadata,
+      youtube: metadata,
     },
+    apiRefreshedAt: refreshedAt,
+    statsRefreshedAt: refreshedAt,
   };
 }

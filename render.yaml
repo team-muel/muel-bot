@@ -69,6 +69,14 @@ services:
         value: "true"
       - key: ENABLE_YOUTUBE_MONITOR
         value: "true"
+      - key: YOUTUBE_COMMUNITY_ENABLED
+        value: "true"
+      - key: YOUTUBE_SUPPRESS_SHORTS
+        value: "true"
+      - key: YOUTUBE_WEBSUB_ENABLED
+        value: "true"
+      - key: YOUTUBE_WEBSUB_CALLBACK_URL
+        value: https://muel-bot.onrender.com/youtube/websub
       - key: ENABLE_HTTP_INTERACTIONS
         value: "false"
       - key: DISCORD_COMPONENTS_V2

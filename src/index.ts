@@ -11,7 +11,12 @@ import {
   SUBSCRIBE_ACTION_REMOVE,
   SUBSCRIBE_COMMAND_NAME,
 } from './subscribe.js';
-import { getYouTubeMonitorStatus, startYouTubeMonitor } from './youtubeMonitor.js';
+import {
+  getYouTubeMonitorStatus,
+  requestYouTubeMonitorSync,
+  startYouTubeMonitor,
+} from './youtubeMonitor.js';
+import { handleYouTubeWebSubRequest } from './youtubeWebSub.js';
 import { handleDiscordInteractions } from './discordInteractions.js';
 import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
@@ -714,6 +719,13 @@ const server = http.createServer((request, response) => {
     const runtime = getRuntimeStatus();
     response.writeHead(runtime.ok ? 200 : 503, { 'content-type': 'application/json' });
     response.end(JSON.stringify(runtime));
+    return;
+  }
+
+  if (request.url?.startsWith('/youtube/websub')) {
+    void handleYouTubeWebSubRequest(request, response, () => {
+      if (client.isReady()) requestYouTubeMonitorSync(client, 'websub');
+    });
     return;
   }
 
