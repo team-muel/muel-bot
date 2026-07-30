@@ -21,7 +21,7 @@ if (!apiKey) {
 }
 
 const google = createGoogleGenerativeAI({ apiKey });
-const model = google(process.env.MUEL_EXTRACT_MODEL ?? process.env.MUEL_AI_MODEL ?? 'gemini-2.5-flash');
+const model = google(process.env.MUEL_EXTRACT_MODEL ?? process.env.MUEL_AI_MODEL ?? 'gemini-3.6-flash');
 const embeddingModel = google.textEmbeddingModel('gemini-embedding-001');
 
 // -- Schemas (copied from memoryWorker to keep test self-contained) --

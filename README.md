@@ -43,12 +43,13 @@ Optional:
 
 - `HUB_URL` — defaults to `https://muel-tree.vercel.app`
 - `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` — enables AI mention replies
-- `MUEL_AI_MODEL` — defaults to `gemini-2.5-flash` (cross-lane fallback for chat/router/extract/summary; heavy lane defaults to `gemini-3.5-flash`)
+- `MUEL_AI_MODEL` — defaults to stable `gemini-3.6-flash` across generative lanes
 - `MUEL_CHAT_MODEL` — optional mention reply lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_ROUTER_MODEL` — optional future routing lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_EXTRACT_MODEL` — optional structured extraction lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_SUMMARY_MODEL` — optional community/YouTube summary lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_HEAVY_MODEL` — optional escalation lane; falls back to `MUEL_AI_MODEL`
+- `MUEL_VISION_MODEL` — optional image-bearing reply lane; defaults to `gemini-3.6-flash`
 - `YOUTUBE_DATA_API_KEY` — optional. When set, Muel enriches detected videos with YouTube Data API metadata for better curation context and research prompts. Detection still uses `videos.xml`.
 - `MUEL_EMBEDDING_MODEL` — defaults to `gemini-embedding-001`
 - `MUEL_EMBEDDING_DIMENSIONS` — defaults to `768`

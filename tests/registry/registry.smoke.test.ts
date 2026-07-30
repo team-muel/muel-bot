@@ -4,7 +4,7 @@
  * Runner: tsx (no test framework dependency). Throws on first failure, exit 1.
  *
  * Run:
- *   GOOGLE_GENERATIVE_AI_API_KEY=fake MUEL_AI_MODEL=gemini-2.5-flash npx tsx tests/registry/registry.smoke.test.ts
+ *   DISCORD_BOT_TOKEN=fake GOOGLE_GENERATIVE_AI_API_KEY=fake npx tsx tests/registry/registry.smoke.test.ts
  *
  * The "fake" key is fine because providers are constructed lazily; no real API
  * call is made in these tests.
@@ -47,12 +47,31 @@ const routerId = getModelIdForTask('router');
 const extractId = getModelIdForTask('extract');
 const summaryId = getModelIdForTask('summary');
 const heavyId = getModelIdForTask('heavy');
+const visionId = getModelIdForTask('vision');
 
 assert('chat lane has a model id', typeof chatId === 'string' && chatId.length > 0, `got ${chatId}`);
 assert('router lane has a model id', typeof routerId === 'string' && routerId.length > 0);
 assert('extract lane has a model id', typeof extractId === 'string' && extractId.length > 0);
 assert('summary lane has a model id', typeof summaryId === 'string' && summaryId.length > 0);
 assert('heavy lane has a model id', typeof heavyId === 'string' && heavyId.length > 0);
+assert('vision lane has a model id', typeof visionId === 'string' && visionId.length > 0);
+
+if (
+  !process.env.MUEL_AI_MODEL
+  && !process.env.MUEL_CHAT_MODEL
+  && !process.env.MUEL_ROUTER_MODEL
+  && !process.env.MUEL_EXTRACT_MODEL
+  && !process.env.MUEL_SUMMARY_MODEL
+  && !process.env.MUEL_HEAVY_MODEL
+  && !process.env.MUEL_VISION_MODEL
+) {
+  assert('chat defaults to stable Gemini 3.6 Flash', chatId === 'gemini-3.6-flash', `got ${chatId}`);
+  assert('router defaults to stable Gemini 3.6 Flash', routerId === 'gemini-3.6-flash', `got ${routerId}`);
+  assert('extract defaults to stable Gemini 3.6 Flash', extractId === 'gemini-3.6-flash', `got ${extractId}`);
+  assert('summary defaults to stable Gemini 3.6 Flash', summaryId === 'gemini-3.6-flash', `got ${summaryId}`);
+  assert('heavy defaults to stable Gemini 3.6 Flash', heavyId === 'gemini-3.6-flash', `got ${heavyId}`);
+  assert('vision defaults to stable Gemini 3.6 Flash', visionId === 'gemini-3.6-flash', `got ${visionId}`);
+}
 
 // 3. getGeminiTextModel returns a ResolvedMuelModel when GOOGLE key is present,
 //    null otherwise. Caller env decides which branch we test.

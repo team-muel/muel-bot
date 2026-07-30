@@ -18,15 +18,13 @@ const booleanEnv = (key: string, fallback: boolean): boolean => {
   return fallback;
 };
 
-// Lane defaults — chat/router/extract/summary stay on 2.5-flash for cost.
-// 3.5-flash is reserved for the heavy lane (no current callers; explicit
-// escalation only). MUEL_AI_MODEL still acts as the cross-lane default when a
-// lane-specific env is unset; flip it once to move everything together.
-const DEFAULT_LANE_MODEL = 'gemini-2.5-flash';
-const DEFAULT_HEAVY_MODEL = 'gemini-2.5-flash';
-// Vision lane — image-bearing turns escalate to 3.5-flash (best multimodal,
-// Flash-tier cost, GA 2026-05). Text lanes stay on 2.5-flash.
-const DEFAULT_VISION_MODEL = 'gemini-3.5-flash';
+// Gemini 3.6 Flash is the production baseline across generative lanes. Keeping
+// one stable model here and in render.yaml prevents local/default behavior from
+// drifting away from the deployed Blueprint values. MUEL_AI_MODEL and the
+// lane-specific variables remain available for deliberate overrides.
+const DEFAULT_LANE_MODEL = 'gemini-3.6-flash';
+const DEFAULT_HEAVY_MODEL = 'gemini-3.6-flash';
+const DEFAULT_VISION_MODEL = 'gemini-3.6-flash';
 
 export const config = {
   discordBotToken: requiredEnv('DISCORD_BOT_TOKEN'),
