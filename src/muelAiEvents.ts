@@ -114,7 +114,7 @@ export type ResolvedModelSummary = {
  * 공통 AI 에러 분류. 스키마 매칭 실패류(AI_NoObjectGeneratedError / "did not match
  * schema")는 *분류·품질 실패*일 뿐 시스템 에러가 아니므로 status='fallback' 으로 분류해
  * triage/sentinel 임계 노이즈에서 뺀다. 진짜 인프라·결제 에러(AI_RetryError 등)만 'error'.
- * router·summary·extract·action_draft 등 generateObject 레인이 공유해 분기 일관성 유지.
+ * router·summary·extract·action_draft 등 구조화 출력 레인이 공유해 분기 일관성 유지.
  */
 export const classifyAiError = (
   err: unknown,
@@ -152,7 +152,7 @@ export const readFallbackMeta = (
  * Returns the inserted row id (or null on failure) so callers that audit via
  * muel_agent_actions can link the rows.
  *
- * `providerMetadata`(generateObject/generateText 결과)를 넘기면, 게이트웨이가 1차 실패를
+ * `providerMetadata`(generateText 결과)를 넘기면, 게이트웨이가 1차 실패를
  * 구해낸 호출(호출자 시점엔 success)을 status='fallback' + 실제 서빙 provider 로 보정한다.
  * 없으면 게이트웨이 복구가 전부 success/provider=gemini 로 잡혀 폴백 발동·MindLogic 소진이
  * 텔레메트리에서 안 보인다(= ADR-004 첫 run 제안 #1).

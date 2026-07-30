@@ -1,5 +1,5 @@
 import { type ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder, type StringSelectMenuInteraction } from 'discord.js';
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { getSupabaseClient } from './supabase.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
@@ -85,7 +85,7 @@ type MemoRow = {
 };
 
 /**
- * ADR-003 P1b — /메모 add 직후 generateObject 로 자동 추출하는 메타데이터 schema.
+ * ADR-003 P1b — /메모 add 직후 구조화 출력으로 자동 추출하는 메타데이터 schema.
  * fire-and-forget 으로 muel_user_memos.metadata 에 저장. 실패 시 메모 자체는 영향 X.
  */
 const MemoMetadataSchema = z.object({
@@ -101,10 +101,10 @@ const enrichMemoMetadata = async (memoId: string, content: string): Promise<void
   try {
     const resolved = getPrimaryTextModel('extract');
     if (!resolved) return;
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: resolved.model,
-      schema: MemoMetadataSchema,
-      system: '너는 사용자가 Muel 에게 박아둔 개인화 메모의 메타데이터를 뽑는다. 명확한 한국어 태그 1-3개, 종류, 중요도. 보고서 톤 X, JSON 만 반환 (스키마가 강제).',
+      output: Output.object({ schema: MemoMetadataSchema }),
+      instructions: '너는 사용자가 Muel 에게 박아둔 개인화 메모의 메타데이터를 뽑는다. 명확한 한국어 태그 1-3개, 종류, 중요도. 보고서 톤 X, JSON 만 반환 (스키마가 강제).',
       prompt: content,
       temperature: 0.2,
       maxOutputTokens: 256,
@@ -295,7 +295,7 @@ const handleMemoAdd = async (interaction: ChatInputCommandInteraction) => {
     body: content,
     sourceRef: { muel_user_memos_id: inserted?.id ?? null },
   });
-  // ADR-003 P1b: generateObject 로 tags/kind/importance 자동 추출 + metadata update.
+  // ADR-003 P1b: 구조화 출력으로 tags/kind/importance 자동 추출 + metadata update.
   // fire-and-forget — 실패해도 메모는 이미 저장됨.
   if (inserted?.id) void enrichMemoMetadata(String(inserted.id), content);
   await interaction.editReply({ ...buildAddSuccess(content) });

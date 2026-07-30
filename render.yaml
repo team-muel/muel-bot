@@ -10,7 +10,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: 24
       - key: DISCORD_BOT_TOKEN
         sync: false
       - key: DISCORD_APPLICATION_PUBLIC_KEY

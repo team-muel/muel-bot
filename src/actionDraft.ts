@@ -1,8 +1,8 @@
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPrimaryTextModel } from './modelRegistry.js';
-import { repairJsonText } from './aiRepair.js';
+import { repairedObjectOutput } from './aiRepair.js';
 import { classifyAiError, logMuelBackgroundAiEvent } from './muelAiEvents.js';
 
 const ActionDraftSchema = z.object({
@@ -46,10 +46,9 @@ export const classifyActionDraft = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage, providerMetadata } = await generateObject({
+    const { output: object, usage, providerMetadata } = await generateText({
       model: model.model,
-      schema: ActionDraftSchema,
-      experimental_repairText: repairJsonText,
+      output: repairedObjectOutput(ActionDraftSchema),
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       temperature: 0,
       prompt: `${ACTION_DRAFT_PROMPT}\n\nUser text:\n"""\n${text}\n"""`,

@@ -139,7 +139,7 @@ export const runSocialEval = async (supabase: SupabaseClient): Promise<void> => 
       });
       const { text, usage } = await generateText({
         model: lane.model,
-        system: window.system,
+        instructions: window.system,
         messages: window.messages,
         temperature: 0.7,
         maxOutputTokens: 512,

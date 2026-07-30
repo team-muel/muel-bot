@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import type { Message } from 'discord.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -134,9 +134,9 @@ export const summarizeCommunityFlowJob = async (
   const startedAt = Date.now();
   let result;
   try {
-    result = await generateObject({
+    result = await generateText({
       model: summaryModel.model,
-      schema: digestSchema,
+      output: Output.object({ schema: digestSchema }),
       temperature: 0.2,
       prompt: [
         '너는 Discord 서버 흐름을 관찰하는 Muel의 큐레이터 모듈이다.',
@@ -195,7 +195,7 @@ export const summarizeCommunityFlowJob = async (
     },
   });
 
-  const { title, summary, highlights } = result.object;
+  const { title, summary, highlights } = result.output;
   await supabase.from('muel_community_digests').insert({
     signal_id: signal.id,
     guild_id: signal.guild_id,

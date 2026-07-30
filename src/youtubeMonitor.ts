@@ -1,5 +1,5 @@
 import { Client, Message } from 'discord.js';
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
@@ -318,9 +318,9 @@ export const editCommunityPost = async (authorName: string, rawContent: string):
   const startedAt = Date.now();
 
   try {
-    const { object, usage, providerMetadata } = await generateObject({
+    const { output: object, usage, providerMetadata } = await generateText({
       model: resolvedModel.model,
-      schema: CommunityPostSchema,
+      output: Output.object({ schema: CommunityPostSchema }),
       prompt: `You are editing a YouTube community post from channel "${authorName}" into a concise Discord embed card for Korean Discord users.
 
 Rules:

@@ -1,4 +1,4 @@
-import { generateText, stepCountIs } from 'ai';
+import { generateText, isStepCount } from 'ai';
 import { config } from './config.js';
 import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -282,9 +282,16 @@ export const generateMuelReply = async (
 
   const activeTools = toolsEnabled ? tools : {};
   const providerFailures: string[] = [];
+  const replyBudgetMs = hasImage
+    ? config.mentionImageReplyTimeoutMs
+    : config.mentionReplyTimeoutMs;
+  // Leave room for sanitization, persistence, and Discord delivery after the
+  // SDK finishes. Unlike the handler-level Promise.race, this actively aborts
+  // the model/tool work instead of leaving it running in the background.
+  const generationBudgetMs = Math.max(1_000, replyBudgetMs - (hasImage ? 5_000 : 3_000));
 
   // ADR-003 P3a — multi-step 한도 + 단계별 prompt.
-  // 이전: stepCountIs(4). tool-heavy turn 에서 *검색 → 정리* 두 번째 step 직후 끊겨
+  // 이전: isStepCount(4). tool-heavy turn 에서 *검색 → 정리* 두 번째 step 직후 끊겨
   // 답이 짧거나 tool raw 가 새는 경우 있었음. 8 까지 늘리고 후반 step 에는 *압축 + 캐릭터 톤*
   // 강조 prompt 를 prepareStep 으로 주입. 비용은 turn 당 평균 1-2 step 증가, 최악 4 step
   // 증가 — middleware 의 rate-limit (P2b, 후속) 가 들어가면 안전.
@@ -303,16 +310,21 @@ export const generateMuelReply = async (
     const { text, usage } = await generateText({
       model: aiModel,
       maxRetries: 1,
-      system,
+      instructions: system,
       messages,
       tools: modelTools,
-      stopWhen: stepCountIs(MULTI_STEP_LIMIT),
+      stopWhen: isStepCount(MULTI_STEP_LIMIT),
+      timeout: {
+        totalMs: generationBudgetMs,
+        stepMs: Math.min(10_000, generationBudgetMs),
+        toolMs: Math.min(6_000, generationBudgetMs),
+      },
       // 단계별 prompt 조정: 후반 step (tool 결과 정리 시) 에 *압축 + 보고서 톤 금지* 강조.
-      // @ts-ignore AI SDK v6 prepareStep typing 이 일부 모델 wrapper 와 안 맞아 정성적 cast.
+      // AI SDK 7은 prepareStep instructions 를 후속 step 에 유지하므로 한 번만 설정한다.
       prepareStep: async ({ stepNumber }: { stepNumber: number }) => {
-        if (stepNumber < LATE_STEP_THRESHOLD) return undefined;
+        if (stepNumber !== LATE_STEP_THRESHOLD) return undefined;
         return {
-          system: [
+          instructions: [
             system,
             '',
             '--- LATE STEP (마무리) ---',
@@ -332,6 +344,8 @@ export const generateMuelReply = async (
       throw new Error(`${provider} returned an empty or unsafe response`);
     }
 
+    // AI SDK 7 `usage` is aggregated across every step (v6 only reported the
+    // final step here), so persisted telemetry now reflects the whole turn.
     const tokens = normalizeUsage(usage as GenerateTextUsage | undefined);
 
     await saveGeneratedReply(supabase, chatId, finalText, provider, modelName);

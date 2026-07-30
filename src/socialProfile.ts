@@ -10,10 +10,10 @@
  * 서비스롤 전용 테이블(muel_user_social_profiles)에만 저장.
  */
 
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { repairJsonText } from './aiRepair.js';
+import { repairedObjectOutput } from './aiRepair.js';
 
 const PROFILE_TTL_MS = 24 * 3600_000;
 const MIN_SAMPLE_LINES = 3;
@@ -43,10 +43,9 @@ export const maybeUpdateSocialProfile = async (
       return; // 24h 내 갱신됨 — 스킵(비용 가드).
     }
 
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model: extractModel.model,
-      schema: profileSchema,
-      experimental_repairText: repairJsonText,
+      output: repairedObjectOutput(profileSchema),
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
       prompt: [
         '아래는 한 Discord 유저의 최근 발화 샘플이다. 이 유저와 잡담할 때 유용한',

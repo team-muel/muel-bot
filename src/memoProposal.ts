@@ -14,7 +14,7 @@
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, type ButtonInteraction } from 'discord.js';
 import { MUEL_BRAND_COLOR } from './uiColors.js';
-import { generateObject } from 'ai';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPrimaryTextModel } from './modelRegistry.js';
@@ -68,9 +68,9 @@ export const classifyProposeMemo = async (
 
   const startedAt = Date.now();
   try {
-    const { object, usage, providerMetadata } = await generateObject({
+    const { output: object, usage, providerMetadata } = await generateText({
       model: model.model,
-      schema: ProposeMemoSchema,
+      output: Output.object({ schema: ProposeMemoSchema }),
       providerOptions: { google: { thinkingConfig: { thinkingBudget: 256 } } },
       temperature: 0.1,
       prompt: `${PROPOSE_PROMPT}\n\nUser text:\n"""\n${trimmed}\n"""`,

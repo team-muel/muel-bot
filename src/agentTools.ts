@@ -83,7 +83,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       description:
         'Fetch a cross-product snapshot: YouTube subscriptions, recent dreams (Weave), and the latest community post cache. Use this only when the user asks about recent news, posts, or dream context broadly.',
       inputSchema: z.object({}),
-      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
       execute: async () => {
         try {
           const context = await fetchServerContext();
@@ -105,7 +104,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         query: z.string().describe('The search query or topic to look up in past conversations.'),
       }),
-      // @ts-ignore AI SDK v6 tool typing is stricter than the current local wrapper.
       execute: async ({ query }: { query: string }) => {
         try {
           const results = await listSemanticMemories(ctx.supabase, {
@@ -138,7 +136,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         limit: z.number().int().min(1).max(20).optional().describe('가져올 최대 메모 수 (기본 8)'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ limit }: { limit?: number }) => {
         if (!ctx.currentUserId) {
           return '지금 누구의 메모를 봐야 할지 모르겠어. (사용자 컨텍스트 없음)';
@@ -206,7 +203,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         limit: z.number().int().min(1).max(15).default(10).describe('How many recent messages to retrieve. Default 10, max 15.'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ limit }: { limit: number }) => {
         if (!ctx.currentChannelId) {
           return '현재 채널 컨텍스트가 없어. 이 도구는 채널 안에서만 쓸 수 있어.';
@@ -226,7 +222,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
         threadId: z.string().describe('Discord thread/channel ID. Must be a 17–20 digit Discord snowflake.'),
         limit: z.number().int().min(1).max(20).default(12).describe('How many messages to retrieve. Default 12, max 20.'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ threadId, limit }: { threadId: string; limit: number }) => {
         if (!/^\d{17,20}$/.test(threadId)) {
           return '쓰레드 ID 형식이 이상해. Discord snowflake (17~20자리 숫자)가 필요해.';
@@ -267,7 +262,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         scope: z.enum(['current_channel', 'all_channels']).default('current_channel'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ scope }: { scope: 'current_channel' | 'all_channels' }) => {
         if (!ctx.currentGuildId) return '서버 컨텍스트가 없어. 허브 상태는 서버 안에서만 볼 수 있어.';
         if (scope === 'current_channel') {
@@ -298,7 +292,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         scope: z.enum(['current_channel', 'server']).default('server'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ scope }: { scope: 'current_channel' | 'server' }) => {
         if (!ctx.currentGuildId) return '서버 컨텍스트가 없어. 구독 상태는 서버 안에서만 볼 수 있어.';
         const rows = await listYouTubeSubscriptions({ guildId: ctx.currentGuildId }).catch(() => null);
@@ -316,7 +309,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
       inputSchema: z.object({
         userId: z.string().describe('Discord user ID (17–20 digit snowflake).'),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ userId }: { userId: string }) => {
         if (!/^\d{17,20}$/.test(userId)) {
           return '사용자 ID 형식이 이상해.';
@@ -359,7 +351,6 @@ export const buildAgentTools = (ctx: AgentToolContext) => {
         query: z.string().min(1).describe('Keyword or phrase to match against digest titles and summaries.'),
         limit: z.number().int().min(1).max(8).default(5),
       }),
-      // @ts-ignore AI SDK v6 tool typing.
       execute: async ({ query, limit }: { query: string; limit: number }) => {
         const ilike = `%${query.replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
         const { data, error } = await ctx.supabase
