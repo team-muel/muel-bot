@@ -39,6 +39,16 @@ services:
         value: gemini-3.6-flash
       - key: MUEL_VISION_MODEL
         value: gemini-3.6-flash
+      - key: MINDLOGIC_API_KEY
+        sync: false
+      - key: MUEL_CHAT_PROVIDER
+        value: mindlogic
+      - key: MINDLOGIC_CHAT_MODEL
+        value: gpt-5.6-sol
+      - key: MINDLOGIC_MODEL
+        value: gemini-3.6-flash
+      - key: MUEL_HEAVY_PROVIDER
+        value: nvidia
       - key: MUEL_EMBEDDING_MODEL
         value: gemini-embedding-001
       - key: MUEL_EMBEDDING_DIMENSIONS
@@ -48,7 +58,9 @@ services:
       - key: NVIDIA_API_KEY
         sync: false
       - key: NVIDIA_MODEL
-        value: meta/llama-3.3-70b-instruct
+        value: deepseek-ai/deepseek-v4-pro
+      - key: NVIDIA_HEAVY_MODEL
+        value: deepseek-ai/deepseek-v4-flash
       - key: GOMDORI_BOT_TOKEN
         sync: false
       - key: GOMDORI_APPLICATION_PUBLIC_KEY

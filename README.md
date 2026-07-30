@@ -50,10 +50,14 @@ Optional:
 - `MUEL_SUMMARY_MODEL` — optional community/YouTube summary lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_HEAVY_MODEL` — optional escalation lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_VISION_MODEL` — optional image-bearing reply lane; defaults to `gemini-3.6-flash`
+- `MINDLOGIC_API_KEY` — optional FactChat gateway key
+- `MUEL_CHAT_PROVIDER=mindlogic` and `MINDLOGIC_CHAT_MODEL` — route the chat lane through MindLogic; production model `gpt-5.6-sol`
+- `MINDLOGIC_MODEL` — cross-provider gateway fallback; defaults to `gemini-3.6-flash`
+- `MUEL_HEAVY_PROVIDER=nvidia` and `NVIDIA_HEAVY_MODEL` — route substantive turns through NVIDIA; production model `deepseek-ai/deepseek-v4-flash`
 - `YOUTUBE_DATA_API_KEY` — optional. When set, Muel enriches detected videos with YouTube Data API metadata for better curation context and research prompts. Detection still uses `videos.xml`.
 - `MUEL_EMBEDDING_MODEL` — defaults to `gemini-embedding-001`
 - `MUEL_EMBEDDING_DIMENSIONS` — defaults to `768`
-- `NVIDIA_API_KEY` and `NVIDIA_MODEL` — optional fallback provider, default model `meta/llama-3.3-70b-instruct`
+- `NVIDIA_API_KEY` and `NVIDIA_MODEL` — optional fallback provider, default model `deepseek-ai/deepseek-v4-pro`
 - `ENABLE_JOB_WORKER` — defaults to `true`; `ENABLE_MEMORY_WORKER` is still accepted as a legacy alias
 - `ENABLE_YOUTUBE_MONITOR` — defaults to `true`
 - `ENABLE_HTTP_INTERACTIONS` — defaults to `false`

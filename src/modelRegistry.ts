@@ -13,6 +13,23 @@ export type ResolvedMuelModel = {
   task: MuelModelTask;
 };
 
+export const getGenerationProviderOptions = (
+  provider: MuelModelProvider,
+  modelId: string,
+): Record<string, Record<string, any>> | undefined => {
+  // MindLogic's Chat Completions endpoint requires reasoning_effort=none when
+  // GPT-5.6 receives function tools (AI SDK uses the camelCase option name).
+  if (provider === 'mindlogic' && /^mindlogic:gpt-5\.6(?:-|$)/.test(modelId)) {
+    return { mindlogic: { reasoningEffort: 'none' } };
+  }
+  // NVIDIA exposes DeepSeek reasoning through chat-template kwargs. Keep the
+  // Discord hot path in non-thinking mode so it stays inside the reply timeout.
+  if (provider === 'nvidia' && /deepseek-ai\/deepseek-v4-/.test(modelId)) {
+    return { nvidia: { chat_template_kwargs: { thinking: false } } };
+  }
+  return undefined;
+};
+
 let googleProvider: ReturnType<typeof createGoogleGenerativeAI> | null = null;
 let nvidiaProvider: ReturnType<typeof createOpenAICompatible> | null = null;
 let mindlogicProvider: ReturnType<typeof createOpenAICompatible> | null = null;
@@ -138,7 +155,7 @@ export const getNvidiaTextModel = (modelId: string, task: MuelModelTask): Resolv
 
 // chat 레인 전용: MindLogic 게이트웨이 주력 + Gemini 역방향 폴백(telemetry 포함).
 // Why: 잡담/lightweight 턴의 소셜 캘리브레이션(반어·드립·답장대상 신호 활용)은 모델 체급 문제라
-// chat 레인만 Sonnet 계열로 올린다. router/extract/summary 는 기계적 작업이라 Gemini flash 유지.
+// chat 레인만 frontier 계열로 올린다. router/extract/summary 는 기계적 작업이라 Gemini flash 유지.
 // 폴백 방향 주의: 기본 레인은 gemini→mindlogic 인데 여기서는 mindlogic→gemini 로 뒤집는다.
 export const getMindlogicTextModel = (modelId: string, task: MuelModelTask): ResolvedMuelModel | null => {
   const mindlogic = getMindlogicProvider();
@@ -207,8 +224,8 @@ export const getBareTextModel = (provider: MuelModelProvider, modelId: string): 
 };
 
 // 레인 주력 모델. heavy 레인은 MUEL_HEAVY_PROVIDER=nvidia 면 NVIDIA(예: deepseek-v4-flash)로
-// 라우팅 — 단가가 Gemini 3.6 Flash보다 싸서 substantive 턴 실험용. 실패 시 Gemini 역방향 폴백.
-// chat 레인은 MUEL_CHAT_PROVIDER=mindlogic 이면 MindLogic Sonnet(MINDLOGIC_CHAT_MODEL)으로
+// 라우팅 — substantive 턴의 reasoning/tool-use 전용. 실패 시 Gemini 역방향 폴백.
+// chat 레인은 MUEL_CHAT_PROVIDER=mindlogic 이면 MindLogic frontier 모델(MINDLOGIC_CHAT_MODEL)으로
 // 라우팅 — 잡담 턴 소셜 캘리브레이션 개선용. MindLogic 미가용 시 Gemini 로 폴백.
 // 그 외 레인(vision 등)과 기본값은 Gemini.
 export const getLaneModel = (task: MuelModelTask): ResolvedMuelModel | null => {

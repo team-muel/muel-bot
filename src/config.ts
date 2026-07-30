@@ -46,16 +46,16 @@ export const config = {
   muelEmbeddingModel: optionalEnv('MUEL_EMBEDDING_MODEL') ?? 'gemini-embedding-001',
   muelEmbeddingDimensions: Number(process.env.MUEL_EMBEDDING_DIMENSIONS ?? 768),
   nvidiaApiKey: optionalEnv('NVIDIA_API_KEY'),
-  nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'meta/llama-3.2-90b-vision-instruct',
+  nvidiaModel: optionalEnv('NVIDIA_MODEL') ?? 'deepseek-ai/deepseek-v4-pro',
   mindlogicApiKey: optionalEnv('MINDLOGIC_API_KEY'),
-  mindlogicModel: optionalEnv('MINDLOGIC_MODEL') ?? 'gemini-2.5-flash',
+  mindlogicModel: optionalEnv('MINDLOGIC_MODEL') ?? 'gemini-3.6-flash',
   // chat 레인 프로바이더 스위치 — 잡담/lightweight 턴의 소셜 캘리브레이션(반어·드립·답장 문맥)
-  // 개선용. mindlogic 이면 chat 레인만 MindLogic 게이트웨이의 Sonnet 계열로 라우팅.
+  // 개선용. mindlogic 이면 chat 레인만 MindLogic 게이트웨이의 frontier 모델로 라우팅.
   chatProvider: (optionalEnv('MUEL_CHAT_PROVIDER') ?? 'gemini') as 'gemini' | 'mindlogic',
-  mindlogicChatModel: optionalEnv('MINDLOGIC_CHAT_MODEL') ?? 'claude-sonnet-5',
+  mindlogicChatModel: optionalEnv('MINDLOGIC_CHAT_MODEL') ?? 'gpt-5.6-sol',
   // 부팅 시 프로바이더 도달성 프로브(muel_ai_events source='healthcheck'). 비용 무시 가능.
   enableProviderHealthcheck: booleanEnv('ENABLE_PROVIDER_HEALTHCHECK', true),
-  // 후보 모델 실측용 추가 프로브: "provider:modelId" 콤마 목록 (예: "mindlogic:gpt-5.5,nvidia:z-ai/glm-5.1").
+  // 후보 모델 실측용 추가 프로브: "provider:modelId" 콤마 목록 (예: "mindlogic:gpt-5.6-terra,nvidia:z-ai/glm-5.2").
   // 코드 변경 없이 env 만으로 신규 모델의 도달성·레이턴시를 healthcheck 텔레메트리로 잰다.
   probeExtraModels: optionalEnv('PROBE_EXTRA_MODELS'),
   // 소셜 골든셋 eval — 모델/프롬프트 변경 직후 한 부팅만 켜서 회귀 확인(기본 off).
