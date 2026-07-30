@@ -1,5 +1,8 @@
 import { getSupabaseClient } from './supabase.js';
-import { fetchYouTubeChannelMetadata } from './youtubeMetadataClient.js';
+import {
+  fetchYouTubeChannelMetadata,
+  fetchYouTubeChannelMetadataByHandle,
+} from './youtubeMetadataClient.js';
 
 export type YouTubeSubscriptionKind = 'videos' | 'posts';
 
@@ -105,6 +108,22 @@ const resolveChannelIdFromHandleUrl = async (input: string): Promise<string | nu
 
   if (!isAllowedYouTubeHost(parsed.hostname) || !parsed.pathname.includes('/@')) {
     return null;
+  }
+
+  const handle = parsed.pathname
+    .split('/')
+    .find((segment) => segment.startsWith('@'))
+    ?.slice(1);
+  if (handle) {
+    try {
+      const official = await fetchYouTubeChannelMetadataByHandle(handle);
+      if (official?.channelId) return official.channelId;
+    } catch (error) {
+      console.warn('[youtube-subscribe] official handle lookup failed; using page fallback', {
+        handle,
+        error,
+      });
+    }
   }
 
   const controller = new AbortController();

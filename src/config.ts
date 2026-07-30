@@ -29,6 +29,13 @@ const discordComponentsV2ModeEnv = (
   return fallback;
 };
 
+const youtubeWebSubCallbackUrl = (): string | null => {
+  const explicit = optionalEnv('YOUTUBE_WEBSUB_CALLBACK_URL');
+  if (explicit) return explicit;
+  const renderExternalUrl = optionalEnv('RENDER_EXTERNAL_URL')?.replace(/\/+$/, '');
+  return renderExternalUrl ? `${renderExternalUrl}/youtube/websub` : null;
+};
+
 // Gemini 3.6 Flash is the production baseline across generative lanes. Keeping
 // one stable model here and in render.yaml prevents local/default behavior from
 // drifting away from the deployed Blueprint values. MUEL_AI_MODEL and the
@@ -78,6 +85,20 @@ export const config = {
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
   youtubeDataApiKey: optionalEnv('YOUTUBE_DATA_API_KEY'),
+  // Community Posts still have no supported Data API resource. Product behavior
+  // remains enabled, but it has an immediate kill switch because the experimental
+  // HTML/InnerTube connector can change independently of Data API v3.
+  youtubeCommunityEnabled: booleanEnv('YOUTUBE_COMMUNITY_ENABLED', true),
+  // Shorts are a by-product of channel feeds, not a Muel delivery surface.
+  youtubeSuppressShorts: booleanEnv('YOUTUBE_SUPPRESS_SHORTS', true),
+  youtubeWebSubEnabled: booleanEnv('YOUTUBE_WEBSUB_ENABLED', true),
+  youtubeWebSubCallbackUrl: youtubeWebSubCallbackUrl(),
+  youtubeWebSubRenewIntervalMs: Number(
+    process.env.YOUTUBE_WEBSUB_RENEW_INTERVAL_MS ?? 12 * 60 * 60_000,
+  ),
+  youtubeLifecycleIntervalMs: Number(
+    process.env.YOUTUBE_LIFECYCLE_INTERVAL_MS ?? 24 * 60 * 60_000,
+  ),
   mentionReplyTimeoutMs: Number(process.env.MENTION_REPLY_TIMEOUT_MS ?? 15_000),
   mentionImageReplyTimeoutMs: Number(process.env.MENTION_IMAGE_REPLY_TIMEOUT_MS ?? 35_000),
   // Components V2 rollout:
