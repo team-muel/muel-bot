@@ -207,7 +207,7 @@ export const getBareTextModel = (provider: MuelModelProvider, modelId: string): 
 };
 
 // 레인 주력 모델. heavy 레인은 MUEL_HEAVY_PROVIDER=nvidia 면 NVIDIA(예: deepseek-v4-flash)로
-// 라우팅 — 단가가 Gemini 3.5-flash 보다 싸서 substantive 턴 실험용. 실패 시 Gemini 역방향 폴백.
+// 라우팅 — 단가가 Gemini 3.6 Flash보다 싸서 substantive 턴 실험용. 실패 시 Gemini 역방향 폴백.
 // chat 레인은 MUEL_CHAT_PROVIDER=mindlogic 이면 MindLogic Sonnet(MINDLOGIC_CHAT_MODEL)으로
 // 라우팅 — 잡담 턴 소셜 캘리브레이션 개선용. MindLogic 미가용 시 Gemini 로 폴백.
 // 그 외 레인(vision 등)과 기본값은 Gemini.
