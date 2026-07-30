@@ -9,7 +9,7 @@ import {
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
 import { deliverOverflowChunks } from './rendering/discordDelivery.js';
-import { flavorError } from './errorFlavor.js';
+import { errorDetail, errorTypeName, flavorError } from './errorFlavor.js';
 import { classifyNegativeText, recordFeedbackSignal } from './feedbackSignals.js';
 import { schedulePendingObservation } from './feedbackObserver.js';
 import { formatForContext } from './channelBuffer.js';
@@ -547,11 +547,12 @@ export const handleMuelMention = async (
       },
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorDetail(error);
     console.error('[muel] mention handling failed', error);
     console.warn('[muel] mention failed metadata', {
       event: 'mention_failed',
       messageId: inboundMessageId,
+      errorClass: errorTypeName(error),
       reason,
       stack: error instanceof Error ? error.stack : undefined,
     });
@@ -572,7 +573,7 @@ export const handleMuelMention = async (
       lightweightTurn,
       taskType: 'chat',
       modelLane: 'chat',
-      errorClass: error instanceof Error ? error.name : typeof error,
+      errorClass: errorTypeName(error),
       errorMessage: reason,
       metadata: {
         discordMessageId: message.id,
