@@ -44,7 +44,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.49.4",
     "ai": "^7.0.42",
-    "discord.js": "^14.19.3",
+    "discord.js": "^14.27.0",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
