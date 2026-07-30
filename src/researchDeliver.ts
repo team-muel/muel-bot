@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import { AttachmentBuilder } from 'discord.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
+import { renderDiscordComponentsV2WithFallback } from './rendering/discordComponentsV2.js';
 import type { MuelRenderablePart, CardSection } from './rendering/types.js';
 import { DISCORD_SAFE, truncateDiscordText } from './rendering/discordLimits.js';
 import {
@@ -375,8 +376,17 @@ export const processResearchUserDmPollJob = async (
       sourceCited,
       originMessageJumpUrl: payload.originMessageJumpUrl,
     });
-    const message = renderDiscordMessage(renderable);
-    if (fullReport.trim()) message.files = [buildReportAttachment(payload.topic, fullReport)];
+    const reportAttachment = fullReport.trim()
+      ? buildReportAttachment(payload.topic, fullReport)
+      : null;
+    const message = config.discordComponentsV2Mode === 'cards'
+      ? renderDiscordComponentsV2WithFallback(renderable, {
+          files: reportAttachment ? [reportAttachment] : [],
+        })
+      : renderDiscordMessage(renderable);
+    if (reportAttachment && config.discordComponentsV2Mode !== 'cards') {
+      message.files = [reportAttachment];
+    }
 
     // Deliver via DM.
     let deliveryChannel: 'dm' | 'pending_dm' = 'pending_dm';
@@ -514,8 +524,17 @@ export const flushPendingResearchDms = async (
         sourceCited: row.source_cited_count ?? undefined,
         originMessageJumpUrl: row.metadata?.originMessageJumpUrl ?? null,
       });
-      const message = renderDiscordMessage(renderable);
-      if (reportText.trim()) message.files = [buildReportAttachment(row.topic, reportText)];
+      const reportAttachment = reportText.trim()
+        ? buildReportAttachment(row.topic, reportText)
+        : null;
+      const message = config.discordComponentsV2Mode === 'cards'
+        ? renderDiscordComponentsV2WithFallback(renderable, {
+            files: reportAttachment ? [reportAttachment] : [],
+          })
+        : renderDiscordMessage(renderable);
+      if (reportAttachment && config.discordComponentsV2Mode !== 'cards') {
+        message.files = [reportAttachment];
+      }
       try {
         const sent = await dm.send(message);
         await supabase

@@ -18,6 +18,17 @@ const booleanEnv = (key: string, fallback: boolean): boolean => {
   return fallback;
 };
 
+export type DiscordComponentsV2Mode = 'off' | 'community' | 'cards';
+
+const discordComponentsV2ModeEnv = (
+  key: string,
+  fallback: DiscordComponentsV2Mode,
+): DiscordComponentsV2Mode => {
+  const value = process.env[key]?.trim().toLowerCase();
+  if (value === 'off' || value === 'community' || value === 'cards') return value;
+  return fallback;
+};
+
 // Gemini 3.6 Flash is the production baseline across generative lanes. Keeping
 // one stable model here and in render.yaml prevents local/default behavior from
 // drifting away from the deployed Blueprint values. MUEL_AI_MODEL and the
@@ -69,6 +80,12 @@ export const config = {
   youtubeDataApiKey: optionalEnv('YOUTUBE_DATA_API_KEY'),
   mentionReplyTimeoutMs: Number(process.env.MENTION_REPLY_TIMEOUT_MS ?? 15_000),
   mentionImageReplyTimeoutMs: Number(process.env.MENTION_IMAGE_REPLY_TIMEOUT_MS ?? 35_000),
+  // Components V2 rollout:
+  // - off: legacy content/embed renderer only
+  // - community: YouTube community cards only
+  // - cards: community cards plus durable rich-card DMs (for example research results)
+  // Interaction state machines remain legacy because the V2 message flag is irreversible.
+  discordComponentsV2Mode: discordComponentsV2ModeEnv('DISCORD_COMPONENTS_V2', 'cards'),
   spamBlockEnabled: booleanEnv('MUEL_SPAM_BLOCK_ENABLED', true),
   spamBlockMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MIN_CONFIDENCE ?? 0.75),
   // 명시적 호출(mention/DM/reply/!muel) 경로 전용 상향 임계. 사용자가 일부러 부른
