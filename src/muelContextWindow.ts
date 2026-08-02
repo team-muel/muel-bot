@@ -55,7 +55,7 @@ const LIGHTWEIGHT_CONTEXT_MESSAGES = 4;
 const DEFAULT_CONTEXT_MESSAGES = 12;
 
 const TOOL_TRIGGER_RE =
-  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져)/iu;
+  /(현재|지금|오늘|최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|환율|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져)/iu;
 const RECALL_CONTEXT_RE = /(기억|remember|전에|지난번|메모|나에 대해|내가 너에게|weave)/iu;
 const CATCHUP_CONTEXT_RE = /(최근|채널|쓰레드|thread|다이제스트|digest|요약|무슨 일|따라잡|catch\s*up)/iu;
 const ADMIN_CONTEXT_RE = /(구독|허브|상태|켜져|꺼져|프로필|profile|server|서버)/iu;
