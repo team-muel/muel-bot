@@ -226,13 +226,16 @@ export const generateMuelReply = async (
   currentChannelId: string | null = null,
   // P6 채널별 다이얼 — social-read low-commit 임계 오버라이드(null=전역 기본).
   socialTuning: { lowCommitMin?: number | null } | null = null,
+  databaseAvailable = true,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
   const preflightGuard = getPreflightGuard(userText);
   if (preflightGuard) {
-    await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
-      enqueueMemory: false,
-    });
+    if (databaseAvailable) {
+      await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
+        enqueueMemory: false,
+      });
+    }
     return {
       text: preflightGuard.reply,
       model: `policy:${preflightGuard.reason}`,
@@ -278,6 +281,7 @@ export const generateMuelReply = async (
     socialReadSection: socialRead
       ? formatSocialReadSection(socialRead, socialTuning?.lowCommitMin ?? null)
       : undefined,
+    skipDatabaseContext: !databaseAvailable,
   });
   const {
     system,
@@ -288,13 +292,21 @@ export const generateMuelReply = async (
     diagnostics: contextDiagnostics,
   } = contextWindow;
 
-  const tools = buildAgentTools({
+  const allTools = buildAgentTools({
     supabase,
     currentChannelId,
     currentGuildId: guildId,
     relevantUserIds,
     currentUserId: sourceUserId ?? null,
   });
+  // During a known Supabase Fair Use restriction, keep only the external
+  // read-only search tool. Memory, hub, subscription, and community tools all
+  // depend on the unavailable database and would only waste the tool budget.
+  const tools: Record<string, any> = databaseAvailable
+    ? allTools
+    : 'search_naver' in allTools
+      ? { search_naver: allTools.search_naver }
+      : {};
 
   const activeTools = toolsEnabled ? tools : {};
   const providerFailures: string[] = [];
@@ -364,7 +376,9 @@ export const generateMuelReply = async (
     // final step here), so persisted telemetry now reflects the whole turn.
     const tokens = normalizeUsage(usage as GenerateTextUsage | undefined);
 
-    await saveGeneratedReply(supabase, chatId, finalText, provider, modelName);
+    if (databaseAvailable) {
+      await saveGeneratedReply(supabase, chatId, finalText, provider, modelName);
+    }
     return {
       text: finalText,
       model: modelName,
