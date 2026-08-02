@@ -48,6 +48,8 @@ export type BuildMuelContextWindowOptions = {
   sourceUserId?: string;
   /** P4 social-read 전처리 판독 섹션(포맷 완료 텍스트). 휘발 섹션으로 후미 배치. */
   socialReadSection?: string;
+  /** Skip every database-backed personalization read during a known DB outage. */
+  skipDatabaseContext?: boolean;
 };
 
 const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
@@ -217,13 +219,23 @@ export const buildMuelContextWindow = async (
     pushSection('capabilities', formatCapabilityRegistryForPrompt(), false);
   }
 
+  if (opts.skipDatabaseContext) {
+    pushSection('databaseDegraded', [
+      '--- DATABASE DEGRADED MODE ---',
+      'Supabase persistence and database-backed context are temporarily unavailable.',
+      'Do not claim to remember prior conversations or know server, subscription, job, or community-post state.',
+      'Answer from the current Discord message and available public-search evidence only; state the limitation when it matters.',
+      '--- End Database Degraded Mode ---',
+    ].join('\n'));
+  }
+
   if (opts.guildTopology) pushSection('guildTopology', opts.guildTopology);
 
   pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName));
 
   // P5 소셜 프로필 — 유저의 대화 레지스터(반말/드립 성향 등). 잡담 개인화 재료라
   // lightweight 턴에도 주입한다(단일 select, 저비용·실패 무해).
-  if (opts.sourceUserId) {
+  if (opts.sourceUserId && !opts.skipDatabaseContext) {
     const profileText = await fetchSocialProfileText(opts.supabase, opts.sourceUserId, opts.authorName);
     if (profileText) pushSection('socialProfile', profileText);
   }
@@ -236,7 +248,9 @@ export const buildMuelContextWindow = async (
   // 30일간 retrieval 0건(읽기 경로 사망)이었다.
   let memoryIncluded = false;
   let memorySkippedReason: MuelContextWindowDiagnostics['memorySkippedReason'] = null;
-  if (!opts.sourceUserId) {
+  if (opts.skipDatabaseContext) {
+    memorySkippedReason = 'error';
+  } else if (!opts.sourceUserId) {
     memorySkippedReason = 'missing-user';
   } else if (lightweightTurn) {
     try {
