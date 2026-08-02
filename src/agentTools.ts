@@ -11,6 +11,11 @@ import {
 import { isHubChannelActive, listHubChannels } from './hubChannels.js';
 import { listYouTubeSubscriptions } from './youtubeSubscriptionStore.js';
 import { formatYouTubeTarget, getSubscriptionKind, toKindLabel } from './subscribePresentation.js';
+import {
+  formatNaverSearchResults,
+  isNaverSearchConfigured,
+  searchNaver,
+} from './naverSearch.js';
 
 /**
  * Stage 4.1 — Read-only Discord tools.
@@ -29,6 +34,7 @@ import { formatYouTubeTarget, getSubscriptionKind, toKindLabel } from './subscri
  *   - get_subscription_status: read YouTube subscription counts and names.
  *   - get_user_profile: Muel profile + last interaction summary for a Discord user.
  *   - search_community_docs: text-match against muel_community_digests.
+ *   - search_naver: current public Korean web/news/local/knowledge results.
  *
  * No tool here accesses the Discord client directly. Anything that needs live
  * Discord API calls (e.g. reading arbitrary thread history beyond what Muel
@@ -78,7 +84,44 @@ const summarizeSubscriptionRows = (rows: Awaited<ReturnType<typeof listYouTubeSu
 };
 
 export const buildAgentTools = (ctx: AgentToolContext) => {
+  const liveSearchTools = isNaverSearchConfigured()
+    ? {
+      search_naver: tool({
+        description:
+          'Search current public information through NAVER API HUB. For facts that may have changed after the model knowledge cutoff, search before answering. Use news for current events, webkr for general public web facts, local for places, kin for community Q&A, and encyc for reference topics. This is not for private Discord or Muel data. Include source links from the result in factual answers.',
+        inputSchema: z.object({
+          query: z.string().min(1).max(200).describe('A focused Korean or English search query.'),
+          type: z.enum(['news', 'webkr', 'local', 'kin', 'encyc'])
+            .default('webkr')
+            .describe('Search vertical: news=current events, webkr=general web, local=places, kin=community Q&A, encyc=reference.'),
+          display: z.number().int().min(1).max(8).default(5).describe('Number of results, 1 to 8.'),
+          sort: z.enum(['sim', 'date']).optional().describe('News only: sim=relevance, date=newest first.'),
+        }),
+        execute: async ({
+          query,
+          type,
+          display,
+          sort,
+        }: {
+          query: string;
+          type: 'news' | 'webkr' | 'local' | 'kin' | 'encyc';
+          display: number;
+          sort?: 'sim' | 'date';
+        }) => {
+          try {
+            return formatNaverSearchResults(await searchNaver({ query, type, display, sort }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn('[search_naver] failed', message);
+            return '실시간 공개 정보 검색에 실패했어. 검색되지 않은 최신 사실은 추측하지 마.';
+          }
+        },
+      }),
+    }
+    : {};
+
   return {
+    ...liveSearchTools,
     get_server_context: tool({
       description:
         'Fetch a cross-product snapshot: YouTube subscriptions, recent dreams (Weave), and the latest community post cache. Use this only when the user asks about recent news, posts, or dream context broadly.',
