@@ -32,7 +32,7 @@ const RECENT_REQUEST_SWEEP_INTERVAL_MS = 60_000;
 let lastRecentRequestSweepAt = 0;
 
 const TOOLISH_TEXT_RE =
-  /(최근|latest|news|뉴스|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정)/iu;
+  /(현재|지금|오늘|최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|환율|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|꿈|dream|schedule|일정)/iu;
 
 const isLightweightTurn = (userText: string): boolean => {
   const normalized = userText.trim();

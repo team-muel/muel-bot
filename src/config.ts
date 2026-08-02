@@ -144,4 +144,11 @@ export const config = {
   ncpSecretKey: optionalEnv('NCP_SECRET_KEY'),
   ncpObjectEndpoint: optionalEnv('NCP_OBJ_ENDPOINT') ?? 'https://kr.object.ncloudstorage.com',
   ncpObjectBucket: optionalEnv('NCP_OBJ_BUCKET') ?? 'muel-archive',
+  // NAVER API HUB Search credentials are gateway keys, not NCP IAM/Object
+  // Storage credentials. Keep them separate so a search tool can never gain
+  // archive authority by accident.
+  naverSearchEnabled: booleanEnv('NAVER_SEARCH_ENABLED', true),
+  naverHubKeyId: optionalEnv('NAVER_HUB_KEY_ID'),
+  naverHubKey: optionalEnv('NAVER_HUB_KEY'),
+  naverSearchTimeoutMs: Number(process.env.NAVER_SEARCH_TIMEOUT_MS ?? 4_500),
 };
