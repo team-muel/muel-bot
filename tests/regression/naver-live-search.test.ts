@@ -66,6 +66,8 @@ await check('configured search is exposed as an AI SDK tool on every model lane'
 
 await check('NAVER markup and entities are cleaned before reaching the model', () => {
   assert.equal(cleanNaverText('<b>Muel</b> &amp; 친구 &#x1F331;'), 'Muel & 친구 🌱');
+  assert.doesNotThrow(() => cleanNaverText('invalid &#999999999; entity'));
+  assert.equal(cleanNaverText('invalid &#999999999; entity'), 'invalid &#999999999; entity');
 });
 
 await check('search request is bounded, authenticated, and formatted with sources', async () => {
@@ -113,6 +115,7 @@ await check('search request is bounded, authenticated, and formatted with source
     assert.match(formatted, /최신 소식 & 발표/);
     assert.match(formatted, /https:\/\/example\.com\/original/);
     assert.match(formatted, /검색 시각:/);
+    assert.match(formatted, /UNTRUSTED PUBLIC SEARCH DATA/);
     assert.doesNotMatch(formatted, /<b>/);
     assert.ok(formatted.length <= 4_800);
   } finally {
