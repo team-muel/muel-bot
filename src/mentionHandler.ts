@@ -6,6 +6,7 @@ import { upsertDiscordMuelProfile } from './muelProfiles.js';
 import {
   getUserHistorySummary,
   prepareChatTurn,
+  type UIMessage,
 } from './muelConversationStore.js';
 import { generateMuelReply, toDiscordReplyChunks } from './muelAgent.js';
 import { deliverOverflowChunks } from './rendering/discordDelivery.js';
@@ -24,6 +25,7 @@ import { REACTION_DONE, tagMessage } from './agentReactions.js';
 import { classifyActionDraft } from './actionDraft.js';
 import { classifyProposeMemo, buildMemoProposalCard } from './memoProposal.js';
 import { buildHubActionConfirmation } from './actionConfirmations.js';
+import { isSupabaseQuotaRestriction } from './serviceRestriction.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -233,6 +235,7 @@ export const handleMuelMention = async (
 
   let inboundMessageId: string | null = null;
   let chatId: string | null = null;
+  let statelessMode = false;
   const lightweightTurn = isLightweightTurn(effectiveText);
   const replyStartedAt = Date.now();
 
@@ -247,26 +250,42 @@ export const handleMuelMention = async (
     });
 
     const userMessageId = crypto.randomUUID();
-    const prepared = await prepareChatTurn(supabase, {
-      source: 'discord',
-      sourceChannelId: message.channelId,
-      sourceThreadId: message.channelId,
-      userMessageId,
-      userParts: effectiveText ? [{ type: 'text', text: effectiveText }, ...imageParts] : imageParts,
-      metadata: {
-        discordGuildId: message.guildId,
-        discordChannelId: message.channelId,
-        discordMessageId: message.id,
-        discordUserId: message.author.id,
-        discordUsername: message.author.username,
-        externalMessageId: message.id,
-      },
-    });
-    chatId = prepared.chatId;
-    const history = prepared.messages;
+    const userParts = effectiveText ? [{ type: 'text', text: effectiveText }, ...imageParts] : imageParts;
+    const messageMetadata = {
+      discordGuildId: message.guildId,
+      discordChannelId: message.channelId,
+      discordMessageId: message.id,
+      discordUserId: message.author.id,
+      discordUsername: message.author.username,
+      externalMessageId: message.id,
+    };
+    let history: UIMessage[];
+    try {
+      const prepared = await prepareChatTurn(supabase, {
+        source: 'discord',
+        sourceChannelId: message.channelId,
+        sourceThreadId: message.channelId,
+        userMessageId,
+        userParts,
+        metadata: messageMetadata,
+      });
+      chatId = prepared.chatId;
+      history = prepared.messages;
+    } catch (error) {
+      if (!isSupabaseQuotaRestriction(error)) throw error;
+      statelessMode = true;
+      chatId = crypto.randomUUID();
+      history = [{
+        id: userMessageId,
+        role: 'user',
+        parts: userParts,
+        metadata: messageMetadata,
+      } as UIMessage];
+      console.warn('[muel] Supabase quota restriction detected; continuing stateless');
+    }
     inboundMessageId = userMessageId;
 
-    if (shouldEnqueueUserMemoryExtraction(userText)) {
+    if (!statelessMode && shouldEnqueueUserMemoryExtraction(userText)) {
       void enqueueMemoryExtractionJob(supabase, {
         chatId,
         messageId: userMessageId,
@@ -333,7 +352,7 @@ export const handleMuelMention = async (
       return;
     }
 
-    if (message.guildId) {
+    if (message.guildId && !statelessMode) {
       const draft = await classifyActionDraft(supabase, {
         chatId,
         userText: effectiveText,
@@ -391,7 +410,7 @@ export const handleMuelMention = async (
     let channelActivity = '';
     let guildTopology = '';
 
-    if (!lightweightTurn) {
+    if (!lightweightTurn && !statelessMode) {
       const mentionedHistoryPromises = mentionedUsers.map((u) =>
         getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
           name: u.displayName ?? u.username,
@@ -423,6 +442,8 @@ export const handleMuelMention = async (
       guildTopology,
       message.author.id,
       message.channelId,
+      null,
+      !statelessMode,
     ), imageParts.length > 0 ? config.mentionImageReplyTimeoutMs : config.mentionReplyTimeoutMs, 'generateMuelReply');
 
     const replyChunks = toDiscordReplyChunks(reply.text);
@@ -518,6 +539,7 @@ export const handleMuelMention = async (
       totalTokens,
       metadata: {
         discordMessageId: message.id,
+        statelessMode,
         routerIntent: routerDecision?.intent ?? null,
         routerConfidence: routerDecision?.confidence ?? null,
         // 섹션별 컨텍스트 회계 — P2: 이전엔 생성만 되고 적재가 안 돼 쿼리 불가였다.
