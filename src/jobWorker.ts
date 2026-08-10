@@ -23,11 +23,22 @@ import {
   toKindLabel,
 } from './subscribePresentation.js';
 import { ingestPendingUserMemos } from './userMemoIngest.js';
+import { config } from './config.js';
+import {
+  getSupabaseRestrictionRetryDelay,
+  getSupabaseRestrictionStatus,
+  isSupabaseDataApiRestricted,
+  isSupabaseQuotaRestriction,
+  recordSupabaseDataApiSuccess,
+  recordSupabaseQuotaRestriction,
+  type SupabaseRestrictionStatus,
+} from './serviceRestriction.js';
+import { mapWithConcurrency } from './utils/concurrency.js';
 
 type JobRow = {
   id: string;
   type: string;
-  payload: any;
+  payload: unknown;
   attempts: number;
 };
 
@@ -45,6 +56,8 @@ type SubscribeInteractionPayload = {
 type JobWorkerStatus = {
   running: boolean;
   pollIntervalMs: number;
+  currentDelayMs: number;
+  concurrency: number;
   lastLoopStartedAt: string | null;
   lastLoopFinishedAt: string | null;
   lastSuccessAt: string | null;
@@ -52,6 +65,7 @@ type JobWorkerStatus = {
   lastError: string | null;
   lastClaimedJobs: number;
   lastProcessedJobId: string | null;
+  restriction: SupabaseRestrictionStatus;
 };
 
 const POLL_INTERVAL_MS = 5_000;
@@ -63,6 +77,8 @@ const INTERACTION_EPHEMERAL_FLAG = 1 << 6;
 const workerStatus: JobWorkerStatus = {
   running: false,
   pollIntervalMs: POLL_INTERVAL_MS,
+  currentDelayMs: POLL_INTERVAL_MS,
+  concurrency: config.jobWorkerConcurrency,
   lastLoopStartedAt: null,
   lastLoopFinishedAt: null,
   lastSuccessAt: null,
@@ -70,6 +86,7 @@ const workerStatus: JobWorkerStatus = {
   lastError: null,
   lastClaimedJobs: 0,
   lastProcessedJobId: null,
+  restriction: getSupabaseRestrictionStatus(),
 };
 
 let workerClient: Client | null = null;
@@ -234,12 +251,54 @@ export const configureJobWorker = (client: Client) => {
   workerClient = client;
 };
 
+const processClaimedJob = async (
+  supabase: ReturnType<typeof getSupabaseClient>,
+  job: JobRow,
+): Promise<void> => {
+  try {
+    await processJob(job);
+    const { error } = await supabase.rpc('complete_job', { p_job_id: job.id });
+    if (error) throw error;
+    workerStatus.lastProcessedJobId = job.id;
+    workerStatus.lastSuccessAt = new Date().toISOString();
+    workerStatus.lastError = null;
+  } catch (jobError) {
+    workerStatus.lastErrorAt = new Date().toISOString();
+    workerStatus.lastError = jobError instanceof Error ? jobError.message : String(jobError);
+    console.error(`[jobs] job ${job.id} failed`, jobError);
+
+    if (isSupabaseQuotaRestriction(jobError)) {
+      recordSupabaseQuotaRestriction(jobError);
+      return;
+    }
+
+    const { error: failError } = await supabase.rpc('fail_job', {
+      p_job_id: job.id,
+      p_error: workerStatus.lastError,
+      p_retry_delay_seconds: 60,
+      p_max_attempts: 5,
+    });
+    if (failError) {
+      if (isSupabaseQuotaRestriction(failError)) recordSupabaseQuotaRestriction(failError);
+      console.error(`[jobs] failed to persist failure for ${job.id}`, failError);
+    }
+  }
+};
+
 export const runJobWorkerLoop = async () => {
   const supabase = getSupabaseClient();
   workerStatus.running = true;
   console.log('[jobs] Worker started');
 
   while (true) {
+    const restrictionDelay = getSupabaseRestrictionRetryDelay();
+    if (isSupabaseDataApiRestricted() && restrictionDelay > 0) {
+      workerStatus.currentDelayMs = restrictionDelay;
+      workerStatus.restriction = getSupabaseRestrictionStatus();
+      await new Promise((resolve) => setTimeout(resolve, restrictionDelay));
+      continue;
+    }
+
     workerStatus.lastLoopStartedAt = new Date().toISOString();
     try {
       const { data: jobs, error } = await supabase.rpc('claim_pending_jobs', {
@@ -251,28 +310,19 @@ export const runJobWorkerLoop = async () => {
         workerStatus.lastErrorAt = new Date().toISOString();
         workerStatus.lastError = error.message || String(error);
         workerStatus.lastClaimedJobs = 0;
-      } else if (jobs && jobs.length > 0) {
-        workerStatus.lastClaimedJobs = jobs.length;
-        for (const job of jobs as JobRow[]) {
-          try {
-            await processJob(job);
-            await supabase.rpc('complete_job', { p_job_id: job.id });
-            workerStatus.lastProcessedJobId = job.id;
-            workerStatus.lastSuccessAt = new Date().toISOString();
-            workerStatus.lastError = null;
-          } catch (jobErr: any) {
-            workerStatus.lastErrorAt = new Date().toISOString();
-            workerStatus.lastError = jobErr?.message || 'Unknown error';
-            console.error(`[jobs] job ${job.id} failed`, jobErr);
-            await supabase.rpc('fail_job', {
-              p_job_id: job.id,
-              p_error: jobErr?.message || 'Unknown error',
-              p_retry_delay_seconds: 60,
-              p_max_attempts: 5,
-            });
-          }
+        if (isSupabaseQuotaRestriction(error)) {
+          recordSupabaseQuotaRestriction(error);
         }
+      } else if (jobs && jobs.length > 0) {
+        recordSupabaseDataApiSuccess();
+        workerStatus.lastClaimedJobs = jobs.length;
+        await mapWithConcurrency(
+          jobs as JobRow[],
+          config.jobWorkerConcurrency,
+          async (job) => processClaimedJob(supabase, job),
+        );
       } else {
+        recordSupabaseDataApiSuccess();
         workerStatus.lastClaimedJobs = 0;
         workerStatus.lastSuccessAt = new Date().toISOString();
         workerStatus.lastError = null;
@@ -283,16 +333,24 @@ export const runJobWorkerLoop = async () => {
       console.error('[jobs] worker loop error', error);
     } finally {
       workerStatus.lastLoopFinishedAt = new Date().toISOString();
+      workerStatus.restriction = getSupabaseRestrictionStatus();
     }
 
     // RI-3: 미처리 user_memo 인박스를 회수 가능한 장기기억으로 승격(주기 게이트). throw 안 함.
-    if (Date.now() - lastUserMemoIngestAt > USER_MEMO_INGEST_INTERVAL_MS) {
+    if (
+      !isSupabaseDataApiRestricted()
+      && Date.now() - lastUserMemoIngestAt > USER_MEMO_INGEST_INTERVAL_MS
+    ) {
       lastUserMemoIngestAt = Date.now();
       const n = await ingestPendingUserMemos(supabase);
       if (n > 0) console.log(`[jobs] user-memo ingest: ${n} promoted to memory_entries`);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    const nextDelay = isSupabaseDataApiRestricted()
+      ? Math.max(getSupabaseRestrictionRetryDelay(), POLL_INTERVAL_MS)
+      : POLL_INTERVAL_MS;
+    workerStatus.currentDelayMs = nextDelay;
+    await new Promise((resolve) => setTimeout(resolve, nextDelay));
   }
 };
 

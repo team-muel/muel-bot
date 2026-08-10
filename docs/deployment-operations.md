@@ -67,6 +67,8 @@ Optional tuning variables:
 - `MUEL_EMBEDDING_DIMENSIONS`
 - `NVIDIA_MODEL`
 - `YOUTUBE_MONITOR_INTERVAL_MS`
+- `YOUTUBE_MONITOR_CONCURRENCY` (default `3`; keep bounded to protect YouTube, Discord, and Supabase quotas)
+- `JOB_WORKER_CONCURRENCY` (default `2`; bounds claimed-job fan-out)
 - `YOUTUBE_FETCH_TIMEOUT_MS`
 - `ENABLE_JOB_WORKER`
 - `ENABLE_YOUTUBE_MONITOR`
@@ -75,6 +77,8 @@ Optional tuning variables:
 - `GOMDORI_APPLICATION_PUBLIC_KEY`
 
 Never print raw token values in chat, docs, logs, or screenshots.
+
+Supabase Fair Use `402` responses activate a process-wide circuit breaker. Database-backed pollers pause for 60 seconds initially and back off exponentially to 15 minutes; Discord mention replies degrade to stateless mode. Inspect `/ready` fields `supabaseRestriction.nextProbeAt` and `jobWorker.currentDelayMs` before restarting the service—restarts reset the in-memory backoff.
 
 ## Current Health Checks
 

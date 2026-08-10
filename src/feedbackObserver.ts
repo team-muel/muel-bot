@@ -1,6 +1,11 @@
 import type { Client } from 'discord.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { classifyNegativeText, isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
+import {
+  isSupabaseDataApiRestricted,
+  isSupabaseQuotaRestriction,
+  recordSupabaseQuotaRestriction,
+} from './serviceRestriction.js';
 
 // 지연 관찰: Muel 이 답한 직후가 아니라 ~90초 뒤에 그 답변에 대한 반응(리액션·후속 발화)을
 // 모아 부정 피드백을 판정/적재한다. 즉시-리스너(index.ts MessageReactionAdd)는 보조.
@@ -21,8 +26,9 @@ export const schedulePendingObservation = async (
     replyExcerpt?: string | null;
   },
 ): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   try {
-    await supabase.from('muel_pending_observations').insert({
+    const { error } = await supabase.from('muel_pending_observations').insert({
       guild_id: input.guildId ?? null,
       channel_id: input.channelId,
       muel_message_id: input.muelMessageId,
@@ -30,7 +36,12 @@ export const schedulePendingObservation = async (
       reply_excerpt: input.replyExcerpt ?? null,
       observe_after: new Date(Date.now() + OBSERVE_DELAY_MS).toISOString(),
     });
+    if (error) {
+      if (isSupabaseQuotaRestriction(error)) recordSupabaseQuotaRestriction(error);
+      console.warn('[feedback-observe] schedule failed', error);
+    }
   } catch (err) {
+    if (isSupabaseQuotaRestriction(err)) recordSupabaseQuotaRestriction(err);
     console.warn('[feedback-observe] schedule failed', err);
   }
 };
@@ -103,6 +114,7 @@ export const processPendingObservations = async (
   client: Client,
   supabase: SupabaseClient,
 ): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   try {
     const { data, error } = await supabase
       .from('muel_pending_observations')
@@ -111,7 +123,11 @@ export const processPendingObservations = async (
       .lte('observe_after', new Date().toISOString())
       .order('observe_after', { ascending: true })
       .limit(BATCH);
-    if (error || !data || data.length === 0) return;
+    if (error) {
+      if (isSupabaseQuotaRestriction(error)) recordSupabaseQuotaRestriction(error);
+      return;
+    }
+    if (!data || data.length === 0) return;
 
     for (const row of data) {
       try {
@@ -123,6 +139,7 @@ export const processPendingObservations = async (
       }
     }
   } catch (err) {
+    if (isSupabaseQuotaRestriction(err)) recordSupabaseQuotaRestriction(err);
     console.warn('[feedback-observe] poll failed', err);
   }
 };
@@ -130,6 +147,7 @@ export const processPendingObservations = async (
 export const startFeedbackObserver = (client: Client, supabase: SupabaseClient): NodeJS.Timeout => {
   console.log('[feedback-observe] poller started', { intervalMs: POLL_INTERVAL_MS, delayMs: OBSERVE_DELAY_MS });
   return setInterval(() => {
+    if (isSupabaseDataApiRestricted()) return;
     void processPendingObservations(client, supabase);
   }, POLL_INTERVAL_MS);
 };

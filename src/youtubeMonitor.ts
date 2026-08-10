@@ -29,6 +29,8 @@ import { postOverflowToThread } from './rendering/discordDelivery.js';
 import { safeBreakIndex } from './rendering/discordText.js';
 import { renewYouTubeWebSubSubscriptions } from './youtubeWebSub.js';
 import { runYouTubeApiDataLifecycle } from './youtubeLifecycle.js';
+import { mapWithConcurrency } from './utils/concurrency.js';
+import { isSupabaseDataApiRestricted } from './serviceRestriction.js';
 
 type SourceRow = {
   id: number;
@@ -59,7 +61,7 @@ let lifecycleRunning = false;
 let running = false;
 let lastTickStartedAt: string | null = null;
 let lastTickFinishedAt: string | null = null;
-let lastTickStatus: 'idle' | 'success' | 'error' = 'idle';
+let lastTickStatus: 'idle' | 'success' | 'error' | 'restricted' = 'idle';
 let lastTickMessage: string | null = null;
 let lastTickChecked = 0;
 let lastTickSent = 0;
@@ -698,7 +700,7 @@ const processCommunityRow = async (client: Client, row: SourceRow): Promise<numb
   }
 
   if (config.aiqEnabled) {
-    (intentBase as any).actionButtons = [
+    intentBase.actionButtons = [
       {
         label: '이 소식 더 알아보기',
         customId: `research:enrich:youtube_post:${latest.id}`,
@@ -756,6 +758,11 @@ const processRow = async (client: Client, row: SourceRow): Promise<number> => {
 };
 
 export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) {
+    lastTickStatus = 'restricted';
+    lastTickMessage = 'skipped=supabase_data_api_restricted';
+    return;
+  }
   if (running) {
     return;
   }
@@ -766,16 +773,24 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
   lastTickMessage = null;
   try {
     const rows = await loadRows();
-    let sent = 0;
-
-    for (const row of rows) {
-      try {
-        sent += await processRow(client, row);
-      } catch (error) {
-        console.warn(`[youtube] row ${row.id} failed`, error);
-        await updateRowError(row, error);
-      }
-    }
+    const sentByRow = await mapWithConcurrency(
+      rows,
+      config.youtubeMonitorConcurrency,
+      async (row): Promise<number> => {
+        try {
+          return await processRow(client, row);
+        } catch (error) {
+          console.warn(`[youtube] row ${row.id} failed`, error);
+          try {
+            await updateRowError(row, error);
+          } catch (statusError) {
+            console.warn(`[youtube] row ${row.id} error status update failed`, statusError);
+          }
+          return 0;
+        }
+      },
+    );
+    const sent = sentByRow.reduce((total, count) => total + count, 0);
 
     lastTickChecked = rows.length;
     lastTickSent = sent;
@@ -799,6 +814,11 @@ export const requestYouTubeMonitorSync = (
   client: Client,
   trigger: 'timer' | 'websub' = 'timer',
 ): void => {
+  if (isSupabaseDataApiRestricted()) {
+    lastTickStatus = 'restricted';
+    lastTickMessage = `skipped=supabase_data_api_restricted trigger=${trigger}`;
+    return;
+  }
   if (!config.enableJobWorker) {
     void runYouTubeMonitorTick(client);
     return;
@@ -865,6 +885,7 @@ export const startYouTubeMonitor = (client: Client): void => {
 export const getYouTubeMonitorStatus = () => ({
   running,
   intervalMs: config.youtubeMonitorIntervalMs,
+  concurrency: config.youtubeMonitorConcurrency,
   lastTickStartedAt,
   lastTickFinishedAt,
   lastTickStatus,

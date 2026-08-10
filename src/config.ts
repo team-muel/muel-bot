@@ -18,6 +18,11 @@ const booleanEnv = (key: string, fallback: boolean): boolean => {
   return fallback;
 };
 
+const positiveIntegerEnv = (key: string, fallback: number): number => {
+  const parsed = Number.parseInt(process.env[key]?.trim() ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 export type DiscordComponentsV2Mode = 'off' | 'community' | 'cards';
 
 const discordComponentsV2ModeEnv = (
@@ -84,6 +89,7 @@ export const config = {
   hubUrl: optionalEnv('HUB_URL') ?? 'https://muel-tree.vercel.app',
   youtubeMonitorIntervalMs: Number(process.env.YOUTUBE_MONITOR_INTERVAL_MS ?? 5 * 60_000),
   youtubeFetchTimeoutMs: Number(process.env.YOUTUBE_FETCH_TIMEOUT_MS ?? 20_000),
+  youtubeMonitorConcurrency: positiveIntegerEnv('YOUTUBE_MONITOR_CONCURRENCY', 3),
   youtubeDataApiKey: optionalEnv('YOUTUBE_DATA_API_KEY'),
   // Community Posts still have no supported Data API resource. Product behavior
   // remains enabled, but it has an immediate kill switch because the experimental
@@ -114,6 +120,7 @@ export const config = {
   // 확실한 spam(>=0.95)만 차단한다.
   spamBlockMentionMinConfidence: Number(process.env.MUEL_SPAM_BLOCK_MENTION_MIN_CONFIDENCE ?? 0.95),
   enableJobWorker: booleanEnv('ENABLE_JOB_WORKER', booleanEnv('ENABLE_MEMORY_WORKER', true)),
+  jobWorkerConcurrency: positiveIntegerEnv('JOB_WORKER_CONCURRENCY', 2),
   enableYoutubeMonitor: booleanEnv('ENABLE_YOUTUBE_MONITOR', true),
   enableHttpInteractions: booleanEnv('ENABLE_HTTP_INTERACTIONS', false),
   // AI-Q research backend (GCP Cloud Run). When AIQ_SERVER_URL is unset, the

@@ -1,23 +1,13 @@
-import http from 'node:http';
-import { Client, Events, GatewayIntentBits, MessageFlags, Partials, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags, Partials } from 'discord.js';
 import { config } from './config.js';
 import {
   handleFlatSubscribeCommand,
-  OPTION_ACTION,
-  OPTION_KIND,
-  OPTION_LINK,
-  SUBSCRIBE_ACTION_ADD,
-  SUBSCRIBE_ACTION_LIST,
-  SUBSCRIBE_ACTION_REMOVE,
   SUBSCRIBE_COMMAND_NAME,
 } from './subscribe.js';
 import {
   getYouTubeMonitorStatus,
-  requestYouTubeMonitorSync,
   startYouTubeMonitor,
 } from './youtubeMonitor.js';
-import { handleYouTubeWebSubRequest } from './youtubeWebSub.js';
-import { handleDiscordInteractions } from './discordInteractions.js';
 import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
 import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
@@ -30,20 +20,19 @@ import { runSocialEval } from './socialEval.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
-  buildHubSlashCommand,
   handleHubSlashInteraction,
   handleHubChannelMessage,
   HUB_COMMAND_NAME,
 } from './conciergeHandler.js';
-import { isHubChannelActive, getHubChannelStatus } from './hubChannels.js';
+import { isHubChannelActive } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
-import { buildMemoSlashCommand, handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
+import { handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
 import { startProactiveScheduler } from './proactiveSpeaker.js';
-import { ROLLING_COMMAND_NAME, buildRollingSlashCommand, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
+import { ROLLING_COMMAND_NAME, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { handleMemoProposalButton, isMemoProposalButton } from './memoProposal.js';
-import { WELCOME_COMMAND_NAME, buildWelcomeSlashCommand, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
-import { CODEX_COMMAND_NAME, buildCodexSlashCommand, handleCodexCommand, handleCodexSelect, isCodexSelect } from './gomdoriCodexHandler.js';
+import { WELCOME_COMMAND_NAME, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
+import { CODEX_COMMAND_NAME, handleCodexCommand, handleCodexSelect, isCodexSelect } from './gomdoriCodexHandler.js';
 import {
   archiveMemberAdd,
   archiveMemberRemove,
@@ -55,28 +44,26 @@ import {
 } from './archivist/index.js';
 import {
   ARCHIVE_POLICY_COMMAND_NAME,
-  buildArchivePolicyCommand,
   handleArchivePolicyCommand,
 } from './archivist/policy.js';
 import {
-  getArchiveOpenApiDocument,
-  handleArchivePersonalRequest,
-} from './archivist/personalAccess.js';
+  getCommandRegistrationStatus,
+  registerGomdoriCommands,
+  registerMuelCommands,
+} from './discordCommandRegistry.js';
+import { getSupabaseRestrictionStatus } from './serviceRestriction.js';
+import { startRuntimeHttpServer } from './runtimeHttpServer.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
 let gomdoriReadyAt: string | null = null;
 let gomdoriLoginError: string | null = null;
 
-let lastRegisteredAt: string | null = null;
-let lastRegisteredCommandNames: string[] = [];
-let lastRegistrationError: string | null = null;
-let lastLegacyGuildCommandCleanupAt: string | null = null;
-let lastLegacyGuildCommandCleanupNames: string[] = [];
-
 const getRuntimeStatus = () => {
   const youtubeMonitor = getYouTubeMonitorStatus();
   const jobWorker = getJobWorkerStatus();
+  const commands = getCommandRegistrationStatus();
+  const supabaseRestriction = getSupabaseRestrictionStatus();
   const degradedReasons: string[] = [];
 
   if (loginError) degradedReasons.push(`muel_login:${loginError}`);
@@ -85,7 +72,10 @@ const getRuntimeStatus = () => {
   if (jobWorker.lastError) degradedReasons.push(`job_worker:${jobWorker.lastError}`);
   if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');
-  if (lastRegistrationError) degradedReasons.push(`command_registration:${lastRegistrationError}`);
+  if (commands.lastError) degradedReasons.push(`command_registration:${commands.lastError}`);
+  if (supabaseRestriction.active) {
+    degradedReasons.push(`supabase_data_api:${supabaseRestriction.reason ?? 'restricted'}`);
+  }
   const archivist = getArchivistStatus();
   if (archivist.enabled && !archivist.ready) degradedReasons.push(`archivist:${archivist.lastError ?? 'not_ready'}`);
 
@@ -95,86 +85,10 @@ const getRuntimeStatus = () => {
     youtubeMonitor,
     jobWorker,
     archivist,
+    commands,
+    supabaseRestriction,
   };
 };
-
-const pingCommand = new SlashCommandBuilder()
-  .setName('ping')
-  .setDescription('내가 깨어 있는지 확인.');
-
-const helpCommand = new SlashCommandBuilder()
-  .setName('도움말')
-  .setDescription('내가 뭘 할 수 있는지 알려줄게.');
-
-// 이전의 /일기 (Activity entry point, type=4) 는 제거되었다.
-// 사용자 결정 (2026-06-05): 일기는 노출 의도 X 였고, /메모 로 의도 재설계.
-// /메모 는 type=1 chat input + 서브커맨드 (add/목록/삭제) 로 사용자 개인화 메모리 CRUD.
-// LEGACY_GLOBAL_COMMAND_NAMES 에 '일기' 포함 — global cleanup 으로 자동 제거 + registerCommands PUT 으로도 덮어씀.
-
-const subscribeCommand = new SlashCommandBuilder()
-  .setName(SUBSCRIBE_COMMAND_NAME)
-  .setDescription('YouTube 보는 뮤엘')
-  .addStringOption((option) =>
-    option
-      .setName(OPTION_ACTION)
-      .setDescription('조회 / 추가 / 제거')
-      .setRequired(true)
-      .addChoices(
-        { name: '조회', value: SUBSCRIBE_ACTION_LIST },
-        { name: '추가', value: SUBSCRIBE_ACTION_ADD },
-        { name: '제거', value: SUBSCRIBE_ACTION_REMOVE },
-      ),
-  )
-  .addStringOption((option) =>
-    option
-      .setName(OPTION_KIND)
-      .setDescription('영상 또는 게시글')
-      .setRequired(false)
-      .addChoices(
-        { name: '영상', value: 'videos' },
-        { name: '게시글', value: 'posts' },
-      ),
-  )
-  .addStringOption((option) =>
-    option
-      .setName(OPTION_LINK)
-      .setDescription('YouTube 채널 링크 또는 UC 채널 ID')
-      .setRequired(false),
-  );
-
-// /구독 명령을 길드 + DM + private channel + user-install 모두에서 사용 가능하도록.
-// discord.js SlashCommandBuilder 에 setContexts/setIntegrationTypes 가 일부 버전에서만
-// 노출되어 있어 toJSON 후 정수 코드로 패치 (Discord API spec 직접 사용).
-// - integration_types: 0=Guild install, 1=User install
-// - contexts: 0=Guild, 1=Bot DM, 2=Private Channel (group DM 등)
-// 이미 /일기 (diaryEntryPointCommand) 와 /허브 가 같은 값을 쓰고 있음.
-const subscribeCommandPayload = {
-  ...subscribeCommand.toJSON(),
-  integration_types: [0, 1],
-  contexts: [0, 1, 2],
-};
-
-const LEGACY_GUILD_HUB_COMMAND_NAMES = new Set([
-  '허브활성화',
-  '허브비활성화',
-  '허브목록',
-  '허브상태',
-  '허브-활성화',
-  '허브-비활성화',
-  '허브-목록',
-  '허브-상태',
-  '허브_활성화',
-  '허브_비활성화',
-  '허브_목록',
-  '허브_상태',
-  'hub-activate',
-  'hub-deactivate',
-  'hub-list',
-  'hub-status',
-  // /일기 entry point 는 /메모 로 의도 재설계되어 제거 (2026-06-05).
-  // registerCommands PUT 이 자동으로 덮어쓰지만 cleanup 에도 명시.
-  '일기',
-]);
 
 const client = new Client({
   intents: [
@@ -211,150 +125,6 @@ const MUEL_WELCOME_DM = [
   '뭐든 질문해도 돼. 모르면 모른다고 할게.',
 ].join('\n');
 
-const cleanupLegacyGuildCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
-  const cleanedNames: string[] = [];
-
-  // 이전: client.guilds.cache.values() 만 순회 — ready 시점에 캐시된 길드만 청소.
-  // 결과: cache miss 길드에 legacy 명령이 남아 사용자 자동완성에 노이즈.
-  // 변경: readyClient.guilds.fetch() 로 *모든 길드* 를 강제 수집.
-  let guilds: Array<{ id: string }>;
-  try {
-    const guildManager = await readyClient.guilds.fetch();
-    guilds = [...guildManager.values()];
-  } catch (err) {
-    console.warn('[discord] guilds.fetch failed, fallback to cache', err);
-    guilds = [...readyClient.guilds.cache.values()];
-  }
-
-  for (const guild of guilds) {
-    try {
-      const rows = await rest.get(Routes.applicationGuildCommands(readyClient.application.id, guild.id));
-      if (!Array.isArray(rows)) continue;
-
-      for (const row of rows as Array<{ id?: string; name?: string }>) {
-        if (!row.id || !row.name || !LEGACY_GUILD_HUB_COMMAND_NAMES.has(row.name)) continue;
-        await rest.delete(Routes.applicationGuildCommand(readyClient.application.id, guild.id, row.id));
-        cleanedNames.push(`${guild.id}:${row.name}`);
-      }
-    } catch (error) {
-      console.warn('[discord] legacy guild command cleanup failed', {
-        guildId: guild.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  if (cleanedNames.length > 0) {
-    lastLegacyGuildCommandCleanupAt = new Date().toISOString();
-    lastLegacyGuildCommandCleanupNames = cleanedNames;
-    console.log('[discord] cleaned legacy guild commands', { count: cleanedNames.length, names: cleanedNames });
-  } else {
-    console.log('[discord] no legacy guild commands found', { scannedGuilds: guilds.length });
-  }
-};
-
-/**
- * 글로벌 명령에 legacy 허브 명령이 남아있는지 *방어적*으로 확인 + 청소.
- *
- * registerCommands 가 매 ready 마다 PUT 으로 글로벌 명령 set 을 덮어쓰기 때문에
- * 글로벌 단에는 잔재가 남기 어렵지만, 일시적 race 또는 외부 변경에 대비.
- */
-const cleanupLegacyGlobalCommands = async (readyClient: Client<true>, rest: REST): Promise<void> => {
-  const cleanedNames: string[] = [];
-  try {
-    const rows = await rest.get(Routes.applicationCommands(readyClient.application.id));
-    if (!Array.isArray(rows)) return;
-
-    for (const row of rows as Array<{ id?: string; name?: string }>) {
-      if (!row.id || !row.name || !LEGACY_GUILD_HUB_COMMAND_NAMES.has(row.name)) continue;
-      await rest.delete(Routes.applicationCommand(readyClient.application.id, row.id));
-      cleanedNames.push(row.name);
-    }
-  } catch (err) {
-    console.warn('[discord] legacy global command cleanup failed', err);
-  }
-
-  if (cleanedNames.length > 0) {
-    console.log('[discord] cleaned legacy global commands', { count: cleanedNames.length, names: cleanedNames });
-  }
-};
-
-const registerCommands = async (readyClient: Client<true>): Promise<void> => {
-  const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
-  const memoCommandPayload = {
-    ...buildMemoSlashCommand().toJSON(),
-    // /메모 는 DM + private channel + user-install 모두 가능.
-    integration_types: [0, 1],
-    contexts: [0, 1, 2],
-  };
-
-  // Muel Activity entry point command (type=4, handler=2). 클릭 시 Discord 가 자동으로
-  // Muel 앱의 Activity 를 띄운다(런치 버튼). 예전 /일기 entry point 가 /메모(일반 명령)로
-  // 재설계되며 사라졌던 것을 복원 — registerCommands PUT 이 매 시작 글로벌 명령을 덮어쓰므로
-  // 이 set 에 포함시켜야 Discord 자동 생성 entry point 가 지워지지 않는다.
-  // 이름은 type=1 명령과 충돌하면 안 됨(도움말/구독/ping/메모/허브). 런치 대상은 Dev Portal
-  // 의 Muel 앱 Activity URL 로 결정된다.
-  const muelActivityEntryPointCommand = {
-    name: '뮤엘',
-    description: '내가 보는 우리',
-    type: 4,
-    handler: 2,
-    integration_types: [0, 1],
-    contexts: [0, 1, 2],
-  };
-
-  const commands: any[] = [
-    helpCommand.toJSON(),
-    subscribeCommandPayload,
-    pingCommand.toJSON(),
-    memoCommandPayload,
-    buildHubSlashCommand(),
-    buildRollingSlashCommand().toJSON(),
-    buildWelcomeSlashCommand().toJSON(),
-    muelActivityEntryPointCommand,
-  ];
-
-  const intendedNames = commands.map((c: any) => c.name);
-  console.log('[discord] registering global commands', { count: commands.length, names: intendedNames });
-
-  try {
-    await cleanupLegacyGlobalCommands(readyClient, rest);
-    const result = await rest.put(Routes.applicationCommands(readyClient.application.id), {
-      body: commands,
-    });
-    const registeredNames = Array.isArray(result)
-      ? (result as Array<{ name?: string }>).map((row) => row?.name ?? '?').filter(Boolean)
-      : [];
-    lastRegisteredAt = new Date().toISOString();
-    lastRegisteredCommandNames = registeredNames.length > 0 ? registeredNames : intendedNames;
-    lastRegistrationError = null;
-    console.log('[discord] replaced global commands', {
-      attempted: intendedNames,
-      registered: registeredNames,
-      note: 'Discord 글로벌 명령은 client UI 캐시 갱신에 최대 1시간까지 걸릴 수 있음',
-    });
-    await cleanupLegacyGuildCommands(readyClient, rest);
-    if (config.ownedGuildId) {
-      await rest.put(Routes.applicationGuildCommands(readyClient.application.id, config.ownedGuildId), {
-        body: [buildArchivePolicyCommand()],
-      });
-      console.log('[archivist] replaced owned-guild commands', {
-        guildId: config.ownedGuildId,
-        commands: [ARCHIVE_POLICY_COMMAND_NAME],
-      });
-    }
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const responseBody = (error as { rawError?: unknown }).rawError;
-    lastRegistrationError = detail;
-    console.error('[discord] command registration failed', {
-      attempted: intendedNames,
-      detail,
-      responseBody,
-    });
-    throw error;
-  }
-};
 
 const buildHelpMessage = () => renderDiscordMessage([{
   type: 'info-card',
@@ -380,7 +150,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   void startArchivist(readyClient);
 
   try {
-    await registerCommands(readyClient);
+    await registerMuelCommands(readyClient);
   } catch (error) {
     loginError = error instanceof Error ? error.message : String(error);
     console.error('[discord] command registration failed', error);
@@ -644,32 +414,12 @@ if (gomdoriClient) {
   // 둘 중 하나로 덮어쓰기 때문에 entry point 만 남긴다. 클릭 시 Discord 가
   // 자동으로 muel-tree /game Activity 를 띄운다 — 봇 인터랙션 핸들러는
   // /게임 에 대해 받지 않는다.
-  const gomdoriPingCommand = new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Check whether Gomdori Bot is online.');
-
-  const gomdoriActivityEntryPointCommand = {
-    name: '게임',
-    description: 'Gomdori 게임을 시작합니다.',
-    type: 4,
-    handler: 2,
-    integration_types: [0, 1],
-    contexts: [0, 1, 2],
-  };
-
   gomdoriClient.once(Events.ClientReady, async (readyGomdori) => {
     gomdoriReadyAt = new Date().toISOString();
     console.log(`[gomdori] online as ${readyGomdori.user.tag}`);
 
     try {
-      const rest = new REST({ version: '10' }).setToken(config.gomdoriBotToken!);
-      await rest.put(Routes.applicationCommands(readyGomdori.application.id), {
-        body: [
-          gomdoriPingCommand.toJSON(),
-          gomdoriActivityEntryPointCommand,
-          buildCodexSlashCommand().toJSON(),
-        ],
-      });
+      await registerGomdoriCommands(readyGomdori, config.gomdoriBotToken!);
       console.log('[gomdori] replaced global commands');
     } catch (error) {
       gomdoriLoginError = error instanceof Error ? error.message : String(error);
@@ -706,133 +456,15 @@ if (gomdoriClient) {
   });
 }
 
-// --- HTTP server ---
-
-const server = http.createServer((request, response) => {
-  if (request.url === '/health') {
-    response.writeHead(200, { 'content-type': 'text/plain' });
-    response.end('OK');
-    return;
-  }
-
-  if (request.url === '/ready') {
-    const runtime = getRuntimeStatus();
-    response.writeHead(runtime.ok ? 200 : 503, { 'content-type': 'application/json' });
-    response.end(JSON.stringify(runtime));
-    return;
-  }
-
-  if (request.url?.startsWith('/youtube/websub')) {
-    void handleYouTubeWebSubRequest(request, response, () => {
-      if (client.isReady()) requestYouTubeMonitorSync(client, 'websub');
-    });
-    return;
-  }
-
-  if (request.url === '/discord/interactions' && request.method === 'POST') {
-    void handleDiscordInteractions(request, response);
-    return;
-  }
-
-  if (request.url === '/archive/openapi.json' && request.method === 'GET') {
-    response.writeHead(200, {
-      'content-type': 'application/json',
-      'cache-control': 'public, max-age=300',
-    });
-    response.end(JSON.stringify(getArchiveOpenApiDocument(request)));
-    return;
-  }
-
-  if (request.url?.startsWith('/archive/')) {
-    void handleArchivePersonalRequest(request, response);
-    return;
-  }
-
-  if (request.url?.startsWith('/admin/reregister-commands') && request.method === 'POST') {
-    void (async () => {
-      const adminToken = process.env.MUEL_ADMIN_TOKEN?.trim();
-      const urlObj = new URL(request.url ?? '/', 'http://localhost');
-      const provided = urlObj.searchParams.get('token');
-      if (!adminToken || provided !== adminToken) {
-        response.writeHead(403, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ error: 'forbidden' }));
-        return;
-      }
-      if (!client.isReady()) {
-        response.writeHead(503, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ error: 'client not ready' }));
-        return;
-      }
-      try {
-        await registerCommands(client as Client<true>);
-        response.writeHead(200, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({
-          ok: true,
-          lastRegisteredAt,
-          lastRegisteredCommandNames,
-        }));
-      } catch (err) {
-        response.writeHead(500, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      }
-    })();
-    return;
-  }
-
-  const runtime = getRuntimeStatus();
-  response.writeHead(200, { 'content-type': 'application/json' });
-  response.end(JSON.stringify({
-    ok: runtime.ok,
-    degradedReasons: runtime.degradedReasons,
-    muel: {
-      bot: client.user?.tag ?? null,
-      readyAt,
-      loginError,
-      wsStatus: client.ws.status,
-      ai: {
-        primaryProvider: config.googleGenerativeAiApiKey ? 'gemini' : config.nvidiaApiKey ? 'nvidia' : null,
-        geminiConfigured: Boolean(config.googleGenerativeAiApiKey),
-        geminiModel: config.muelAiModel,
-        nvidiaConfigured: Boolean(config.nvidiaApiKey),
-        nvidiaModel: config.nvidiaModel,
-      },
-    },
-    gomdori: gomdoriClient
-      ? {
-          bot: gomdoriClient.user?.tag ?? null,
-          readyAt: gomdoriReadyAt,
-          loginError: gomdoriLoginError,
-          wsStatus: gomdoriClient.ws.status,
-        }
-      : null,
-    uptimeSeconds: Math.floor(process.uptime()),
-    youtubeMonitor: runtime.youtubeMonitor,
-    jobWorker: runtime.jobWorker,
-    archivist: runtime.archivist,
-    runtime: {
-      enableJobWorker: config.enableJobWorker,
-      enableYoutubeMonitor: config.enableYoutubeMonitor,
-      mentionReplyTimeoutMs: config.mentionReplyTimeoutMs,
-      enableHttpInteractions: config.enableHttpInteractions,
-    },
-    hub: getHubChannelStatus(),
-    commands: {
-      lastRegisteredAt,
-      registered: lastRegisteredCommandNames,
-      lastError: lastRegistrationError,
-      legacyGuildCleanup: {
-        lastCleanedAt: lastLegacyGuildCommandCleanupAt,
-        cleaned: lastLegacyGuildCommandCleanupNames,
-      },
-    },
-  }));
-});
-
-server.listen(config.port, () => {
-  console.log(`[http] listening on ${config.port}`);
+startRuntimeHttpServer({
+  client,
+  gomdoriClient,
+  getRuntimeStatus,
+  getMuelConnectionStatus: () => ({ readyAt, loginError }),
+  getGomdoriConnectionStatus: () => ({
+    readyAt: gomdoriReadyAt,
+    loginError: gomdoriLoginError,
+  }),
 });
 
 // --- Login ---
