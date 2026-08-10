@@ -3,6 +3,11 @@ import { config } from './config.js';
 import { getSupabaseClient } from './supabase.js';
 import { parseYouTubeChannelId } from './youtubeSubscriptionStore.js';
 import { fetchWithTimeout } from './utils/network.js';
+import { mapWithConcurrency } from './utils/concurrency.js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 const HUB_URL = 'https://pubsubhubbub.appspot.com/subscribe';
 const TOPIC_PREFIX = 'https://www.youtube.com/feeds/videos.xml?channel_id=';
@@ -21,12 +26,16 @@ const loadVideoChannelIds = async (): Promise<string[]> => {
     .from('sources')
     .select('name,url')
     .eq('is_active', true);
-  if (error) throw error;
+  if (error) {
+    observeSupabaseDataApiError(error);
+    throw error;
+  }
 
-  const ids = await Promise.all(
-    ((data ?? []) as Array<{ name: string | null; url: string }>)
-      .filter(isVideoSource)
-      .map((row) => parseYouTubeChannelId(row.url)),
+  const rows = ((data ?? []) as Array<{ name: string | null; url: string }>).filter(isVideoSource);
+  const ids = await mapWithConcurrency(
+    rows,
+    config.youtubeMonitorConcurrency,
+    (row) => parseYouTubeChannelId(row.url),
   );
   return [...new Set(ids.filter((id): id is string => Boolean(id)))];
 };
@@ -38,41 +47,50 @@ export const renewYouTubeWebSubSubscriptions = async (): Promise<{
   if (
     !config.youtubeWebSubEnabled
     || !config.youtubeWebSubCallbackUrl
+    || isSupabaseDataApiRestricted()
   ) {
     return { attempted: 0, accepted: 0 };
   }
 
   const channelIds = await loadVideoChannelIds();
-  let accepted = 0;
-  for (const channelId of channelIds) {
-    const body = new URLSearchParams({
-      'hub.callback': config.youtubeWebSubCallbackUrl,
-      'hub.mode': 'subscribe',
-      'hub.topic': `${TOPIC_PREFIX}${channelId}`,
-      'hub.verify': 'async',
-    });
-    const response = await fetchWithTimeout(
-      HUB_URL,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded',
-          'user-agent': 'MuelBot/1.0',
-        },
-        body,
-      },
-      Math.min(config.youtubeFetchTimeoutMs, 12_000),
-    );
-    if (response.ok || response.status === 202 || response.status === 204) {
-      accepted += 1;
-    } else {
-      console.warn('[youtube-websub] subscription request rejected', {
-        channelId,
-        status: response.status,
-      });
-    }
-  }
-  return { attempted: channelIds.length, accepted };
+  const acceptedByChannel = await mapWithConcurrency(
+    channelIds,
+    config.youtubeMonitorConcurrency,
+    async (channelId): Promise<number> => {
+      try {
+        const body = new URLSearchParams({
+          'hub.callback': config.youtubeWebSubCallbackUrl!,
+          'hub.mode': 'subscribe',
+          'hub.topic': `${TOPIC_PREFIX}${channelId}`,
+          'hub.verify': 'async',
+        });
+        const response = await fetchWithTimeout(
+          HUB_URL,
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/x-www-form-urlencoded',
+              'user-agent': 'MuelBot/1.0',
+            },
+            body,
+          },
+          Math.min(config.youtubeFetchTimeoutMs, 12_000),
+        );
+        if (response.ok || response.status === 202 || response.status === 204) return 1;
+        console.warn('[youtube-websub] subscription request rejected', {
+          channelId,
+          status: response.status,
+        });
+      } catch (error) {
+        console.warn('[youtube-websub] subscription request failed', { channelId, error });
+      }
+      return 0;
+    },
+  );
+  return {
+    attempted: channelIds.length,
+    accepted: acceptedByChannel.reduce((total, value) => total + value, 0),
+  };
 };
 
 const readBoundedBody = async (request: IncomingMessage): Promise<string | null> => {

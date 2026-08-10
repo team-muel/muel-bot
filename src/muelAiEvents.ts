@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { errorDetail, errorTypeName } from './errorFlavor.js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 export type MuelAiEventStatus = 'success' | 'fallback' | 'error';
 
@@ -44,6 +48,7 @@ export const logMuelAiEvent = async (
   supabase: SupabaseClient,
   input: MuelAiEventInput,
 ): Promise<string | null> => {
+  if (isSupabaseDataApiRestricted()) return null;
   const { data, error } = await supabase
     .from('muel_ai_events')
     .insert({
@@ -74,6 +79,7 @@ export const logMuelAiEvent = async (
     .single();
 
   if (error) {
+    observeSupabaseDataApiError(error);
     console.warn('[muel-ai-events] insert failed', error);
     return null;
   }

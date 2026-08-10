@@ -13,11 +13,13 @@ import {
 } from './subscribePresentation.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import type { RenderTone } from './rendering/types.js';
+import { mapWithConcurrency } from './utils/concurrency.js';
 
 export const SUBSCRIBE_COMMAND_NAME = '\uad6c\ub3c5';
 export const OPTION_ACTION = '\ub3d9\uc791';
 export const OPTION_KIND = '\uc885\ub958';
 export const OPTION_LINK = '\ub9c1\ud06c';
+const CHANNEL_FETCH_CONCURRENCY = 4;
 export const SUBSCRIBE_ACTION_LIST = 'list';
 export const SUBSCRIBE_ACTION_ADD = 'add';
 export const SUBSCRIBE_ACTION_REMOVE = 'remove';
@@ -134,7 +136,11 @@ export const handleSubscriptionListCommand = async (
     }
 
     const previewRows = rows.slice(0, 20);
-    const lines = await Promise.all(previewRows.map((row) => resolveRowChannelMeta(interaction, row)));
+    const lines = await mapWithConcurrency(
+      previewRows,
+      CHANNEL_FETCH_CONCURRENCY,
+      (row) => resolveRowChannelMeta(interaction, row),
+    );
     const suffix = rows.length > 20 ? `\n...(${rows.length - 20}개 더 있음)` : '';
 
     await interaction.editReply(buildSimpleEmbed('구독 목록', [...lines, suffix].filter(Boolean).join('\n'), 'muel'));

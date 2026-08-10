@@ -41,10 +41,27 @@ assert.deepEqual(await mapWithConcurrency([], 0, async () => 1), []);
 const sourceRoot = join(process.cwd(), 'src');
 const indexSource = readFileSync(join(sourceRoot, 'index.ts'), 'utf8');
 const httpServerSource = readFileSync(join(sourceRoot, 'runtimeHttpServer.ts'), 'utf8');
+const runtimeServicesSource = readFileSync(join(sourceRoot, 'runtimeServices.ts'), 'utf8');
+const memoryWorkerSource = readFileSync(join(sourceRoot, 'memoryWorker.ts'), 'utf8');
+const webSubSource = readFileSync(join(sourceRoot, 'youtubeWebSub.ts'), 'utf8');
+const lifecycleSource = readFileSync(join(sourceRoot, 'youtubeLifecycle.ts'), 'utf8');
+const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts'), 'utf8');
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
+assert.match(indexSource, /await startRuntimeServices\(readyClient\)/);
 assert.doesNotMatch(indexSource, /http\.createServer/);
 assert.match(httpServerSource, /createRuntimeHttpServer/);
 assert.match(httpServerSource, /\/admin\/reregister-commands/);
 assert.match(httpServerSource, /\/archive\/openapi\.json/);
+assert.ok(
+  runtimeServicesSource.indexOf('await startArchivist(client)')
+    < runtimeServicesSource.indexOf('startYouTubeMonitor(client)'),
+  'Archivist Data API preflight must run before other background services',
+);
+assert.doesNotMatch(memoryWorkerSource, /runMemoryWorkerLoop|claim_pending_jobs/);
+assert.match(memoryWorkerSource, /memoryJobPayloadSchema\.parse/);
+assert.match(webSubSource, /mapWithConcurrency/);
+assert.match(lifecycleSource, /mapWithConcurrency/);
+assert.match(rollingPaperSource, /resolveUserNames/);
+assert.match(rollingPaperSource, /new Set\(ids\)/);
 
 console.log('✅ command registry and bounded concurrency contracts');

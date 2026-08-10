@@ -12,6 +12,7 @@ import {
 } from 'discord.js';
 import { getSupabaseClient } from './supabase.js';
 import { MUEL_BRAND_COLOR } from './uiColors.js';
+import { mapWithConcurrency } from './utils/concurrency.js';
 
 // /롤링페이퍼 — 멤버끼리 서로에게 남기는 한 줄(공개 레이어). /메모(나만 보는 Muel 기억)와 별개.
 //
@@ -27,6 +28,7 @@ const OPT_TARGET = '대상';
 const OPT_WRITE = '작성';
 const MAX_LEN = 500;
 const MAX_OPTIONS = 25;
+const USER_FETCH_CONCURRENCY = 4;
 const COLOR = MUEL_BRAND_COLOR;
 
 const SEL_DELRECV = 'rp:sel:delrecv';
@@ -69,6 +71,19 @@ async function nameOf(interaction: AnyInteraction, id: string): Promise<string> 
   }
 }
 
+const resolveUserNames = async (
+  interaction: AnyInteraction,
+  ids: readonly string[],
+): Promise<Map<string, string>> => {
+  const uniqueIds = [...new Set(ids)];
+  const names = await mapWithConcurrency(
+    uniqueIds,
+    USER_FETCH_CONCURRENCY,
+    (id) => nameOf(interaction, id),
+  );
+  return new Map(uniqueIds.map((id, index) => [id, names[index] ?? '유저']));
+};
+
 export const handleRollingCommand = async (
   interaction: ChatInputCommandInteraction,
 ): Promise<void> => {
@@ -91,8 +106,9 @@ export const handleRollingCommand = async (
       .eq('target_id', target.id)
       .order('created_at', { ascending: false });
     const rows = ((forTarget ?? []) as Array<{ author_id: string; content: string }>).slice(0, MAX_OPTIONS);
-    const named = await Promise.all(rows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.author_id) })));
-    const targetName = await nameOf(interaction, target.id);
+    const names = await resolveUserNames(interaction, [...rows.map((row) => row.author_id), target.id]);
+    const named = rows.map((row) => ({ ...row, name: names.get(row.author_id) ?? '유저' }));
+    const targetName = names.get(target.id) ?? '유저';
     const lines = named.length
       ? named.map((n, i) => `**${i + 1}.** ${n.name} — ${n.content}`)
       : ['아직 남겨진 롤링페이퍼가 없어. `작성`도 같이 적으면 네가 첫 줄을 남길 수 있어.'];
@@ -187,8 +203,12 @@ export const handleRollingCommand = async (
   ]);
   const noteRows = ((notes ?? []) as Array<{ id: string; author_id: string; content: string }>).slice(0, MAX_OPTIONS);
   const blockRows = ((blocks ?? []) as Array<{ author_id: string }>).slice(0, MAX_OPTIONS);
-  const named = await Promise.all(noteRows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.author_id) })));
-  const namedBlocks = await Promise.all(blockRows.map(async (b) => ({ ...b, name: await nameOf(interaction, b.author_id) })));
+  const names = await resolveUserNames(
+    interaction,
+    [...noteRows.map((row) => row.author_id), ...blockRows.map((row) => row.author_id)],
+  );
+  const named = noteRows.map((row) => ({ ...row, name: names.get(row.author_id) ?? '유저' }));
+  const namedBlocks = blockRows.map((row) => ({ ...row, name: names.get(row.author_id) ?? '유저' }));
 
   const lines: string[] = [];
   if (named.length) lines.push(...named.map((n, i) => `**${i + 1}.** ${n.name} — ${n.content}`));
@@ -264,8 +284,9 @@ export const handleRollingButton = async (interaction: ButtonInteraction): Promi
       await interaction.update({ content: '받은 카드가 없어.', embeds: [], components: [] });
       return;
     }
-    const named = await Promise.all(rows.map(async (n) => ({ ...n, name: await nameOf(interaction, n.author_id) })));
-    const myName = await nameOf(interaction, me);
+    const names = await resolveUserNames(interaction, [...rows.map((row) => row.author_id), me]);
+    const named = rows.map((row) => ({ ...row, name: names.get(row.author_id) ?? '유저' }));
+    const myName = names.get(me) ?? '유저';
     const embed = new EmbedBuilder()
       .setTitle(`${myName} 에게 온 롤링페이퍼`)
       .setColor(COLOR)

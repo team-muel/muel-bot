@@ -1,4 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 // 부정 피드백 신호 적재 (muel_feedback_signals). Muel(봇)이 reaction/abuse/부정 리플라이를
 // 감지해 INSERT → 스케줄된 트리아지가 클러스터링/처리. 이 모듈은 어떤 경우에도 throw 하지
@@ -45,6 +49,7 @@ export const recordFeedbackSignal = async (
   supabase: SupabaseClient,
   input: FeedbackSignalInput,
 ): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   try {
     const { error } = await supabase.from('muel_feedback_signals').insert({
       signal_type: input.signalType,
@@ -59,8 +64,12 @@ export const recordFeedbackSignal = async (
       evidence: input.evidence ?? null,
       metadata: input.metadata ?? {},
     });
-    if (error) console.warn('[feedback-signal] insert error', error.message);
+    if (error) {
+      observeSupabaseDataApiError(error);
+      console.warn('[feedback-signal] insert error', error.message);
+    }
   } catch (err) {
+    observeSupabaseDataApiError(err);
     console.warn('[feedback-signal] insert failed', err);
   }
 };

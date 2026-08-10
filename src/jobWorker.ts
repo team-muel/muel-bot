@@ -73,6 +73,7 @@ const POLL_INTERVAL_MS = 5_000;
 const USER_MEMO_INGEST_INTERVAL_MS = 60_000;
 let lastUserMemoIngestAt = 0;
 const INTERACTION_EPHEMERAL_FLAG = 1 << 6;
+const DISCORD_LOOKUP_CONCURRENCY = 4;
 
 const workerStatus: JobWorkerStatus = {
   running: false,
@@ -143,9 +144,14 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
     if (payload.action === 'list') {
       const rows = await listYouTubeSubscriptions({ guildId: payload.guildId });
       const previewRows = rows.slice(0, 20);
-      const lines = await Promise.all(previewRows.map(async (row) => (
-        formatSubscriptionLine(row, await resolveWorkerChannelTarget(row.channel_id))
-      )));
+      const lines = await mapWithConcurrency(
+        previewRows,
+        DISCORD_LOOKUP_CONCURRENCY,
+        async (row) => formatSubscriptionLine(
+          row,
+          await resolveWorkerChannelTarget(row.channel_id),
+        ),
+      );
       const suffix = rows.length > 20 ? `\n...(${rows.length - 20}개 더 있음)` : '';
       const text = rows.length === 0
         ? '등록된 YouTube 구독이 없어.'

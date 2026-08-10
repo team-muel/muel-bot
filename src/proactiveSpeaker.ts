@@ -1,6 +1,10 @@
 import type { Client, GuildTextBasedChannel, Message } from 'discord.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logMuelAgentAction } from './agentActions.js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 // Muel 프로액티브(먼저 말 걸기). 침묵이 기본 — 옵트인 채널에서만, 강한 가드레일.
 const TICK_MS = 15 * 60_000;
@@ -50,15 +54,20 @@ export const maybeSpeakOnSpike = async (
   supabase: SupabaseClient,
   message: Message,
 ): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   if (!message.guildId) return;
   if (isQuietHour(kstNow().hour)) return;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('muel_proactive_configs')
     .select('enabled, spike, last_spoke_at')
     .eq('guild_id', message.guildId)
     .eq('channel_id', message.channelId)
     .maybeSingle();
+  if (error) {
+    observeSupabaseDataApiError(error);
+    return;
+  }
   const cfg = data as { enabled: boolean; spike: boolean; last_spoke_at: string | null } | null;
   if (!cfg || !cfg.enabled || !cfg.spike) return;
   if (cfg.last_spoke_at && Date.now() - new Date(cfg.last_spoke_at).getTime() < SPIKE_MIN_INTERVAL_MS) return;
@@ -85,14 +94,19 @@ export const maybeSpeakOnSpike = async (
 
 // 아침 인사 틱: KST 아침 시간대, 길드당 1회, 가장 최근 활성 옵트인 채널에만.
 const runMorningTick = async (client: Client, supabase: SupabaseClient): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   const { hour, date } = kstNow();
   if (hour !== MORNING_HOUR) return;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('muel_proactive_configs')
     .select('guild_id, channel_id')
     .eq('enabled', true)
     .eq('morning', true);
+  if (error) {
+    observeSupabaseDataApiError(error);
+    return;
+  }
   const configs = (data ?? []) as Array<{ guild_id: string; channel_id: string }>;
   if (configs.length === 0) return;
 

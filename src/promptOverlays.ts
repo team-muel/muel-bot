@@ -17,7 +17,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isSupabaseDataApiRestricted,
+  isSupabaseDataApiProbeDue,
   isSupabaseQuotaRestriction,
+  recordSupabaseDataApiSuccess,
   recordSupabaseQuotaRestriction,
 } from './serviceRestriction.js';
 
@@ -31,7 +33,7 @@ let cachedCount = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const refresh = async (supabase: SupabaseClient): Promise<void> => {
-  if (isSupabaseDataApiRestricted()) return;
+  if (isSupabaseDataApiRestricted() && !isSupabaseDataApiProbeDue()) return;
   try {
     const { data, error } = await supabase
       .from('muel_prompt_overlays')
@@ -43,6 +45,7 @@ const refresh = async (supabase: SupabaseClient): Promise<void> => {
       console.warn('[prompt-overlays] fetch failed, keeping cache', error.message);
       return;
     }
+    recordSupabaseDataApiSuccess();
     const rows = (data ?? []) as OverlayRow[];
     cachedText = rows.map((r) => r.content.trim()).filter(Boolean).join('\n\n');
     cachedKeys = rows.map((r) => r.key);

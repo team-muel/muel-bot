@@ -25,6 +25,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { config } from './config.js';
 import { getBareTextModel, type MuelModelProvider } from './modelRegistry.js';
 import { classifyAiError, logMuelBackgroundAiEvent } from './muelAiEvents.js';
+import { isSupabaseDataApiRestricted } from './serviceRestriction.js';
 
 type Probe = { provider: MuelModelProvider; modelId: string; note: string };
 
@@ -71,6 +72,9 @@ const PROBE_PROMPT = 'healthcheck ping. Reply with the single word: pong';
 
 export const runProviderHealthcheck = async (supabase: SupabaseClient | null): Promise<void> => {
   if (!config.enableProviderHealthcheck) return;
+  // A probe without durable telemetry cannot satisfy its observability goal.
+  // Skip model spend until the Data API circuit closes again.
+  if (supabase && isSupabaseDataApiRestricted()) return;
   const probes = buildProbes();
   if (probes.length === 0) return;
   console.log('[provider-healthcheck] probing', probes.map((p) => `${p.provider}:${p.modelId}`).join(', '));
