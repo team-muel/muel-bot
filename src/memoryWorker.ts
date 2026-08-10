@@ -9,33 +9,12 @@ import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 import { repairedObjectOutput } from './aiRepair.js';
 import { maybeUpdateSocialProfile } from './socialProfile.js';
 
-type MemoryWorkerStatus = {
-  enabled: boolean;
-  running: boolean;
-  pollIntervalMs: number;
-  lastLoopStartedAt: string | null;
-  lastLoopFinishedAt: string | null;
-  lastSuccessAt: string | null;
-  lastErrorAt: string | null;
-  lastError: string | null;
-  lastClaimedJobs: number;
-  lastProcessedJobId: string | null;
-};
-
-const POLL_INTERVAL_MS = 60_000;
-
-const workerStatus: MemoryWorkerStatus = {
-  enabled: config.enableJobWorker,
-  running: false,
-  pollIntervalMs: POLL_INTERVAL_MS,
-  lastLoopStartedAt: null,
-  lastLoopFinishedAt: null,
-  lastSuccessAt: null,
-  lastErrorAt: null,
-  lastError: null,
-  lastClaimedJobs: 0,
-  lastProcessedJobId: null,
-};
+const memoryJobPayloadSchema = z.object({
+  chatId: z.string().min(1),
+  messageId: z.string().min(1),
+  source: z.string().min(1),
+  createdAt: z.string().min(1),
+});
 
 const extractMemorySchema = z.object({
   memories: z.array(z.object({
@@ -94,13 +73,13 @@ CRITICAL RULES (QUALITY GATES):
 
 REINFORCEMENT CHECK: 프롬프트에 EXISTING DIRECT MEMOS 목록이 있으면, 이 대화에서 주제가 명확히 재등장한 메모의 인덱스를 reinforced_memo_indices 에 담아라. 확실한 것만.`;
 
-export async function processMemoryJob(job: any) {
+export async function processMemoryJob(job: { payload: unknown }) {
   const supabase = getSupabaseClient();
   const extractModel = getPrimaryTextModel('extract');
   if (!extractModel) {
     throw new Error('Memory extraction model is not configured');
   }
-  const { payload } = job;
+  const payload = memoryJobPayloadSchema.parse(job.payload);
   const { chatId, messageId } = payload;
 
   // 1. Fetch chat to find the user id
@@ -421,63 +400,3 @@ Task:
     }
   }
 }
-
-export async function runMemoryWorkerLoop() {
-  const supabase = getSupabaseClient();
-  workerStatus.running = true;
-  console.log('[memory] Worker started');
-  while (true) {
-    workerStatus.lastLoopStartedAt = new Date().toISOString();
-    try {
-      const { data: jobs, error } = await supabase.rpc('claim_pending_jobs', {
-        p_worker_id: 'memory-worker-node',
-        p_limit: 5,
-      });
-
-      if (error) {
-        workerStatus.lastErrorAt = new Date().toISOString();
-        workerStatus.lastError = error.message || String(error);
-        workerStatus.lastClaimedJobs = 0;
-        console.error('[memory] claim_pending_jobs error', error);
-      } else if (jobs && jobs.length > 0) {
-        workerStatus.lastClaimedJobs = jobs.length;
-        for (const job of jobs) {
-          try {
-            if (job.type === 'extract_memory') {
-              await processMemoryJob(job);
-            }
-            // Complete job
-            await supabase.rpc('complete_job', { p_job_id: job.id });
-            workerStatus.lastProcessedJobId = job.id;
-            workerStatus.lastSuccessAt = new Date().toISOString();
-            workerStatus.lastError = null;
-          } catch (jobErr: any) {
-            workerStatus.lastErrorAt = new Date().toISOString();
-            workerStatus.lastError = jobErr?.message || 'Unknown error';
-            console.error(`[memory] job ${job.id} failed`, jobErr);
-            await supabase.rpc('fail_job', {
-              p_job_id: job.id,
-              p_error: jobErr.message || 'Unknown error',
-              p_retry_delay_seconds: 60 * 5, // Retry after 5 mins
-            });
-          }
-        }
-      } else {
-        workerStatus.lastClaimedJobs = 0;
-        workerStatus.lastSuccessAt = new Date().toISOString();
-        workerStatus.lastError = null;
-      }
-    } catch (err) {
-      workerStatus.lastErrorAt = new Date().toISOString();
-      workerStatus.lastError = err instanceof Error ? err.message : String(err);
-      console.error('[memory] worker loop error', err);
-    } finally {
-      workerStatus.lastLoopFinishedAt = new Date().toISOString();
-    }
-
-    // Wait before polling again (60s — jobs have a 30min delay anyway)
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-  }
-}
-
-export const getMemoryWorkerStatus = (): MemoryWorkerStatus => ({ ...workerStatus });

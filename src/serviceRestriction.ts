@@ -82,6 +82,10 @@ export class SupabaseRestrictionCircuit {
     return Number.isFinite(nextProbeAt) ? Math.max(0, nextProbeAt - now) : this.baseDelayMs;
   }
 
+  isProbeDue(now = Date.now()): boolean {
+    return !this.status.active || this.retryDelay(now) === 0;
+  }
+
   getStatus(): SupabaseRestrictionStatus {
     return { ...this.status };
   }
@@ -103,6 +107,23 @@ export const recordSupabaseQuotaRestriction = (
   error: unknown,
 ): SupabaseRestrictionStatus => restrictionCircuit.recordRestriction(error);
 
+/**
+ * Feed a Data API error into the shared circuit when it is the known Fair Use
+ * restriction. Returns true when the error was consumed as a restriction so
+ * callers can keep ordinary schema/logic errors visible.
+ */
+export const observeSupabaseDataApiError = (error: unknown): boolean => {
+  if (!isSupabaseQuotaRestriction(error)) return false;
+  restrictionCircuit.recordRestriction(error);
+  return true;
+};
+
+export const assertSupabaseDataApiAvailable = (): void => {
+  if (!restrictionCircuit.isOpen()) return;
+  const status = restrictionCircuit.getStatus();
+  throw new Error(`Supabase Data API is temporarily restricted: ${status.reason ?? 'Fair Use restriction'}`);
+};
+
 export const recordSupabaseDataApiSuccess = (): void => {
   restrictionCircuit.recordSuccess();
 };
@@ -110,6 +131,11 @@ export const recordSupabaseDataApiSuccess = (): void => {
 export const isSupabaseDataApiRestricted = (): boolean => restrictionCircuit.isOpen();
 
 export const getSupabaseRestrictionRetryDelay = (): number => restrictionCircuit.retryDelay();
+
+/** True for healthy state and for the single probe window after backoff. */
+export const isSupabaseDataApiProbeDue = (): boolean => (
+  restrictionCircuit.isProbeDue()
+);
 
 export const getSupabaseRestrictionStatus = (): SupabaseRestrictionStatus => (
   restrictionCircuit.getStatus()

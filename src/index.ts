@@ -6,17 +6,12 @@ import {
 } from './subscribe.js';
 import {
   getYouTubeMonitorStatus,
-  startYouTubeMonitor,
 } from './youtubeMonitor.js';
 import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
-import { configureJobWorker, getJobWorkerStatus, runJobWorkerLoop } from './jobWorker.js';
+import { getJobWorkerStatus } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
-import { startFeedbackObserver } from './feedbackObserver.js';
-import { runProviderHealthcheck } from './providerHealthcheck.js';
-import { initPromptOverlays } from './promptOverlays.js';
-import { runSocialEval } from './socialEval.js';
 import { observeCommunityMessage } from './communityFlow.js';
 import { renderDiscordMessage } from './rendering/discordRenderer.js';
 import {
@@ -28,7 +23,6 @@ import { isHubChannelActive } from './hubChannels.js';
 import { handleResearchEnrichButton, isResearchEnrichButton, handleResearchDeepButton, isResearchDeepButton } from './researchEnrich.js';
 import { handleMuelActionButton, isMuelActionButton } from './actionConfirmations.js';
 import { handleMemoCommand, handleMemoSelectMenu, isMemoSelectMenu, MEMO_COMMAND_NAME } from './memoHandler.js';
-import { startProactiveScheduler } from './proactiveSpeaker.js';
 import { ROLLING_COMMAND_NAME, handleRollingCommand, handleRollingButton, isRollingButton, handleRollingSelect, isRollingSelect } from './rollingPaperHandler.js';
 import { handleMemoProposalButton, isMemoProposalButton } from './memoProposal.js';
 import { WELCOME_COMMAND_NAME, handleWelcomeCommand, postWelcomeIfConfigured } from './welcomeHandler.js';
@@ -40,7 +34,6 @@ import {
   archiveMessageDelete,
   archiveMessageUpdate,
   getArchivistStatus,
-  startArchivist,
 } from './archivist/index.js';
 import {
   ARCHIVE_POLICY_COMMAND_NAME,
@@ -53,6 +46,7 @@ import {
 } from './discordCommandRegistry.js';
 import { getSupabaseRestrictionStatus } from './serviceRestriction.js';
 import { startRuntimeHttpServer } from './runtimeHttpServer.js';
+import { startRuntimeServices } from './runtimeServices.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -146,8 +140,6 @@ const buildHelpMessage = () => renderDiscordMessage([{
 client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
-  configureJobWorker(readyClient);
-  void startArchivist(readyClient);
 
   try {
     await registerMuelCommands(readyClient);
@@ -156,39 +148,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('[discord] command registration failed', error);
   }
 
-  if (config.enableYoutubeMonitor) {
-    startYouTubeMonitor(readyClient);
-  }
-
-  startProactiveScheduler(readyClient, getSupabaseClient());
-  startFeedbackObserver(readyClient, getSupabaseClient());
-
-  // DB 프롬프트 오버레이 로드(+5분 주기 리프레시) — 실패해도 기동은 계속.
-  const supabaseForOverlays = getSupabaseClient();
-  if (supabaseForOverlays) {
-    initPromptOverlays(supabaseForOverlays)
-      .then(() => {
-        // 소셜 골든셋 eval 은 오버레이 로드 *후* 에 실행 — 실제 배포 프롬프트와
-        // 동일 조건이어야 채점이 의미 있다. ENABLE_SOCIAL_EVAL=true 부팅에서만.
-        return runSocialEval(supabaseForOverlays);
-      })
-      .catch((err) => {
-        console.warn('[prompt-overlays/social-eval] init failed', err);
-      });
-  }
-
-  // 프로바이더 도달성 검증 — 설정된 프로바이더마다 초소형 프로브를 날려
-  // muel_ai_events(source='healthcheck')로 적재. NVIDIA/MindLogic 경로가
-  // 실제로 응답을 반환하는지 텔레메트리에서 관측 가능해진다.
-  runProviderHealthcheck(getSupabaseClient()).catch((err) => {
-    console.warn('[provider-healthcheck] crashed', err);
-  });
-
-  if (config.enableJobWorker) {
-    runJobWorkerLoop().catch(err => {
-      console.error('[jobs] worker loop crashed', err);
-    });
-  }
+  await startRuntimeServices(readyClient);
 });
 
 if (!config.enableHttpInteractions) {

@@ -7,27 +7,58 @@ import {
   runArchiveBackfill,
   startAttachmentCopyWorker,
 } from './workers.js';
+import {
+  getSupabaseRestrictionStatus,
+  isSupabaseDataApiProbeDue,
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+  recordSupabaseDataApiSuccess,
+} from '../serviceRestriction.js';
 
 let store: ArchiveStore | null = null;
 let ready = false;
+let starting = false;
 let lastError: string | null = null;
+let lastAttemptAt: string | null = null;
+let retryTimer: NodeJS.Timeout | null = null;
+
+const RETRY_INTERVAL_MS = 60_000;
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 export const getArchivistStatus = () => ({
   enabled: Boolean(config.ownedGuildId),
   ready,
+  starting,
   guildIdConfigured: Boolean(config.ownedGuildId),
   lastError,
+  lastAttemptAt,
+  retryScheduled: Boolean(retryTimer),
   backfill: { ...backfillStatus },
   attachmentCopy: { ...attachmentCopyStatus },
 });
 
 export const startArchivist = async (client: Client<true>): Promise<void> => {
-  if (!config.ownedGuildId || ready) return;
+  if (!config.ownedGuildId) return;
+  if (!retryTimer) {
+    retryTimer = setInterval(() => {
+      void startArchivist(client);
+    }, RETRY_INTERVAL_MS);
+    retryTimer.unref();
+  }
+  if (ready || starting) return;
+  if (isSupabaseDataApiRestricted() && !isSupabaseDataApiProbeDue()) {
+    const restriction = getSupabaseRestrictionStatus();
+    lastError = `waiting for Supabase Data API recovery: ${restriction.reason ?? 'restricted'}`;
+    return;
+  }
+
+  starting = true;
+  lastAttemptAt = new Date().toISOString();
   try {
     store = new ArchiveStore();
     await store.assertReady();
+    recordSupabaseDataApiSuccess();
     ready = true;
     lastError = null;
     client.rest.on('rateLimited', (info) => {
@@ -43,10 +74,13 @@ export const startArchivist = async (client: Client<true>): Promise<void> => {
     });
     console.log('[archivist] ready', { guildId: store.guildId });
   } catch (error) {
+    observeSupabaseDataApiError(error);
     ready = false;
     store = null;
     lastError = errorMessage(error);
     console.error('[archivist] disabled after preflight failure', { error: lastError });
+  } finally {
+    starting = false;
   }
 };
 

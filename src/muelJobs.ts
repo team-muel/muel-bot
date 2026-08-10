@@ -1,4 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  assertSupabaseDataApiAvailable,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 export async function enqueueJob(
   supabase: SupabaseClient,
@@ -7,6 +11,7 @@ export async function enqueueJob(
   dedupeKey?: string,
   runAfter?: string,
 ): Promise<string | null> {
+  assertSupabaseDataApiAvailable();
   const row = {
     type,
     payload,
@@ -25,6 +30,8 @@ export async function enqueueJob(
     return data?.id ?? null;
   }
 
+  observeSupabaseDataApiError(error);
+
   if (error.code === '23505' && dedupeKey) {
     const { data: existing, error: selectError } = await supabase
       .from('muel_jobs')
@@ -34,6 +41,7 @@ export async function enqueueJob(
       .maybeSingle();
 
     if (selectError) {
+      observeSupabaseDataApiError(selectError);
       throw selectError;
     }
     return existing?.id ?? null;

@@ -845,6 +845,7 @@ export const startYouTubeMonitor = (client: Client): void => {
     requestYouTubeMonitorSync(client);
   };
   const renewWebSub = () => {
+    if (isSupabaseDataApiRestricted()) return;
     void renewYouTubeWebSubSubscriptions()
       .then(({ attempted, accepted }) => {
         if (attempted > 0) {
@@ -856,11 +857,11 @@ export const startYouTubeMonitor = (client: Client): void => {
       });
   };
   const runLifecycle = () => {
-    if (lifecycleRunning) return;
+    if (lifecycleRunning || isSupabaseDataApiRestricted()) return;
     lifecycleRunning = true;
     void runYouTubeApiDataLifecycle()
       .then((result) => {
-        if (result.metadataRefreshed || result.deleted || result.statsRefreshed) {
+        if (result.metadataRefreshed || result.deleted || result.statsRefreshed || result.failed) {
           console.log('[youtube-lifecycle] maintenance complete', result);
         }
       })

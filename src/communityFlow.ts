@@ -7,6 +7,10 @@ import { maybeSpeakOnSpike } from './proactiveSpeaker.js';
 import { getRecentMessages } from './channelBuffer.js';
 import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 const BUCKET_MS = 10 * 60_000;
 const MIN_MESSAGES_PER_BUCKET = 12;
@@ -42,6 +46,7 @@ export const observeCommunityMessage = (
   supabase: SupabaseClient,
   message: Message,
 ): void => {
+  if (isSupabaseDataApiRestricted()) return;
   if (!message.guildId || message.author.bot || !message.content.trim()) return;
 
   const bucketStart = bucketStartFor(message.createdTimestamp);
@@ -78,6 +83,7 @@ export const observeCommunityMessage = (
       .single();
 
     if (error) {
+      observeSupabaseDataApiError(error);
       console.warn('[community-flow] signal insert failed', error);
       return;
     }

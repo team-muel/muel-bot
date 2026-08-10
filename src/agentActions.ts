@@ -1,4 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+} from './serviceRestriction.js';
 
 /**
  * Stage 5 — agent action audit log.
@@ -44,6 +48,7 @@ export const logMuelAgentAction = async (
   supabase: SupabaseClient,
   input: AgentActionInput,
 ): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   const { error } = await supabase.from('muel_agent_actions').insert({
     trigger_source: input.triggerSource,
     trigger_detail: input.triggerDetail ?? null,
@@ -58,6 +63,7 @@ export const logMuelAgentAction = async (
   });
 
   if (error) {
+    observeSupabaseDataApiError(error);
     console.warn('[muel-agent-actions] insert failed', error);
   }
 };
