@@ -59,7 +59,9 @@ Optional:
 - `MUEL_EMBEDDING_DIMENSIONS` — defaults to `768`
 - `NVIDIA_API_KEY` and `NVIDIA_MODEL` — optional fallback provider, default model `deepseek-ai/deepseek-v4-pro`
 - `ENABLE_JOB_WORKER` — defaults to `true`; `ENABLE_MEMORY_WORKER` is still accepted as a legacy alias
+- `JOB_WORKER_CONCURRENCY` — maximum claimed jobs processed in parallel; defaults to `2`
 - `ENABLE_YOUTUBE_MONITOR` — defaults to `true`
+- `YOUTUBE_MONITOR_CONCURRENCY` — maximum independent sources checked in parallel; defaults to `3`
 - `ENABLE_HTTP_INTERACTIONS` — defaults to `false`
 - `MENTION_REPLY_TIMEOUT_MS` — defaults to `15000`
 - `AIQ_ENABLED` — toggles the "이 소식 더 알아보기" enrichment button. Default `true`.
@@ -70,6 +72,8 @@ Optional:
 - `AIQ_TOPIC_MAX_CHARS` — cap on topic string sent to AI-Q. Default 2000.
 - `DISCORD_APPLICATION_PUBLIC_KEY` — required when `ENABLE_HTTP_INTERACTIONS=true`
 - `GOMDORI_APPLICATION_PUBLIC_KEY` — optional second signature key for Gomdori HTTP interactions
+
+When Supabase returns its Fair Use `402` restriction response, the runtime opens a shared circuit breaker. Database-backed background work pauses for an exponentially increasing delay (60 seconds up to 15 minutes), while mention replies continue in stateless mode. `/ready` exposes the restriction and next probe time.
 
 Archivist (optional; setting `OWNED_GUILD_ID` enables it):
 

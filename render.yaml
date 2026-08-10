@@ -67,8 +67,12 @@ services:
         sync: false
       - key: ENABLE_JOB_WORKER
         value: "true"
+      - key: JOB_WORKER_CONCURRENCY
+        value: "2"
       - key: ENABLE_YOUTUBE_MONITOR
         value: "true"
+      - key: YOUTUBE_MONITOR_CONCURRENCY
+        value: "3"
       - key: YOUTUBE_COMMUNITY_ENABLED
         value: "true"
       - key: YOUTUBE_SUPPRESS_SHORTS

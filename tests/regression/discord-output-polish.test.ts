@@ -93,12 +93,12 @@ check('/구독 presentation hides row id, raw YouTube id, raw enum labels, and c
 });
 
 check('/허브 grouped command registration has guild-scoped legacy cleanup', () => {
-  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
-  assert.match(index, /buildHubSlashCommand\(\)/);
-  assert.match(index, /LEGACY_GUILD_HUB_COMMAND_NAMES/);
-  assert.match(index, /Routes\.applicationGuildCommands/);
-  assert.match(index, /Routes\.applicationGuildCommand/);
-  assert.doesNotMatch(index, /new SlashCommandBuilder\(\)\s*\.setName\('허브활성화'\)/);
+  const registry = readFileSync(join(SRC, 'discordCommandRegistry.ts'), 'utf8');
+  assert.match(registry, /buildHubSlashCommand\(\)/);
+  assert.match(registry, /LEGACY_GUILD_HUB_COMMAND_NAMES/);
+  assert.match(registry, /Routes\.applicationGuildCommands/);
+  assert.match(registry, /Routes\.applicationGuildCommand/);
+  assert.doesNotMatch(registry, /new SlashCommandBuilder\(\)\s*\.setName\('허브활성화'\)/);
 });
 
 check('renderer emits info-card link button and select menu rows', () => {
@@ -130,9 +130,9 @@ check('/메모 select menu interactions are routed', () => {
 });
 
 check('legacy global entry point commands are deleted before bulk command replacement', () => {
-  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
-  const cleanup = index.indexOf('await cleanupLegacyGlobalCommands(readyClient, rest);');
-  const replace = index.indexOf('await rest.put(Routes.applicationCommands(readyClient.application.id)');
+  const registry = readFileSync(join(SRC, 'discordCommandRegistry.ts'), 'utf8');
+  const cleanup = registry.indexOf('await cleanupLegacyGlobalCommands(readyClient, rest);');
+  const replace = registry.indexOf('await rest.put(Routes.applicationCommands(readyClient.application.id)');
   assert.ok(cleanup >= 0, 'missing pre-cleanup call');
   assert.ok(replace >= 0, 'missing global replacement call');
   assert.ok(cleanup < replace, 'legacy entry point cleanup must run before bulk PUT');

@@ -133,14 +133,14 @@ assert(
 );
 
 const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+const commandRegistry = readFileSync(join(SRC, 'discordCommandRegistry.ts'), 'utf8');
 assert(
-  'index.ts registers the hub command via HUB_COMMAND_NAME from conciergeHandler',
-  /HUB_COMMAND_NAME/.test(index) &&
-    /buildHubSlashCommand\(\)/.test(index),
+  'command registry registers the grouped hub command',
+  /buildHubSlashCommand\(\)/.test(commandRegistry),
 );
 assert(
-  'index.ts does not register the obsolete /물어봐 command',
-  !/물어봐/.test(index),
+  'runtime does not register the obsolete /물어봐 command',
+  !/물어봐/.test(index) && !/물어봐/.test(commandRegistry),
 );
 
 console.log(`\n${'='.repeat(50)}`);

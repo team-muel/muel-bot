@@ -25,7 +25,11 @@ import { REACTION_DONE, tagMessage } from './agentReactions.js';
 import { classifyActionDraft } from './actionDraft.js';
 import { classifyProposeMemo, buildMemoProposalCard } from './memoProposal.js';
 import { buildHubActionConfirmation } from './actionConfirmations.js';
-import { isSupabaseQuotaRestriction } from './serviceRestriction.js';
+import {
+  isSupabaseDataApiRestricted,
+  isSupabaseQuotaRestriction,
+  recordSupabaseQuotaRestriction,
+} from './serviceRestriction.js';
 
 const recentRequests = new Map<string, { content: string; at: number }>();
 const RECENT_REQUEST_TTL_MS = 20_000;
@@ -235,7 +239,7 @@ export const handleMuelMention = async (
 
   let inboundMessageId: string | null = null;
   let chatId: string | null = null;
-  let statelessMode = false;
+  let statelessMode = isSupabaseDataApiRestricted();
   const lightweightTurn = isLightweightTurn(effectiveText);
   const replyStartedAt = Date.now();
 
@@ -245,9 +249,14 @@ export const handleMuelMention = async (
       await typingChannel.sendTyping();
     }
 
-    void upsertDiscordMuelProfile(supabase, message.author).catch((profileError) => {
-      console.warn('[muel] profile upsert failed', profileError);
-    });
+    if (!statelessMode) {
+      void upsertDiscordMuelProfile(supabase, message.author).catch((profileError) => {
+        if (isSupabaseQuotaRestriction(profileError)) {
+          recordSupabaseQuotaRestriction(profileError);
+        }
+        console.warn('[muel] profile upsert failed', profileError);
+      });
+    }
 
     const userMessageId = crypto.randomUUID();
     const userParts = effectiveText ? [{ type: 'text', text: effectiveText }, ...imageParts] : imageParts;
@@ -259,29 +268,36 @@ export const handleMuelMention = async (
       discordUsername: message.author.username,
       externalMessageId: message.id,
     };
+    const buildStatelessHistory = (): UIMessage[] => [{
+      id: userMessageId,
+      role: 'user',
+      parts: userParts,
+      metadata: messageMetadata,
+    } as UIMessage];
     let history: UIMessage[];
-    try {
-      const prepared = await prepareChatTurn(supabase, {
-        source: 'discord',
-        sourceChannelId: message.channelId,
-        sourceThreadId: message.channelId,
-        userMessageId,
-        userParts,
-        metadata: messageMetadata,
-      });
-      chatId = prepared.chatId;
-      history = prepared.messages;
-    } catch (error) {
-      if (!isSupabaseQuotaRestriction(error)) throw error;
-      statelessMode = true;
+    if (statelessMode) {
       chatId = crypto.randomUUID();
-      history = [{
-        id: userMessageId,
-        role: 'user',
-        parts: userParts,
-        metadata: messageMetadata,
-      } as UIMessage];
-      console.warn('[muel] Supabase quota restriction detected; continuing stateless');
+      history = buildStatelessHistory();
+    } else {
+      try {
+        const prepared = await prepareChatTurn(supabase, {
+          source: 'discord',
+          sourceChannelId: message.channelId,
+          sourceThreadId: message.channelId,
+          userMessageId,
+          userParts,
+          metadata: messageMetadata,
+        });
+        chatId = prepared.chatId;
+        history = prepared.messages;
+      } catch (error) {
+        if (!isSupabaseQuotaRestriction(error)) throw error;
+        recordSupabaseQuotaRestriction(error);
+        statelessMode = true;
+        chatId = crypto.randomUUID();
+        history = buildStatelessHistory();
+        console.warn('[muel] Supabase quota restriction detected; continuing stateless');
+      }
     }
     inboundMessageId = userMessageId;
 
@@ -462,7 +478,7 @@ export const handleMuelMention = async (
 
     // ADR-003 P4a propose_memo (2026-06-09): Muel 답 직후 사용자 발언이 *기억 가치* 있는지
     // fire-and-forget 분류. should_propose=true 면 [가르치기][아니] 카드 발행. silent 멘션.
-    void (async () => {
+    if (!statelessMode) void (async () => {
       try {
         const proposal = await classifyProposeMemo(supabase, {
           userText: userText,
@@ -514,7 +530,7 @@ export const handleMuelMention = async (
       discordReplyId: sent.id,
     });
 
-    const aiEventId = await logMuelAiEvent(supabase, {
+    const aiEventId = statelessMode ? null : await logMuelAiEvent(supabase, {
       status: reply.provider === 'none'
         ? 'fallback'
         : fallbackReason
@@ -547,7 +563,7 @@ export const handleMuelMention = async (
       },
     });
 
-    void logMuelAgentAction(supabase, {
+    if (!statelessMode) void logMuelAgentAction(supabase, {
       triggerSource: 'mention',
       status: 'responded',
       discordGuildId: message.guildId,

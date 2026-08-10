@@ -15,6 +15,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  isSupabaseDataApiRestricted,
+  isSupabaseQuotaRestriction,
+  recordSupabaseQuotaRestriction,
+} from './serviceRestriction.js';
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -26,6 +31,7 @@ let cachedCount = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const refresh = async (supabase: SupabaseClient): Promise<void> => {
+  if (isSupabaseDataApiRestricted()) return;
   try {
     const { data, error } = await supabase
       .from('muel_prompt_overlays')
@@ -33,6 +39,7 @@ const refresh = async (supabase: SupabaseClient): Promise<void> => {
       .eq('enabled', true)
       .order('priority', { ascending: true });
     if (error) {
+      if (isSupabaseQuotaRestriction(error)) recordSupabaseQuotaRestriction(error);
       console.warn('[prompt-overlays] fetch failed, keeping cache', error.message);
       return;
     }
@@ -44,6 +51,7 @@ const refresh = async (supabase: SupabaseClient): Promise<void> => {
     }
     cachedCount = rows.length;
   } catch (err) {
+    if (isSupabaseQuotaRestriction(err)) recordSupabaseQuotaRestriction(err);
     console.warn('[prompt-overlays] refresh crashed, keeping cache', err instanceof Error ? err.message : String(err));
   }
 };
