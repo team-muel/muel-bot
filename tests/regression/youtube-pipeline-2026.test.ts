@@ -140,6 +140,15 @@ check('official handle lookup, batch stats, and 2026 metadata are wired', () => 
   assert.match(metadata, /brandPartnerChannelId/);
 });
 
+check('public view counts carry the 2026-08-24 semantic boundary', () => {
+  const store = readFileSync(join(SRC, 'youtubeItemStore.ts'), 'utf8');
+  const lifecycle = readFileSync(join(SRC, 'youtubeLifecycle.ts'), 'utf8');
+  assert.match(store, /YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT = '2026-08-24T00:00:00.000Z'/);
+  assert.match(store, /public_play_starts_v2/);
+  assert.match(store, /시계열 비교 금지/);
+  assert.match(lifecycle, /viewCountSemantics: YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS/);
+});
+
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
