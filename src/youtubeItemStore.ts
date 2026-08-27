@@ -3,6 +3,9 @@ import type { YouTubeChannelMetadata, YouTubeVideoMetadata } from './youtubeMeta
 
 export type YouTubeItemKind = 'video' | 'shorts' | 'community_post';
 
+export const YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT = '2026-08-24T00:00:00.000Z';
+export const YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS = 'public_play_starts_v2';
+
 export type YouTubeItemUpsert = {
   sourceId?: number | null;
   kind: YouTubeItemKind;
@@ -49,6 +52,17 @@ export type StoredYouTubeItem = {
 const truncate = (value: string | null | undefined, max: number): string | null => {
   if (!value) return null;
   return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
+};
+
+const formatPublicViewCount = (
+  statistics: Record<string, string | null> | null,
+  metadata: Record<string, unknown> | null,
+): string => {
+  if (!statistics?.viewCount) return '';
+  const semantics = metadata?.viewCountSemantics;
+  return semantics === YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS
+    ? ` · 공개 조회수 ${statistics.viewCount} (2026-08-24 이후 재생 시작 기준)`
+    : ` · 공개 조회수 ${statistics.viewCount} (집계 기준 미표기·시계열 비교 금지)`;
 };
 
 const toIsoDateOrNull = (value: string | null | undefined): string | null => {
@@ -170,7 +184,7 @@ export async function formatRecentYouTubeItemsForContext(
   const lines = ['--- Recent YouTube Items ---'];
   for (const row of data as Array<StoredYouTubeItem>) {
     const label = row.kind === 'community_post' ? '게시글' : row.kind === 'shorts' ? '쇼츠' : '영상';
-    const stats = row.statistics?.viewCount ? ` · 조회수 ${row.statistics.viewCount}` : '';
+    const stats = formatPublicViewCount(row.statistics, row.metadata);
     const tags = row.tags?.length ? ` · tags: ${row.tags.slice(0, 5).join(', ')}` : '';
     lines.push(`[${label}] ${row.channel_title ?? 'YouTube'} - ${row.title ?? row.youtube_id}${stats}${tags}`);
     const description = truncate(row.description, 280);
@@ -198,7 +212,7 @@ export function buildResearchTopicFromItem(originTable: string, item: StoredYouT
     item.tags?.length ? `태그: ${item.tags.slice(0, 12).join(', ')}` : '',
     item.category_id ? `카테고리 ID: ${item.category_id}` : '',
     item.duration ? `길이: ${item.duration}` : '',
-    [stats.viewCount ? `조회수 ${stats.viewCount}` : '', stats.likeCount ? `좋아요 ${stats.likeCount}` : '', stats.commentCount ? `댓글 ${stats.commentCount}` : ''].filter(Boolean).join(', '),
+    [stats.viewCount ? formatPublicViewCount(stats, item.metadata).replace(/^ · /, '') : '', stats.likeCount ? `좋아요 ${stats.likeCount}` : '', stats.commentCount ? `댓글 ${stats.commentCount}` : ''].filter(Boolean).join(', '),
     item.topic_categories?.length ? `YouTube topic categories: ${item.topic_categories.join(', ')}` : '',
     youtubeMetadata?.liveBroadcastContent && youtubeMetadata.liveBroadcastContent !== 'none'
       ? `라이브 상태: ${String(youtubeMetadata.liveBroadcastContent)}`
@@ -251,6 +265,8 @@ export function buildVideoItemInput(args: {
     topicCategories: metadata?.topicCategories ?? [],
     raw: {
       source: 'videos.xml+youtube_data_api',
+      viewCountSemantics: YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS,
+      viewCountEffectiveAt: YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT,
       channel: args.channel,
       youtube: metadata,
     },
