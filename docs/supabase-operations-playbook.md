@@ -1,6 +1,6 @@
 # Supabase Operations Playbook
 
-Last updated: 2026-05-31
+Last updated: 2026-08-27
 
 Use this playbook for repeated `muel-bot` work that touches Supabase
 migrations, Edge Functions, pg_cron, or Gomdori game state.
@@ -147,8 +147,8 @@ Expected shape:
 - `cron.job.active = true`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
-- one current row may show `running` because the loop intentionally sleeps
-  between 5-second calls inside the minute
+- each run should finish quickly: the cron issues exactly one Edge Function request
+- overlapping or long-running rows indicate a regression; the database function must not sleep
 
 ## Standard Verification
 
