@@ -4,6 +4,10 @@ import {
   fetchYouTubeVideosMetadata,
   fetchYouTubeVideoStats,
 } from './youtubeMetadataClient.js';
+import {
+  YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT,
+  YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS,
+} from './youtubeItemStore.js';
 import { mapWithConcurrency } from './utils/concurrency.js';
 import {
   isSupabaseDataApiRestricted,
@@ -90,6 +94,8 @@ const refreshStaleMetadata = async (): Promise<{ refreshed: number; deleted: num
               metadata: {
                 ...(row.metadata ?? {}),
                 source: 'youtube_data_api_refresh',
+                viewCountSemantics: YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS,
+                viewCountEffectiveAt: YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT,
                 youtube: item,
               },
               api_refreshed_at: refreshedAt,
@@ -159,6 +165,8 @@ const refreshRecentStatistics = async (): Promise<{ refreshed: number; failed: n
               metadata: {
                 ...(row.metadata ?? {}),
                 statsDurationMillis: item.durationMillis,
+                viewCountSemantics: YOUTUBE_PUBLIC_VIEW_COUNT_SEMANTICS,
+                viewCountEffectiveAt: YOUTUBE_PUBLIC_VIEW_COUNT_EFFECTIVE_AT,
               },
               stats_refreshed_at: refreshedAt,
             })
