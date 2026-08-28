@@ -23,7 +23,27 @@ Current production project:
 - Region: `ap-northeast-2`
 - Gomdori schema: `mafia`
 - Scheduler job: `mafia-phase-advance`
-- Scheduler target: `/functions/v1/phase-advance`
+- Scheduler targets: `/functions/v1/phase-advance` and `/functions/v1/match-ai-act`
+- Scheduler URL source: Vault secret named `project_url`
+
+Never hardcode the hosted project URL in scheduler migrations. Each hosted, staging,
+or local environment must provide its own `project_url` Vault secret before the
+migration installs or replaces `mafia-phase-advance`. A missing secret leaves the
+environment's existing scheduler state unchanged.
+
+For the hosted project, create the non-sensitive URL secret once from an authorized
+SQL session:
+
+```sql
+select vault.create_secret(
+  'https://pqzmehtuwnxyspfhyucd.supabase.co',
+  'project_url',
+  'Environment-local Edge Function base URL'
+);
+```
+
+Local development may use `http://api.supabase.internal:8000`; never point a local
+reset at the hosted project.
 
 ## Local Docker Validation
 
