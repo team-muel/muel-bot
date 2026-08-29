@@ -45,6 +45,10 @@ select vault.create_secret(
 Local development may use `http://api.supabase.internal:8000`; never point a local
 reset at the hosted project.
 
+If the Edge Function environment defines `PHASE_ADVANCE_CRON_SECRET`, store the
+same value in Vault as `phase_advance_cron_secret`. The scheduler adds it as
+`x-cron-key`; do not place the value in migrations, logs, or documentation.
+
 ## Local Docker Validation
 
 Start Docker Desktop if the daemon is not running:
