@@ -14,7 +14,7 @@ import { decideChoice, generateChatLine } from "../_shared/ai-decide.ts";
 // match-ai-act (ADR-005, Increment 2) — AI 용병의 행동을 채운다.
 // 사람과 동일한 검증 코어(submitMatchAction)를 거치고, LLM(MindLogic) 결정은
 // best-effort 다. LLM 이 없거나 실패하면 합법 휴리스틱으로 폴백하므로 게임은 항상
-// 정상적으로 진행/완주된다. pg_cron(run_phase_advance_loop)이 5초마다 호출한다.
+// 정상적으로 진행/완주된다. pg_cron(run_phase_advance_loop)이 10초마다 호출하며,\n// 매치별 갱신형 lease가 겹친 invocation의 중복 LLM 호출을 막는다.
 // day(토론): AI 가 채팅으로 한마디 한다(LLM 자유발언, 실패 시 캔드 라인). 토론당 1회.
 
 const ACTIVE_AI_PHASES = ["night", "night_suspect", "vote", "verdict", "day"];
@@ -103,7 +103,37 @@ Deno.serve((req: Request) => {
 
     let acted = 0;
     for (const match of matches ?? []) {
-      acted += await processMatch(supabase, match.id, String(match.status));
+      const leaseHolder = crypto.randomUUID();
+      const { data: acquired, error: claimError } = await supabase.rpc(
+        "claim_match_ai_act_lease",
+        {
+          p_match_id: match.id,
+          p_holder: leaseHolder,
+          p_ttl_seconds: 60,
+        },
+      );
+      if (claimError) throw claimError;
+      if (!acquired) continue;
+
+      try {
+        acted += await processMatch(
+          supabase,
+          match.id,
+          String(match.status),
+          leaseHolder,
+        );
+      } finally {
+        const { error: releaseError } = await supabase.rpc(
+          "release_match_ai_act_lease",
+          { p_match_id: match.id, p_holder: leaseHolder },
+        );
+        if (releaseError) {
+          console.error("Failed to release match AI lease", {
+            matchId: match.id,
+            error: releaseError.message,
+          });
+        }
+      }
     }
 
     return jsonResponse({ success: true, acted }, { origin });
@@ -115,6 +145,7 @@ async function processMatch(
   supabase: any,
   matchId: string,
   status: string,
+  leaseHolder: string,
 ): Promise<number> {
   const { data: phase } = await supabase
     .from("match_phases")
@@ -158,6 +189,19 @@ async function processMatch(
   const allPlayers = players as PlayerRow[];
   let count = 0;
   for (const ai of aiPlayers) {
+    // Keep the lease alive while this invocation owns the match. If it expired
+    // or was replaced after a pause, stop before issuing another LLM request.
+    const { data: renewed, error: renewError } = await supabase.rpc(
+      "renew_match_ai_act_lease",
+      {
+        p_match_id: matchId,
+        p_holder: leaseHolder,
+        p_ttl_seconds: 60,
+      },
+    );
+    if (renewError) throw renewError;
+    if (!renewed) return count;
+
     const did = actedByActor.get(ai.user_id) ?? new Set<string>();
     const ok = await actForAi(supabase, matchId, status, ai, allPlayers, did, phase.id, phase.started_at ?? null, verdictCandidateId);
     if (ok) count++;
