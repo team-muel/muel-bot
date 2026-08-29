@@ -130,7 +130,8 @@ Deploy only the functions touched by the change:
 
 ```powershell
 npx supabase functions deploy match-action --project-ref pqzmehtuwnxyspfhyucd --use-api
-npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api\nnpx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
+npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
+npx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
 ```
 
 `phase-advance` must remain `verify_jwt=false` because `pg_cron` calls it via
@@ -171,7 +172,9 @@ Expected shape:
 - `cron.job.active = true`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
-- each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`\n- overlapping or long-running cron rows indicate a regression; the database function must not sleep\n- overlapping `match-ai-act` deliveries skip matches already held by an unexpired per-match lease
+- each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
+- overlapping or long-running cron rows indicate a regression; the database function must not sleep
+- overlapping `match-ai-act` deliveries skip matches already held by an unexpired per-match lease
 
 ## Standard Verification
 
