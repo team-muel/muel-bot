@@ -171,8 +171,7 @@ Expected shape:
 - `cron.job.active = true`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
-- each run should finish quickly: the cron issues exactly one Edge Function request
-- overlapping or long-running rows indicate a regression; the database function must not sleep
+- each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`\n- overlapping or long-running cron rows indicate a regression; the database function must not sleep\n- overlapping `match-ai-act` deliveries skip matches already held by an unexpired per-match lease
 
 ## Standard Verification
 
