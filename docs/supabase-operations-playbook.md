@@ -130,7 +130,7 @@ Deploy only the functions touched by the change:
 
 ```powershell
 npx supabase functions deploy match-action --project-ref pqzmehtuwnxyspfhyucd --use-api
-npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
+npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api\nnpx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
 ```
 
 `phase-advance` must remain `verify_jwt=false` because `pg_cron` calls it via
