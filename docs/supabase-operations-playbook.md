@@ -80,7 +80,27 @@ Only edit older migrations when the file is a local reconstruction of already
 applied remote state and the edit makes local history match production reality.
 Do not rewrite production history for convenience.
 
+## Guarded AI Scheduler Rollout
+
+When the same release changes `match-ai-act` and restores its cron driver, use
+this order so an unguarded handler is never called by the 10-second job:
+
+1. Confirm `mafia-phase-advance` is absent or inactive.
+2. Deploy the lease-aware handler before applying the scheduler migrations:
+
+   ```powershell
+   npx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
+   ```
+
+3. Apply the lease and scheduler migrations through the Remote Migration Flow.
+4. Verify the deployed function version, lease RPCs, and active cron job.
+
+The guarded handler can be deployed before its lease RPCs because the scheduler
+remains disabled during that interval. Do not restore the job before step 2.
+
 ## Remote Migration Flow
+
+For a guarded AI scheduler rollout, complete step 2 above before continuing.
 
 First inspect pending state:
 
@@ -126,22 +146,25 @@ where jobname = 'mafia-phase-advance';
 
 ## Edge Function Deploy Flow
 
-Deploy only the functions touched by the change:
+Deploy only the remaining functions touched by the change. For the guarded AI
+scheduler rollout, `match-ai-act` was already deployed before the migrations:
 
 ```powershell
 npx supabase functions deploy match-action --project-ref pqzmehtuwnxyspfhyucd --use-api
 npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
-npx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
 ```
 
-`phase-advance` must remain `verify_jwt=false` because `pg_cron` calls it via
-`net.http_post` without a Discord user JWT.
+`phase-advance` and `match-ai-act` must remain `verify_jwt=false` because
+`pg_cron` calls them via `net.http_post` without a Discord user JWT.
 
 After deployment, verify both CLI and connector state:
 
 ```powershell
 npx supabase functions list --project-ref pqzmehtuwnxyspfhyucd
 ```
+
+Confirm both scheduler targets are listed and that `match-ai-act` has a new
+version and `updated_at` from before the lease and scheduler migrations.
 
 If a deploy command says success but the function version has not changed,
 wait briefly and list again. If it still has not changed, redeploy the specific
