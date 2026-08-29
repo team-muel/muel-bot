@@ -9,6 +9,8 @@ set search_path = public, extensions, vault, pg_temp
 as $$
 declare
   target_url text;
+  cron_key text;
+  request_headers jsonb;
 begin
   select nullif(decrypted_secret, '')
     into target_url
@@ -21,14 +23,25 @@ begin
     return;
   end if;
 
+  select nullif(decrypted_secret, '')
+    into cron_key
+    from vault.decrypted_secrets
+   where name = 'phase_advance_cron_secret'
+   limit 1;
+
+  request_headers := jsonb_build_object('Content-Type', 'application/json');
+  if cron_key is not null then
+    request_headers := request_headers || jsonb_build_object('x-cron-key', cron_key);
+  end if;
+
   perform net.http_post(
     url := rtrim(target_url, '/') || '/functions/v1/phase-advance',
-    headers := '{"Content-Type": "application/json"}'::jsonb
+    headers := request_headers
   );
 
   perform net.http_post(
     url := rtrim(target_url, '/') || '/functions/v1/match-ai-act',
-    headers := '{"Content-Type": "application/json"}'::jsonb,
+    headers := request_headers,
     body := '{}'::jsonb
   );
 end;
