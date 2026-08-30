@@ -174,7 +174,7 @@ export async function formatRecentYouTubeItemsForContext(
 ): Promise<string> {
   const { data, error } = await supabase
     .from('muel_youtube_items')
-    .select('kind,youtube_id,channel_title,title,description,url,published_at,statistics,tags')
+    .select('kind,youtube_id,channel_title,title,description,url,published_at,statistics,tags,metadata')
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('last_seen_at', { ascending: false })
     .limit(limit);

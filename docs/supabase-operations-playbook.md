@@ -1,6 +1,6 @@
 # Supabase Operations Playbook
 
-Last updated: 2026-05-31
+Last updated: 2026-08-27
 
 Use this playbook for repeated `muel-bot` work that touches Supabase
 migrations, Edge Functions, pg_cron, or Gomdori game state.
@@ -23,7 +23,31 @@ Current production project:
 - Region: `ap-northeast-2`
 - Gomdori schema: `mafia`
 - Scheduler job: `mafia-phase-advance`
-- Scheduler target: `/functions/v1/phase-advance`
+- Scheduler targets: `/functions/v1/phase-advance` and `/functions/v1/match-ai-act`
+- Scheduler URL source: Vault secret named `project_url`
+
+Never hardcode the hosted project URL in scheduler migrations. Each hosted, staging,
+or local environment must provide its own `project_url` Vault secret before the
+migration installs or replaces `mafia-phase-advance`. A missing secret leaves the
+environment's existing scheduler state unchanged.
+
+For the hosted project, create the non-sensitive URL secret once from an authorized
+SQL session:
+
+```sql
+select vault.create_secret(
+  'https://pqzmehtuwnxyspfhyucd.supabase.co',
+  'project_url',
+  'Environment-local Edge Function base URL'
+);
+```
+
+Local development may use `http://api.supabase.internal:8000`; never point a local
+reset at the hosted project.
+
+If the Edge Function environment defines `PHASE_ADVANCE_CRON_SECRET`, store the
+same value in Vault as `phase_advance_cron_secret`. The scheduler adds it as
+`x-cron-key`; do not place the value in migrations, logs, or documentation.
 
 ## Local Docker Validation
 
@@ -56,7 +80,35 @@ Only edit older migrations when the file is a local reconstruction of already
 applied remote state and the edit makes local history match production reality.
 Do not rewrite production history for convenience.
 
+## Guarded AI Scheduler Rollout
+
+When the same release changes `match-ai-act` and restores its cron driver, use
+this order so an unguarded handler is never called by the 2-second job:
+
+1. Confirm `mafia-phase-advance` is absent or inactive.
+2. Deploy the lease-aware handler before applying the scheduler migrations:
+
+   ```powershell
+   npx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
+   ```
+
+3. List the deployed functions and confirm `match-ai-act` has a new version and
+   `updated_at`. If it is unchanged, redeploy and stop until this check passes:
+
+   ```powershell
+   npx supabase functions list --project-ref pqzmehtuwnxyspfhyucd
+   ```
+
+4. Apply the lease and scheduler migrations through the Remote Migration Flow.
+   The lease migration timestamp is earlier than the cron restoration migration.
+5. Verify the lease RPCs and active cron job.
+
+The guarded handler can be deployed before its lease RPCs because the scheduler
+remains disabled during that interval. Do not restore the job before step 2.
+
 ## Remote Migration Flow
+
+For a guarded AI scheduler rollout, complete steps 2–3 above before continuing.
 
 First inspect pending state:
 
@@ -102,21 +154,25 @@ where jobname = 'mafia-phase-advance';
 
 ## Edge Function Deploy Flow
 
-Deploy only the functions touched by the change:
+Deploy only the remaining functions touched by the change. For the guarded AI
+scheduler rollout, `match-ai-act` was already deployed before the migrations:
 
 ```powershell
 npx supabase functions deploy match-action --project-ref pqzmehtuwnxyspfhyucd --use-api
 npx supabase functions deploy phase-advance --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
 ```
 
-`phase-advance` must remain `verify_jwt=false` because `pg_cron` calls it via
-`net.http_post` without a Discord user JWT.
+`phase-advance` and `match-ai-act` must remain `verify_jwt=false` because
+`pg_cron` calls them via `net.http_post` without a Discord user JWT.
 
 After deployment, verify both CLI and connector state:
 
 ```powershell
 npx supabase functions list --project-ref pqzmehtuwnxyspfhyucd
 ```
+
+Confirm both scheduler targets are listed and that `match-ai-act` has a new
+version and `updated_at` from before the lease and scheduler migrations.
 
 If a deploy command says success but the function version has not changed,
 wait briefly and list again. If it still has not changed, redeploy the specific
@@ -145,10 +201,15 @@ limit 5;
 Expected shape:
 
 - `cron.job.active = true`
+- `cron.job.schedule = 2 seconds`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
-- one current row may show `running` because the loop intentionally sleeps
-  between 5-second calls inside the minute
+- each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
+- overlapping or long-running cron rows indicate a regression; the database function must not sleep
+- overlapping `match-ai-act` deliveries skip only phases already held by an unexpired phase lease
+- the phase lease expires after three seconds and is renewed every second while actor tasks are in flight, so a crashed invocation can retry inside a five-second phase
+- AI actors run concurrently outside day chat; phases with under nine seconds remaining use legal heuristics instead of waiting on an LLM
+- a verdict candidate needs more than 17 seconds remaining to use LLMs for both defense and ballot; otherwise both paths use immediate legal fallbacks
 
 ## Standard Verification
 
