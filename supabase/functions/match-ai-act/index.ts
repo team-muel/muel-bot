@@ -289,6 +289,7 @@ async function actForAi(
   phaseId: string,
   phaseStartedAt: string | null,
   verdictCandidateId: string | null,
+  useLlm: boolean,
 ): Promise<boolean> {
   const aliveOthers = players.filter((p) => p.alive && p.user_id !== ai.user_id);
   const dead = players.filter((p) => !p.alive);
@@ -302,8 +303,14 @@ async function actForAi(
     const aliveNames = aliveOthers.map((p) => p.display_name).join(", ") || "없음";
     const deadNames = dead.map((p) => p.display_name).join(", ") || "없음";
     const context = `생존자: ${aliveNames}. 탈락자: ${deadNames}. 지금은 낮 토론 — 마을은 악마를 찾아 처형하려 한다.`;
-    const res = await generateChatLine({ provider: ai.ai_provider ?? "gemini", systemHint: selfHint, context });
-    const text = (res.ok ? res.text : (pick(CANNED_LINES) ?? "…")).slice(0, 2000);
+    const res = useLlm
+      ? await generateChatLine({
+        provider: ai.ai_provider ?? "gemini",
+        systemHint: selfHint,
+        context,
+      })
+      : null;
+    const text = (res?.ok ? res.text : (pick(CANNED_LINES) ?? "…")).slice(0, 2000);
     try {
       await supabase.from("match_chats").insert({ match_id: matchId, channel: "town", sender_user_id: ai.user_id, message: text });
       // 토론당 1회 가드 마커(게임 액션 아님). action_type CHECK 에 ai_day_chat 추가됨.
@@ -331,6 +338,7 @@ async function actForAi(
     heuristic: () => string | null,
   ): Promise<string | null> => {
     if (candidates.length === 0) return null;
+    if (!useLlm) return heuristic();
     const res = await decideChoice({
       provider: ai.ai_provider ?? "gemini",
       systemHint: selfHint,
@@ -368,12 +376,14 @@ async function actForAi(
     // #6b 후보 AI 는 최후의 반론을 한 번 발언한다(채팅 마커는 ai_day_chat 재사용 — 페이즈별이라
     // 낮 발언과 겹치지 않는다). 발언 후 아래 찬반 표결을 그대로 진행한다.
     if (verdictCandidateId === ai.user_id && !did.has("ai_day_chat")) {
-      const dres = await generateChatLine({
-        provider: ai.ai_provider ?? "gemini",
-        systemHint: selfHint,
-        context: "너는 지금 처형 후보로 최후의 반론 차례다. 살아남기 위해 결백을 짧고 설득력 있게 호소하라.",
-      });
-      const dtext = (dres.ok ? dres.text : (pick(DEFENSE_LINES) ?? "저는 결백합니다.")).slice(0, 2000);
+      const dres = useLlm
+        ? await generateChatLine({
+          provider: ai.ai_provider ?? "gemini",
+          systemHint: selfHint,
+          context: "너는 지금 처형 후보로 최후의 반론 차례다. 살아남기 위해 결백을 짧고 설득력 있게 호소하라.",
+        })
+        : null;
+      const dtext = (dres?.ok ? dres.text : (pick(DEFENSE_LINES) ?? "저는 결백합니다.")).slice(0, 2000);
       try {
         await supabase.from("match_chats").insert({ match_id: matchId, channel: "town", sender_user_id: ai.user_id, message: dtext });
         await supabase.from("match_actions").insert({ phase_id: phaseId, match_id: matchId, actor_user_id: ai.user_id, action_type: "ai_day_chat", target_user_id: null, submitted_at: new Date().toISOString() });
@@ -381,17 +391,21 @@ async function actForAi(
       } catch { /* 발언 실패는 무시 — 표결은 계속 */ }
     }
     if (did.has("verdict_approve") || did.has("verdict_reject")) return false;
-    const res = await decideChoice({
-      provider: ai.ai_provider ?? "gemini",
-      systemHint: selfHint,
-      question: "처형 찬반 투표: 후보를 처형할까?",
-      candidates: [
-        { id: "verdict_approve", label: "찬성(처형한다)" },
-        { id: "verdict_reject", label: "반대(살린다)" },
-      ],
-      allowSkip: false,
-    });
-    const choice = res.ok && res.choice ? res.choice : (Math.random() < 0.5 ? "verdict_approve" : "verdict_reject");
+    const res = useLlm
+      ? await decideChoice({
+        provider: ai.ai_provider ?? "gemini",
+        systemHint: selfHint,
+        question: "처형 찬반 투표: 후보를 처형할까?",
+        candidates: [
+          { id: "verdict_approve", label: "찬성(처형한다)" },
+          { id: "verdict_reject", label: "반대(살린다)" },
+        ],
+        allowSkip: false,
+      })
+      : null;
+    const choice = res?.ok && res.choice
+      ? res.choice
+      : (Math.random() < 0.5 ? "verdict_approve" : "verdict_reject");
     return await submit(choice, null);
   }
 
