@@ -200,12 +200,14 @@ limit 5;
 
 Expected shape:
 
-- `cron.job.active = true`\n- `cron.job.schedule = 1 second`
+- `cron.job.active = true`
+- `cron.job.schedule = 1 second`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
 - each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
 - overlapping or long-running cron rows indicate a regression; the database function must not sleep
-- overlapping `match-ai-act` deliveries skip only phases already held by an unexpired phase lease\n- AI actors run concurrently outside day chat; phases with under nine seconds remaining use legal heuristics instead of waiting on an LLM
+- overlapping `match-ai-act` deliveries skip only phases already held by an unexpired phase lease
+- AI actors run concurrently outside day chat; phases with under nine seconds remaining use legal heuristics instead of waiting on an LLM
 
 ## Standard Verification
 
