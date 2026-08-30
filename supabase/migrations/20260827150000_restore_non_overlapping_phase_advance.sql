@@ -1,7 +1,10 @@
 -- Preserve Gomdori phase advancement and AI actions without the overlapping
 -- 55-second loop. The target URL must be configured per environment in Vault;
 -- local or staging resets never fall back to the production project.
-create or replace function public.run_phase_advance_loop()
+--
+-- This uses a new tick function so an environment without project_url keeps
+-- both its existing cron row and the implementation that row already invokes.
+create or replace function public.run_phase_advance_tick()
 returns void
 language plpgsql
 security definer
@@ -47,9 +50,9 @@ begin
 end;
 $$;
 
-revoke all on function public.run_phase_advance_loop() from public;
-revoke all on function public.run_phase_advance_loop() from anon;
-revoke all on function public.run_phase_advance_loop() from authenticated;
+revoke all on function public.run_phase_advance_tick() from public;
+revoke all on function public.run_phase_advance_tick() from anon;
+revoke all on function public.run_phase_advance_tick() from authenticated;
 
 do $$
 declare
@@ -63,11 +66,11 @@ begin
        and nullif(decrypted_secret, '') is not null
   ) into has_project_url;
 
-  -- Preserve whatever scheduler state the environment already has until an
-  -- explicit environment-local URL exists. This prevents cross-project calls
-  -- and avoids disabling a separately managed deployment.
+  -- Preserve the existing job and its referenced function until an explicit
+  -- environment-local URL exists. This avoids cross-project calls without
+  -- turning a separately managed scheduler into a no-op.
   if not has_project_url then
-    raise notice 'project_url is not configured in Vault; scheduler state is unchanged';
+    raise notice 'project_url is not configured in Vault; scheduler and existing loop are unchanged';
     return;
   end if;
 
@@ -82,8 +85,8 @@ begin
 
   perform cron.schedule(
     'mafia-phase-advance',
-    '10 seconds',
-    'select public.run_phase_advance_loop()'
+    '1 second',
+    'select public.run_phase_advance_tick()'
   );
 end
 $$;
