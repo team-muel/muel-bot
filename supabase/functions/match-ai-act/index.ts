@@ -113,7 +113,7 @@ Deno.serve((req: Request) => {
 
 type PhaseLeaseState = {
   current: boolean;
-  useLlm: boolean;
+  remainingMs: number;
 };
 
 async function readPhaseLeaseState(
@@ -146,7 +146,49 @@ async function readPhaseLeaseState(
 
   // An LLM decision can consume up to eight seconds. Near a deadline use the
   // legal heuristic immediately so every AI can submit before phase closure.
-  return { current, useLlm: current && remainingMs > 9_000 };
+  return { current, remainingMs };
+}
+
+function startLeaseHeartbeat(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  matchId: string,
+  phaseId: string,
+  leaseHolder: string,
+): { stop: () => Promise<void> } {
+  let stopped = false;
+  let failure: unknown = null;
+  let pending = Promise.resolve();
+
+  const renew = () => {
+    pending = pending.then(async () => {
+      if (stopped || failure) return;
+      const { data, error } = await supabase.rpc(
+        "renew_match_ai_act_lease",
+        {
+          p_match_id: matchId,
+          p_phase_id: phaseId,
+          p_holder: leaseHolder,
+          p_ttl_seconds: 3,
+        },
+      );
+      if (error) {
+        failure = error;
+      } else if (!data) {
+        failure = new Error("Lost match AI phase lease");
+      }
+    });
+  };
+
+  const timer = setInterval(renew, 1_000);
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      await pending;
+      if (failure) throw failure;
+    },
+  };
 }
 
 async function processMatch(
@@ -173,11 +215,18 @@ async function processMatch(
       p_match_id: matchId,
       p_phase_id: phase.id,
       p_holder: leaseHolder,
-      p_ttl_seconds: 60,
+      p_ttl_seconds: 3,
     },
   );
   if (claimError) throw claimError;
   if (!acquired) return 0;
+
+  const heartbeat = startLeaseHeartbeat(
+    supabase,
+    matchId,
+    phase.id,
+    leaseHolder,
+  );
 
   try {
     // #6b 최후의 반론 후보(AI면 발언시킴) — matches.engine_state.verdict.candidateUserId.
@@ -224,13 +273,17 @@ async function processMatch(
           p_match_id: matchId,
           p_phase_id: phase.id,
           p_holder: leaseHolder,
-          p_ttl_seconds: 60,
+          p_ttl_seconds: 3,
         },
       );
       if (renewError) throw renewError;
       if (!renewed) return { current: false, ok: false };
 
       const did = actedByActor.get(ai.user_id) ?? new Set<string>();
+      const needsDefenseAndBallot = status === "verdict" &&
+        verdictCandidateId === ai.user_id &&
+        !did.has("ai_day_chat");
+      const llmBudgetMs = needsDefenseAndBallot ? 17_000 : 9_000;
       const ok = await actForAi(
         supabase,
         matchId,
@@ -241,7 +294,7 @@ async function processMatch(
         phase.id,
         phase.started_at ?? null,
         verdictCandidateId,
-        phaseState.useLlm,
+        phaseState.remainingMs > llmBudgetMs,
       );
       return { current: true, ok };
     };
@@ -258,9 +311,20 @@ async function processMatch(
 
     // Voting and night actions are independent per actor. Start them together
     // so short supported phases do not serialize three eight-second LLM waits.
-    const results = await Promise.all(aiPlayers.map(runForAi));
-    return results.filter((result) => result.ok).length;
+    const settled = await Promise.allSettled(aiPlayers.map(runForAi));
+    const rejected = settled.find((result) => result.status === "rejected");
+    if (rejected?.status === "rejected") throw rejected.reason;
+    return settled.filter(
+      (result) => result.status === "fulfilled" && result.value.ok,
+    ).length;
   } finally {
+    let heartbeatError: unknown = null;
+    try {
+      await heartbeat.stop();
+    } catch (error) {
+      heartbeatError = error;
+    }
+
     const { error: releaseError } = await supabase.rpc(
       "release_match_ai_act_lease",
       {
@@ -276,6 +340,7 @@ async function processMatch(
         error: releaseError.message,
       });
     }
+    if (heartbeatError) throw heartbeatError;
   }
 }
 
