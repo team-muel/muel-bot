@@ -85,7 +85,7 @@ begin
 
   perform cron.schedule(
     'mafia-phase-advance',
-    '1 second',
+    '2 seconds',
     'select public.run_phase_advance_tick()'
   );
 end
