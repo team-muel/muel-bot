@@ -457,7 +457,18 @@ async function actForAi(
       } catch { /* 발언 실패는 무시 — 표결은 계속 */ }
     }
     if (did.has("verdict_approve") || did.has("verdict_reject")) return false;
-    const res = useLlm
+
+    // A candidate may already have spent up to eight seconds on the defense.
+    // Recheck the phase and reserve a fresh ballot budget before another LLM.
+    const ballotPhaseState = await readPhaseLeaseState(
+      supabase,
+      matchId,
+      phaseId,
+      status,
+    );
+    if (!ballotPhaseState.current) return false;
+    const useBallotLlm = useLlm && ballotPhaseState.remainingMs > 9_000;
+    const res = useBallotLlm
       ? await decideChoice({
         provider: ai.ai_provider ?? "gemini",
         systemHint: selfHint,
