@@ -83,7 +83,7 @@ Do not rewrite production history for convenience.
 ## Guarded AI Scheduler Rollout
 
 When the same release changes `match-ai-act` and restores its cron driver, use
-this order so an unguarded handler is never called by the 10-second job:
+this order so an unguarded handler is never called by the 1-second job:
 
 1. Confirm `mafia-phase-advance` is absent or inactive.
 2. Deploy the lease-aware handler before applying the scheduler migrations:
@@ -200,12 +200,12 @@ limit 5;
 
 Expected shape:
 
-- `cron.job.active = true`
+- `cron.job.active = true`\n- `cron.job.schedule = 1 second`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
 - each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
 - overlapping or long-running cron rows indicate a regression; the database function must not sleep
-- overlapping `match-ai-act` deliveries skip matches already held by an unexpired per-match lease
+- overlapping `match-ai-act` deliveries skip only phases already held by an unexpired phase lease\n- AI actors run concurrently outside day chat; phases with under nine seconds remaining use legal heuristics instead of waiting on an LLM
 
 ## Standard Verification
 
