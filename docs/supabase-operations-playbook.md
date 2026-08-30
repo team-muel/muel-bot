@@ -207,7 +207,9 @@ Expected shape:
 - each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
 - overlapping or long-running cron rows indicate a regression; the database function must not sleep
 - overlapping `match-ai-act` deliveries skip only phases already held by an unexpired phase lease
+- the phase lease expires after three seconds and is renewed every second while actor tasks are in flight, so a crashed invocation can retry inside a five-second phase
 - AI actors run concurrently outside day chat; phases with under nine seconds remaining use legal heuristics instead of waiting on an LLM
+- a verdict candidate needs more than 17 seconds remaining to use LLMs for both defense and ballot; otherwise both paths use immediate legal fallbacks
 
 ## Standard Verification
 
