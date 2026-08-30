@@ -14,7 +14,7 @@ import { decideChoice, generateChatLine } from "../_shared/ai-decide.ts";
 // match-ai-act (ADR-005, Increment 2) — AI 용병의 행동을 채운다.
 // 사람과 동일한 검증 코어(submitMatchAction)를 거치고, LLM(MindLogic) 결정은
 // best-effort 다. LLM 이 없거나 실패하면 합법 휴리스틱으로 폴백하므로 게임은 항상
-// 정상적으로 진행/완주된다. pg_cron(run_phase_advance_tick)이 1초마다 호출하며,
+// 정상적으로 진행/완주된다. pg_cron(run_phase_advance_tick)이 2초마다 호출하며,
 // 페이즈별 갱신형 lease가 겹친 invocation의 중복 LLM 호출을 막는다.
 // day(토론): AI 가 채팅으로 한마디 한다(LLM 자유발언, 실패 시 캔드 라인). 토론당 1회.
 
