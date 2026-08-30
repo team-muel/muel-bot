@@ -83,7 +83,7 @@ Do not rewrite production history for convenience.
 ## Guarded AI Scheduler Rollout
 
 When the same release changes `match-ai-act` and restores its cron driver, use
-this order so an unguarded handler is never called by the 1-second job:
+this order so an unguarded handler is never called by the 2-second job:
 
 1. Confirm `mafia-phase-advance` is absent or inactive.
 2. Deploy the lease-aware handler before applying the scheduler migrations:
@@ -201,7 +201,7 @@ limit 5;
 Expected shape:
 
 - `cron.job.active = true`
-- `cron.job.schedule = 1 second`
+- `cron.job.schedule = 2 seconds`
 - recent rows in `cron.job_run_details`
 - completed rows usually show `status = succeeded`
 - each cron run should finish quickly: it issues one request to `phase-advance` and one to `match-ai-act`
