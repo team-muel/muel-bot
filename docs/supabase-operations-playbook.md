@@ -92,15 +92,23 @@ this order so an unguarded handler is never called by the 10-second job:
    npx supabase functions deploy match-ai-act --project-ref pqzmehtuwnxyspfhyucd --no-verify-jwt --use-api
    ```
 
-3. Apply the lease and scheduler migrations through the Remote Migration Flow.
-4. Verify the deployed function version, lease RPCs, and active cron job.
+3. List the deployed functions and confirm `match-ai-act` has a new version and
+   `updated_at`. If it is unchanged, redeploy and stop until this check passes:
+
+   ```powershell
+   npx supabase functions list --project-ref pqzmehtuwnxyspfhyucd
+   ```
+
+4. Apply the lease and scheduler migrations through the Remote Migration Flow.
+   The lease migration timestamp is earlier than the cron restoration migration.
+5. Verify the lease RPCs and active cron job.
 
 The guarded handler can be deployed before its lease RPCs because the scheduler
 remains disabled during that interval. Do not restore the job before step 2.
 
 ## Remote Migration Flow
 
-For a guarded AI scheduler rollout, complete step 2 above before continuing.
+For a guarded AI scheduler rollout, complete steps 2–3 above before continuing.
 
 First inspect pending state:
 
