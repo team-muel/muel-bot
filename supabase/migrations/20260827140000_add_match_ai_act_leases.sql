@@ -18,7 +18,7 @@ create or replace function mafia.claim_match_ai_act_lease(
   p_match_id uuid,
   p_phase_id uuid,
   p_holder uuid,
-  p_ttl_seconds integer default 60
+  p_ttl_seconds integer default 3
 )
 returns boolean
 language plpgsql
@@ -33,7 +33,7 @@ begin
     p_phase_id,
     p_match_id,
     p_holder,
-    clock_timestamp() + make_interval(secs => greatest(10, least(p_ttl_seconds, 300)))
+    clock_timestamp() + make_interval(secs => greatest(2, least(p_ttl_seconds, 30)))
   )
   on conflict (phase_id) do update
     set holder = excluded.holder,
@@ -50,7 +50,7 @@ create or replace function mafia.renew_match_ai_act_lease(
   p_match_id uuid,
   p_phase_id uuid,
   p_holder uuid,
-  p_ttl_seconds integer default 60
+  p_ttl_seconds integer default 3
 )
 returns boolean
 language plpgsql
@@ -62,7 +62,7 @@ declare
 begin
   update mafia.match_ai_act_leases
      set expires_at = clock_timestamp()
-       + make_interval(secs => greatest(10, least(p_ttl_seconds, 300)))
+       + make_interval(secs => greatest(2, least(p_ttl_seconds, 30)))
    where phase_id = p_phase_id
      and match_id = p_match_id
      and holder = p_holder
