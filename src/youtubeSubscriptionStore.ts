@@ -159,10 +159,14 @@ const resolveChannelIdFromHandleUrl = async (input: string): Promise<string | nu
 const buildSourceUrl = (
   channelId: string,
   kind: YouTubeSubscriptionKind,
-  guildId: string,
+  guildId: string | null,
   discordChannelId: string,
+  userId: string,
 ): string => {
-  return `https://www.youtube.com/channel/${channelId}?muelGuild=${encodeURIComponent(guildId)}&muelChannel=${encodeURIComponent(discordChannelId)}#${kind}`;
+  const scope = guildId
+    ? `muelGuild=${encodeURIComponent(guildId)}`
+    : `muelUser=${encodeURIComponent(userId)}`;
+  return `https://www.youtube.com/channel/${channelId}?${scope}&muelChannel=${encodeURIComponent(discordChannelId)}#${kind}`;
 };
 
 const buildSourceName = async (channelId: string, kind: YouTubeSubscriptionKind): Promise<string> => {
@@ -209,14 +213,14 @@ export const parseYouTubeChannelIdOrThrow = async (input: string): Promise<strin
 
 export const createYouTubeSubscription = async (params: {
   userId: string;
-  guildId: string;
+  guildId: string | null;
   discordChannelId: string;
   channelInput: string;
   kind: YouTubeSubscriptionKind;
 }) => {
   const db = getSupabaseClient();
   const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
-  const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
+  const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId, params.userId);
 
   const { data: existing, error: existingError } = await db
     .from('sources')
@@ -258,14 +262,22 @@ export const createYouTubeSubscription = async (params: {
   return { created: true, row: inserted[0] as YouTubeSubscription, channelId, url };
 };
 
-export const listYouTubeSubscriptions = async (params: { guildId: string; userId?: string }) => {
+export const listYouTubeSubscriptions = async (params: { guildId: string | null; userId?: string }) => {
   const db = getSupabaseClient();
   let query = db
     .from('sources')
     .select('id,user_id,guild_id,channel_id,url,name,last_post_id,last_post_signature,created_at')
-    .eq('guild_id', params.guildId)
     .like('url', '%youtube.com/channel/%#%')
     .order('created_at', { ascending: false });
+
+  if (params.guildId) {
+    query = query.eq('guild_id', params.guildId);
+  } else {
+    if (!params.userId) {
+      throw new Error('DM 구독 목록에는 사용자 ID가 필요합니다.');
+    }
+    query = query.is('guild_id', null);
+  }
 
   if (params.userId) {
     query = query.eq('user_id', params.userId);
@@ -280,20 +292,27 @@ export const listYouTubeSubscriptions = async (params: { guildId: string; userId
 };
 
 export const deleteYouTubeSubscription = async (params: {
-  guildId: string;
+  userId: string;
+  guildId: string | null;
   discordChannelId: string;
   channelInput: string;
   kind: YouTubeSubscriptionKind;
 }) => {
   const db = getSupabaseClient();
   const channelId = await parseYouTubeChannelIdOrThrow(params.channelInput);
-  const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId);
+  const url = buildSourceUrl(channelId, params.kind, params.guildId, params.discordChannelId, params.userId);
 
-  const { data: rows, error: selectError } = await db
+  let selectQuery = db
     .from('sources')
     .select('id')
     .eq('url', url)
     .limit(1);
+
+  if (!params.guildId) {
+    selectQuery = selectQuery.is('guild_id', null).eq('user_id', params.userId);
+  }
+
+  const { data: rows, error: selectError } = await selectQuery;
 
   if (selectError) {
     throw selectError;

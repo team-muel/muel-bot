@@ -191,7 +191,31 @@ if (!config.enableHttpInteractions) {
     }
 
     if (interaction.commandName === SUBSCRIBE_COMMAND_NAME) {
-      await handleFlatSubscribeCommand(interaction);
+      try {
+        await handleFlatSubscribeCommand(interaction);
+      } catch (error) {
+        console.error('[youtube-subscribe] interaction failed', {
+          interactionId: interaction.id,
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          error,
+        });
+        const fallback = { content: '구독 명령을 처리하지 못했어요. 잠시 뒤 다시 시도해주세요.' };
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(fallback);
+          } else {
+            await interaction.reply(interaction.inGuild()
+              ? { ...fallback, flags: [MessageFlags.Ephemeral] }
+              : fallback);
+          }
+        } catch (replyError) {
+          console.error('[youtube-subscribe] fallback response failed', {
+            interactionId: interaction.id,
+            replyError,
+          });
+        }
+      }
       return;
     }
 

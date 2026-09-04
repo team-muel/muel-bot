@@ -31,6 +31,10 @@ export const getChannelTypeLabel = (channelType?: number | null): string => {
     case ChannelType.PrivateThread:
     case ChannelType.AnnouncementThread:
       return '스레드';
+    case ChannelType.DM:
+      return 'DM';
+    case ChannelType.GroupDM:
+      return '그룹 DM';
     default:
       return 'Discord 채널';
   }
@@ -71,7 +75,9 @@ export const formatYouTubeTarget = (rowOrChannelId: YouTubeSubscription | string
 
 export const formatDiscordTarget = (target: DiscordTarget | null | undefined): string => {
   if (!target?.id && !target?.name) return 'Discord 채널 미지정';
-  const label = target.name?.trim()
+  const label = target.type === ChannelType.DM
+    ? 'Muel DM'
+    : target.name?.trim()
     ? `#${target.name.trim()}`
     : target.id
       ? `<#${target.id}>`
