@@ -195,6 +195,7 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
     }
 
     const result = await deleteYouTubeSubscription({
+      userId: payload.userId,
       guildId: payload.guildId,
       discordChannelId: payload.channelId,
       channelInput: payload.link,
