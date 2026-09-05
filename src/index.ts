@@ -47,6 +47,7 @@ import {
 import { getSupabaseRestrictionStatus } from './serviceRestriction.js';
 import { startRuntimeHttpServer } from './runtimeHttpServer.js';
 import { startRuntimeServices } from './runtimeServices.js';
+import { observeDiscordConnection } from './discordConnection.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
@@ -453,12 +454,14 @@ startRuntimeHttpServer({
 
 // --- Login ---
 
+observeDiscordConnection(client, 'muel');
 client.login(config.discordBotToken).catch((error: unknown) => {
   loginError = error instanceof Error ? error.message : String(error);
   console.error('[discord] login failed', error);
 });
 
 if (gomdoriClient && config.gomdoriBotToken) {
+  observeDiscordConnection(gomdoriClient, 'gomdori');
   gomdoriClient.login(config.gomdoriBotToken).catch((error: unknown) => {
     gomdoriLoginError = error instanceof Error ? error.message : String(error);
     console.error('[gomdori] login failed', error);

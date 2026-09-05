@@ -1,6 +1,6 @@
 # Muel Bot Deployment Operations
 
-Last updated: 2026-05-14
+Last updated: 2026-09-05
 
 ## Runtime Boundary
 
@@ -98,13 +98,16 @@ Gomdori `mafia` schema.
 
 Expected runtime shape:
 
-- `/health` returns `OK`.
+- `/health` returns `200 OK` only when Muel and the configured Gomdori client are connected to Discord. Disconnected or still-starting clients return `503`, so Render does not promote an HTTP-only process as healthy.
+- `/live` returns `200 OK` whenever the HTTP process is alive; do not use it as the Render deployment health check.
 - `/ready` returns `200` when ready, `503` with `degradedReasons` when not.
 - `/discord/interactions` is configured only when HTTP interactions are intentionally enabled.
 - JSON root has `ok: true`.
 - `muel.wsStatus` is `0` after warmup.
 - `gomdori.wsStatus` is `0` after warmup when `GOMDORI_BOT_TOKEN` is set.
 - `loginError` is `null`; if it is not null, treat the service as degraded.
+- A null `loginError` does not establish readiness: a pending login can have no error yet. Check `wsStatus`, `/health`, and the `[muel-connection]` / `[gomdori-connection]` logs for gateway discovery, REST rate limits, and shard transitions. Respect Discord's reported retry delay.
+- Root JSON `commit` identifies `RENDER_GIT_COMMIT` for deployment verification.
 
 ## Known 2026-05-14 Finding
 
