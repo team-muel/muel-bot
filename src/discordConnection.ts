@@ -1,4 +1,65 @@
-import { Events, RESTEvents, type Client } from 'discord.js';
+import { Events, RESTEvents, Routes, type Client } from 'discord.js';
+
+const PUBLIC_GATEWAY_ENDPOINT = 'https://discord.com/api/v10/gateway';
+const DEFAULT_GATEWAY_URL = 'wss://gateway.discord.gg';
+const PUBLIC_GATEWAY_TIMEOUT_MS = 8_000;
+const GATEWAY_CACHE_MS = 24 * 60 * 60 * 1000;
+
+type FetchGateway = typeof fetch;
+
+const fetchPublicGatewayUrl = async (name: string, fetchGateway: FetchGateway): Promise<string> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PUBLIC_GATEWAY_TIMEOUT_MS);
+  timeout.unref();
+  try {
+    const response = await fetchGateway(PUBLIC_GATEWAY_ENDPOINT, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json() as { url?: unknown };
+    const url = typeof body.url === 'string' ? new URL(body.url) : null;
+    if (!url || url.protocol !== 'wss:' || url.hostname !== 'gateway.discord.gg') {
+      throw new Error('unexpected gateway URL');
+    }
+    console.info(`[${name}-connection] public gateway discovered`);
+    return url.toString();
+  } catch (error) {
+    console.warn(`[${name}-connection] public gateway discovery failed; using cached Discord URL`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return DEFAULT_GATEWAY_URL;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+/**
+ * Small single-shard apps do not need the authenticated Get Gateway Bot route.
+ * Avoiding it also isolates startup from unrelated tenants exhausting a shared
+ * hosting IP's authenticated Discord REST limit.
+ */
+export const usePublicDiscordGateway = (
+  client: Client,
+  name: string,
+  fetchGateway: FetchGateway = fetch,
+): void => {
+  const originalGet = client.rest.get.bind(client.rest);
+  client.rest.get = async (route, options) => {
+    if (String(route) !== Routes.gatewayBot()) return originalGet(route, options);
+    const url = await fetchPublicGatewayUrl(name, fetchGateway);
+    return {
+      url,
+      shards: 1,
+      session_start_limit: {
+        total: 1,
+        remaining: 1,
+        reset_after: GATEWAY_CACHE_MS,
+        max_concurrency: 1,
+      },
+    };
+  };
+};
 
 const retryDeadlines = new Map<string, number>();
 

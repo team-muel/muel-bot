@@ -114,6 +114,8 @@ Expected runtime shape:
 
 The process stayed up with both clients at `wsStatus: 3`, no bot identity, and no login error. Gateway discovery diagnostics confirmed HTTP 429 for both clients with the same `Retry-After: 39832` seconds at 04:52 UTC. Thus server slash commands could not reach their handlers. The former unconditional `/health` concealed the outage. Shared egress throttling is possible, but the response alone does not establish who exhausted the limit. The command handler's separate DM support defect was fixed in #247.
 
+Muel and Gomdori are small single-shard applications. Startup therefore uses Discord's unauthenticated Get Gateway endpoint and a fixed single-shard configuration instead of Get Gateway Bot, whose extra shard recommendation and session-limit metadata are only needed for larger/sharded apps. The official `wss://gateway.discord.gg` URL is the validated fallback. Other authenticated Discord REST routes are unchanged. This removes the blocked route from cold starts; moving to a Render Pro workspace with dedicated outbound IPs is the infrastructure-level option if shared egress affects other Discord REST calls.
+
 ## Known 2026-05-14 Finding
 
 The bot was reachable after a cold request but needed about 27 seconds to wake.

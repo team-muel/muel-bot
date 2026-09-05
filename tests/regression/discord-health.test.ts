@@ -1,11 +1,51 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import type { Client } from 'discord.js';
+import { Routes, type Client } from 'discord.js';
 
 process.env.DISCORD_BOT_TOKEN ||= 'test-token';
 const { createRuntimeHttpServer } = await import('../../src/runtimeHttpServer.js');
-const { recordDiscordRetryAfter, getDiscordRetryAt } = await import('../../src/discordConnection.js');
+const {
+  recordDiscordRetryAfter,
+  getDiscordRetryAt,
+  usePublicDiscordGateway,
+} = await import('../../src/discordConnection.js');
+
+const originalRoutes: string[] = [];
+const gatewayClient = {
+  rest: {
+    get: async (route: string) => {
+      originalRoutes.push(route);
+      return { original: true };
+    },
+  },
+} as unknown as Client;
+usePublicDiscordGateway(gatewayClient, 'test', async () => new Response(
+  JSON.stringify({ url: 'wss://gateway.discord.gg/' }),
+  { status: 200, headers: { 'content-type': 'application/json' } },
+));
+const gatewayInfo = await gatewayClient.rest.get(Routes.gatewayBot()) as {
+  url: string;
+  shards: number;
+  session_start_limit: { remaining: number; max_concurrency: number };
+};
+assert.equal(gatewayInfo.url, 'wss://gateway.discord.gg/');
+assert.equal(gatewayInfo.shards, 1);
+assert.equal(gatewayInfo.session_start_limit.remaining, 1);
+assert.equal(gatewayInfo.session_start_limit.max_concurrency, 1);
+assert.deepEqual(originalRoutes, [], 'authenticated Gateway Bot must be bypassed');
+await gatewayClient.rest.get('/users/@me');
+assert.deepEqual(originalRoutes, ['/users/@me'], 'other REST routes must remain unchanged');
+
+const fallbackClient = {
+  rest: { get: async () => ({ original: true }) },
+} as unknown as Client;
+usePublicDiscordGateway(fallbackClient, 'fallback-test', async () => new Response(
+  JSON.stringify({ url: 'https://attacker.invalid/' }),
+  { status: 200, headers: { 'content-type': 'application/json' } },
+));
+const fallbackInfo = await fallbackClient.rest.get(Routes.gatewayBot()) as { url: string };
+assert.equal(fallbackInfo.url, 'wss://gateway.discord.gg');
 
 recordDiscordRetryAfter('probe', '60', 0);
 assert.equal(getDiscordRetryAt('probe', 1), new Date(60_000).toISOString());
