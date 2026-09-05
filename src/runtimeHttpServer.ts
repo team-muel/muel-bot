@@ -59,9 +59,21 @@ export const createRuntimeHttpServer = (
   } = dependencies;
 
   return http.createServer((request, response) => {
-    if (request.url === '/health') {
+    if (request.url === '/live') {
       response.writeHead(200, { 'content-type': 'text/plain' });
       response.end('OK');
+      return;
+    }
+
+    if (request.url === '/health') {
+      const muelReady = client.isReady();
+      const gomdoriReady = !gomdoriClient || gomdoriClient.isReady();
+      if (muelReady && gomdoriReady) {
+        response.writeHead(200, { 'content-type': 'text/plain' });
+        response.end('OK');
+      } else {
+        writeJson(response, 503, { ok: false, muelReady, gomdoriReady });
+      }
       return;
     }
 
@@ -156,6 +168,7 @@ export const createRuntimeHttpServer = (
           }
         : null,
       uptimeSeconds: Math.floor(process.uptime()),
+      commit: process.env.RENDER_GIT_COMMIT ?? null,
       youtubeMonitor: runtime.youtubeMonitor,
       jobWorker: runtime.jobWorker,
       archivist: runtime.archivist,
