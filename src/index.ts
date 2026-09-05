@@ -143,14 +143,18 @@ client.once(Events.ClientReady, async (readyClient) => {
   readyAt = new Date().toISOString();
   console.log(`[discord] online as ${readyClient.user.tag}`);
 
-  try {
-    await registerMuelCommands(readyClient);
-  } catch (error) {
-    loginError = error instanceof Error ? error.message : String(error);
-    console.error('[discord] command registration failed', error);
-  }
-
   await startRuntimeServices(readyClient);
+
+  if (config.registerDiscordCommandsOnReady) {
+    try {
+      await registerMuelCommands(readyClient);
+    } catch (error) {
+      loginError = error instanceof Error ? error.message : String(error);
+      console.error('[discord] command registration failed', error);
+    }
+  } else {
+    console.info('[discord] automatic command registration disabled');
+  }
 });
 
 if (!config.enableHttpInteractions) {
@@ -404,12 +408,16 @@ if (gomdoriClient) {
     gomdoriReadyAt = new Date().toISOString();
     console.log(`[gomdori] online as ${readyGomdori.user.tag}`);
 
-    try {
-      await registerGomdoriCommands(readyGomdori, config.gomdoriBotToken!);
-      console.log('[gomdori] replaced global commands');
-    } catch (error) {
-      gomdoriLoginError = error instanceof Error ? error.message : String(error);
-      console.error('[gomdori] command registration failed', error);
+    if (config.registerDiscordCommandsOnReady) {
+      try {
+        await registerGomdoriCommands(readyGomdori, config.gomdoriBotToken!);
+        console.log('[gomdori] replaced global commands');
+      } catch (error) {
+        gomdoriLoginError = error instanceof Error ? error.message : String(error);
+        console.error('[gomdori] command registration failed', error);
+      }
+    } else {
+      console.info('[gomdori] automatic command registration disabled');
     }
   });
 

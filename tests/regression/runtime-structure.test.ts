@@ -48,6 +48,13 @@ const lifecycleSource = readFileSync(join(sourceRoot, 'youtubeLifecycle.ts'), 'u
 const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts'), 'utf8');
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
 assert.match(indexSource, /await startRuntimeServices\(readyClient\)/);
+assert.ok(
+  indexSource.indexOf('await startRuntimeServices(readyClient)')
+    < indexSource.indexOf('if (config.registerDiscordCommandsOnReady)'),
+  'runtime services must start before optional command registration',
+);
+assert.match(indexSource, /automatic command registration disabled/);
+assert.match(readFileSync(join(sourceRoot, 'config.ts'), 'utf8'), /REGISTER_DISCORD_COMMANDS_ON_READY/);
 assert.doesNotMatch(indexSource, /http\.createServer/);
 assert.match(httpServerSource, /createRuntimeHttpServer/);
 assert.match(httpServerSource, /\/admin\/reregister-commands/);

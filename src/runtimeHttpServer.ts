@@ -194,6 +194,7 @@ export const createRuntimeHttpServer = (
         enableYoutubeMonitor: config.enableYoutubeMonitor,
         mentionReplyTimeoutMs: config.mentionReplyTimeoutMs,
         enableHttpInteractions: config.enableHttpInteractions,
+        registerDiscordCommandsOnReady: config.registerDiscordCommandsOnReady,
       },
       hub: getHubChannelStatus(),
       commands: runtime.commands,
