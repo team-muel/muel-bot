@@ -73,6 +73,7 @@ Optional tuning variables:
 - `ENABLE_JOB_WORKER`
 - `ENABLE_YOUTUBE_MONITOR`
 - `ENABLE_HTTP_INTERACTIONS`
+- `REGISTER_DISCORD_COMMANDS_ON_READY` (default `false`; enable only for a deliberate command-definition rollout, then disable again)
 - `MENTION_REPLY_TIMEOUT_MS`
 - `GOMDORI_APPLICATION_PUBLIC_KEY`
 
@@ -115,6 +116,8 @@ Expected runtime shape:
 The process stayed up with both clients at `wsStatus: 3`, no bot identity, and no login error. Gateway discovery diagnostics confirmed HTTP 429 for both clients with the same `Retry-After: 39832` seconds at 04:52 UTC. Thus server slash commands could not reach their handlers. The former unconditional `/health` concealed the outage. Shared egress throttling is possible, but the response alone does not establish who exhausted the limit. The command handler's separate DM support defect was fixed in #247.
 
 Muel and Gomdori are small single-shard applications. Startup therefore uses Discord's unauthenticated Get Gateway endpoint and a fixed single-shard configuration instead of Get Gateway Bot, whose extra shard recommendation and session-limit metadata are only needed for larger/sharded apps. The official `wss://gateway.discord.gg` URL is the validated fallback. Other authenticated Discord REST routes are unchanged. This removes the blocked route from cold starts; moving to a Render Pro workspace with dedicated outbound IPs is the infrastructure-level option if shared egress affects other Discord REST calls.
+
+Command registration is disabled during ordinary startup. Existing global commands remain registered at Discord, so re-uploading the same manifest on every cold start only consumes REST capacity and used to block all runtime services behind the request. When command definitions change, set `REGISTER_DISCORD_COMMANDS_ON_READY=true` for one deployment or call `/admin/reregister-commands` with the configured admin token, verify registration, then turn automatic registration off. YouTube monitoring, jobs, and Archivist now start before any optional registration request.
 
 ## Known 2026-05-14 Finding
 

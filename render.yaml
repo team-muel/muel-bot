@@ -83,6 +83,8 @@ services:
         value: https://muel-bot.onrender.com/youtube/websub
       - key: ENABLE_HTTP_INTERACTIONS
         value: "false"
+      - key: REGISTER_DISCORD_COMMANDS_ON_READY
+        value: "false"
       - key: DISCORD_COMPONENTS_V2
         value: cards
       - key: MENTION_REPLY_TIMEOUT_MS

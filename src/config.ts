@@ -123,6 +123,7 @@ export const config = {
   jobWorkerConcurrency: positiveIntegerEnv('JOB_WORKER_CONCURRENCY', 2),
   enableYoutubeMonitor: booleanEnv('ENABLE_YOUTUBE_MONITOR', true),
   enableHttpInteractions: booleanEnv('ENABLE_HTTP_INTERACTIONS', false),
+  registerDiscordCommandsOnReady: booleanEnv('REGISTER_DISCORD_COMMANDS_ON_READY', false),
   // AI-Q research backend (GCP Cloud Run). When AIQ_SERVER_URL is unset, the
   // enrichment button responds with a "backend not configured" message and
   // does not enqueue a job.
