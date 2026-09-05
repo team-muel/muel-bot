@@ -13,6 +13,7 @@ import {
 } from './archivist/personalAccess.js';
 import { requestYouTubeMonitorSync } from './youtubeMonitor.js';
 import { handleYouTubeWebSubRequest } from './youtubeWebSub.js';
+import { getDiscordRetryAt } from './discordConnection.js';
 
 type RuntimeStatus = {
   ok: boolean;
@@ -72,7 +73,20 @@ export const createRuntimeHttpServer = (
         response.writeHead(200, { 'content-type': 'text/plain' });
         response.end('OK');
       } else {
-        writeJson(response, 503, { ok: false, muelReady, gomdoriReady });
+        const muelRetryAt = muelReady ? null : getDiscordRetryAt('muel');
+        const gomdoriRetryAt = gomdoriReady ? null : getDiscordRetryAt('gomdori');
+        // Let discord.js honor Discord's deadline. Restarting a healthy waiting
+        // process only repeats discovery requests and can prolong a restriction.
+        const waitingAsRequested = (muelReady || Boolean(muelRetryAt))
+          && (gomdoriReady || Boolean(gomdoriRetryAt));
+        writeJson(response, waitingAsRequested ? 200 : 503, {
+          ok: false,
+          muelReady,
+          gomdoriReady,
+          waitingForDiscord: waitingAsRequested,
+          muelRetryAt,
+          gomdoriRetryAt,
+        });
       }
       return;
     }
@@ -146,6 +160,7 @@ export const createRuntimeHttpServer = (
       degradedReasons: runtime.degradedReasons,
       muel: {
         bot: client.user?.tag ?? null,
+        retryAt: getDiscordRetryAt('muel'),
         ...muelConnection,
         wsStatus: client.ws.status,
         ai: {
@@ -163,6 +178,7 @@ export const createRuntimeHttpServer = (
       gomdori: gomdoriClient
         ? {
             bot: gomdoriClient.user?.tag ?? null,
+            retryAt: getDiscordRetryAt('gomdori'),
             ...gomdoriConnection,
             wsStatus: gomdoriClient.ws.status,
           }

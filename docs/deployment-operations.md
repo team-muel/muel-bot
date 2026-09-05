@@ -98,7 +98,7 @@ Gomdori `mafia` schema.
 
 Expected runtime shape:
 
-- `/health` returns `200 OK` only when Muel and the configured Gomdori client are connected to Discord. Disconnected or still-starting clients return `503`, so Render does not promote an HTTP-only process as healthy.
+- `/health` returns `200 OK` when Muel and the configured Gomdori client are connected to Discord. Unexplained disconnections or pending logins return `503`. During an explicit Discord `Retry-After` interval it returns HTTP 200 with `ok: false`, `waitingForDiscord: true` and retry deadlines, so Render preserves the waiting process instead of repeating blocked login requests. This is process health, not command readiness.
 - `/live` returns `200 OK` whenever the HTTP process is alive; do not use it as the Render deployment health check.
 - `/ready` returns `200` when ready, `503` with `degradedReasons` when not.
 - `/discord/interactions` is configured only when HTTP interactions are intentionally enabled.
@@ -108,6 +108,11 @@ Expected runtime shape:
 - `loginError` is `null`; if it is not null, treat the service as degraded.
 - A null `loginError` does not establish readiness: a pending login can have no error yet. Check `wsStatus`, `/health`, and the `[muel-connection]` / `[gomdori-connection]` logs for gateway discovery, REST rate limits, and shard transitions. Respect Discord's reported retry delay.
 - Root JSON `commit` identifies `RENDER_GIT_COMMIT` for deployment verification.
+- Root JSON `muel.retryAt` / `gomdori.retryAt` exposes an active Gateway discovery rate-limit deadline; `/ready` remains 503 until the bots actually connect. Do not restart or change IPs to bypass a Discord restriction. discord.js retries after the server's deadline.
+
+## 2026-09-05 Discord connection incident
+
+The process stayed up with both clients at `wsStatus: 3`, no bot identity, and no login error. Gateway discovery diagnostics confirmed HTTP 429 for both clients with the same `Retry-After: 39832` seconds at 04:52 UTC. Thus server slash commands could not reach their handlers. The former unconditional `/health` concealed the outage. Shared egress throttling is possible, but the response alone does not establish who exhausted the limit. The command handler's separate DM support defect was fixed in #247.
 
 ## Known 2026-05-14 Finding
 
