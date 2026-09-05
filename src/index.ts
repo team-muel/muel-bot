@@ -64,6 +64,7 @@ const getRuntimeStatus = () => {
   if (loginError) degradedReasons.push(`muel_login:${loginError}`);
   if (gomdoriClient && config.gomdoriBotToken && gomdoriLoginError) degradedReasons.push(`gomdori_login:${gomdoriLoginError}`);
   if (!client.isReady()) degradedReasons.push('muel_not_ready');
+  if (gomdoriClient && !gomdoriClient.isReady()) degradedReasons.push('gomdori_not_ready');
   if (jobWorker.lastError) degradedReasons.push(`job_worker:${jobWorker.lastError}`);
   if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
   if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');

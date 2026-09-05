@@ -1,13 +1,34 @@
 import { Events, RESTEvents, type Client } from 'discord.js';
 
+const retryDeadlines = new Map<string, number>();
+
+export const recordDiscordRetryAfter = (name: string, value: string | null, now = Date.now()): void => {
+  if (!value?.trim()) return;
+  const seconds = Number(value);
+  const deadline = Number.isFinite(seconds) ? now + seconds * 1000 : Date.parse(value);
+  if (!Number.isFinite(deadline)) return;
+  if (deadline > now) retryDeadlines.set(name, deadline);
+  else retryDeadlines.delete(name);
+};
+
+export const getDiscordRetryAt = (name: string, now = Date.now()): string | null => {
+  const deadline = retryDeadlines.get(name);
+  return deadline && deadline > now ? new Date(deadline).toISOString() : null;
+};
+
 /** Observe connection progress without logging tokens, request bodies or webhook URLs. */
 export const observeDiscordConnection = (client: Client, name: string): void => {
   const prefix = `[${name}-connection]`;
   client.rest.on(RESTEvents.Response, (request, response) => {
     if (request.route !== '/gateway/bot') return;
+    if (response.status === 429) {
+      recordDiscordRetryAfter(name, response.headers.get('retry-after'));
+    }
     console.info(`${prefix} gateway discovery response`, {
       status: response.status,
       retryAfter: response.headers.get('retry-after'),
+      retryAt: getDiscordRetryAt(name),
+      scope: response.headers.get('x-ratelimit-scope'),
     });
   });
   client.rest.on(RESTEvents.RateLimited, (limit) => {
@@ -20,6 +41,7 @@ export const observeDiscordConnection = (client: Client, name: string): void => 
     });
   });
   client.on(Events.ShardReady, (shardId) => {
+    retryDeadlines.delete(name);
     console.info(`${prefix} shard ready`, { shardId });
   });
   client.on(Events.ShardDisconnect, (event, shardId) => {
@@ -34,7 +56,12 @@ export const observeDiscordConnection = (client: Client, name: string): void => 
   console.info(`${prefix} login starting`);
   const timer = setTimeout(() => {
     if (!client.isReady()) {
-      console.error(`${prefix} login not ready after 60 seconds`, { wsStatus: client.ws.status });
+      const retryAt = getDiscordRetryAt(name);
+      if (retryAt) {
+        console.warn(`${prefix} waiting for Discord Retry-After`, { retryAt });
+      } else {
+        console.error(`${prefix} login not ready after 60 seconds`, { wsStatus: client.ws.status });
+      }
     }
   }, 60_000);
   timer.unref();
