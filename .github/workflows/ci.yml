@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - '.github/workflows/ci.yml'
+  merge_group:
   push:
     branches:
       - main
