@@ -29,7 +29,7 @@
 - Keeps `/구독` as the Muel utility for YouTube video/community post procurement.
 - Sends regular videos as channel messages; community posts show as much body text as Discord allows and spill the rest into a thread, while Shorts get a small thread.
 - Exposes a tiny HTTP health endpoint required by Render Web Services.
-- Exposes `/health` for liveness and `/ready` for degraded-state inspection.
+- Exposes `/live` for process liveness, `/health` for Discord Gateway-aware deployment health, and `/ready` for detailed degraded/dependency readiness inspection.
 
 ## Environment
 
