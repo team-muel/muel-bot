@@ -96,15 +96,32 @@ export class SupabaseRestrictionCircuit {
  * usually with a prose message and no stable error code. Keep this predicate
  * narrow: schema bugs and ordinary database failures must still surface.
  */
+/**
+ * An HTTP error thrown by an external provider SDK (Vercel AI SDK
+ * `APICallError`, fetch-style gateway errors) rather than by Supabase. These
+ * carry the request URL / status of the *provider* call. PostgREST errors are
+ * never shaped like this: `PostgrestError` has `code/details/hint` and no URL,
+ * and app code that re-wraps a Supabase failure in `new Error(...)` keeps only
+ * the message.
+ */
+const isProviderHttpError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const o = error as { name?: unknown; url?: unknown; statusCode?: unknown; status?: unknown; requestBodyValues?: unknown };
+  if (o.name === 'PostgrestError') return false;
+  if (typeof o.name === 'string' && o.name.startsWith('AI_')) return true;
+  const status = typeof o.statusCode === 'number' ? o.statusCode : typeof o.status === 'number' ? o.status : null;
+  return status !== null && (typeof o.url === 'string' || 'requestBodyValues' in o);
+};
+
 export const isSupabaseQuotaRestriction = (error: unknown): boolean => {
   const detail = errorDetail(error);
   if (/exceed_db_size_quota|service for this project is restricted/i.test(detail)) return true;
-  // A bare "Payment Required" body only identifies Supabase when it arrives
-  // PostgREST-shaped: postgrest-js hands the 402 body over as a plain object
-  // (`{ message }`), never as an Error instance. Provider SDKs (AI-Q, model
-  // gateways) throw real Error subclasses for their own HTTP 402, and those must
-  // not open the Supabase circuit (MUE-59 / PR #242 finding).
-  return !(error instanceof Error) && /payment required/i.test(detail);
+  // A bare "Payment Required" body is Supabase's Fair Use 402 whether it arrives
+  // as the PostgREST plain object, a `PostgrestError`, or re-wrapped by app code
+  // in `new Error(...)`. It is NOT Supabase when it is a provider SDK's own HTTP
+  // 402 (AI-Q, model gateways) — those must not open the Supabase circuit
+  // (MUE-59 / PR #242 finding).
+  return !isProviderHttpError(error) && /payment required/i.test(detail);
 };
 
 const restrictionCircuit = new SupabaseRestrictionCircuit();

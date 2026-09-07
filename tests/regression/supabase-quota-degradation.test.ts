@@ -100,11 +100,27 @@ assert.match(degradedWindow.system, /available public-search evidence only/);
 
 // #242: a provider SDK's own HTTP 402 is not a Supabase restriction.
 class ProviderApiError extends Error {
+  name = 'AI_APICallError';
   statusCode = 402;
+  url = 'https://aiq.example/v1/chat';
+  requestBodyValues = {};
 }
-assert.equal(isSupabaseQuotaRestriction(new ProviderApiError('Payment Required')), false, 'AI-Q / provider 402 must not open the Supabase circuit');
+class FetchGatewayError extends Error {
+  status = 402;
+  url = 'https://gateway.example/v1';
+}
+class PostgrestErrorLike extends Error {
+  name = 'PostgrestError';
+  code = '';
+  details = '';
+  hint = '';
+}
+assert.equal(isSupabaseQuotaRestriction(new ProviderApiError('Payment Required')), false, 'AI SDK provider 402 must not open the Supabase circuit');
+assert.equal(isSupabaseQuotaRestriction(new FetchGatewayError('Payment Required')), false, 'fetch-style gateway 402 must not open the Supabase circuit');
 assert.equal(isSupabaseQuotaRestriction(new Error('Service for this project is restricted due to exceed_db_size_quota')), true, 'Supabase prose still counts even when wrapped in an Error');
 assert.equal(isSupabaseQuotaRestriction({ message: 'Payment Required' }), true, 'PostgREST-shaped bare 402 still counts');
+assert.equal(isSupabaseQuotaRestriction(new PostgrestErrorLike('Payment Required')), true, 'throwOnError PostgrestError still counts');
+assert.equal(isSupabaseQuotaRestriction(new Error('sources load failed: Payment Required')), true, 'app code re-wrapping the Supabase 402 in Error still counts');
 
 // #242: circuit recovery without the job worker — mention path probes and closes.
 assert.match(mention, /isSupabaseDataApiRestricted\(\) && !isSupabaseDataApiProbeDue\(\)/, 'mention must probe once backoff elapsed');
