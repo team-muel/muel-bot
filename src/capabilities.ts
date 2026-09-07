@@ -143,7 +143,20 @@ export const shouldEnqueueUserMemoryExtraction = (userText: string): boolean => 
   return true;
 };
 
-export const getPreflightGuard = (userText: string): PreflightGuard | null => {
+export type PreflightGuardOptions = {
+  /**
+   * True when a provider-neutral live-search tool (search_naver) is available
+   * on this turn. Factual market questions (환율, 주가 현재가…) are then routed to
+   * the tool lane instead of being blocked by the realtime_finance guard;
+   * investment forecasts stay blocked regardless (MUE-60 / PR #240 finding).
+   */
+  liveSearchAvailable?: boolean;
+};
+
+export const getPreflightGuard = (
+  userText: string,
+  options: PreflightGuardOptions = {},
+): PreflightGuard | null => {
   const text = userText.trim();
 
   if (SECURITY_THREAT_RE.test(text)) {
@@ -181,10 +194,18 @@ export const getPreflightGuard = (userText: string): PreflightGuard | null => {
     };
   }
 
+  const forecast = FINANCE_FORECAST_RE.test(text);
+  // A factual market lookup is a live-search job when the tool exists; only the
+  // advice/forecast half of the guard is a policy boundary rather than a
+  // missing-capability notice.
+  const factualMarketLookupServedBySearch = options.liveSearchAvailable === true
+    && FINANCE_MARKET_RE.test(text)
+    && !forecast;
   if (
-    (FINANCE_MARKET_RE.test(text) || FINANCE_FORECAST_RE.test(text)) &&
+    (FINANCE_MARKET_RE.test(text) || forecast) &&
     !NEWS_RE.test(text) &&
-    !DEFINITIONAL_RE.test(text)
+    !DEFINITIONAL_RE.test(text) &&
+    !factualMarketLookupServedBySearch
   ) {
     return {
       reason: 'realtime_finance',
