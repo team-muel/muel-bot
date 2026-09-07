@@ -33,9 +33,56 @@ assert.equal(gatewayInfo.url, 'wss://gateway.discord.gg/');
 assert.equal(gatewayInfo.shards, 1);
 assert.equal(gatewayInfo.session_start_limit.remaining, 1);
 assert.equal(gatewayInfo.session_start_limit.max_concurrency, 1);
-assert.deepEqual(originalRoutes, [], 'authenticated Gateway Bot must be bypassed');
+assert.deepEqual(originalRoutes, [Routes.gatewayBot()], 'authenticated Gateway Bot must be attempted first');
 await gatewayClient.rest.get('/users/@me');
-assert.deepEqual(originalRoutes, ['/users/@me'], 'other REST routes must remain unchanged');
+assert.deepEqual(originalRoutes, [Routes.gatewayBot(), '/users/@me'], 'other REST routes must remain unchanged');
+
+// MUE-58: a real session budget must be passed through untouched — discord.js
+// uses it to decide whether an Identify is affordable, and Discord resets the
+// bot token when the daily budget is exceeded.
+const realBudget = {
+  url: 'wss://gateway.discord.gg',
+  shards: 1,
+  session_start_limit: { total: 1000, remaining: 3, reset_after: 12_345, max_concurrency: 1 },
+};
+let publicFetches = 0;
+const budgetClient = { rest: { get: async () => realBudget } } as unknown as Client;
+usePublicDiscordGateway(budgetClient, 'budget-test', async () => {
+  publicFetches += 1;
+  return new Response(JSON.stringify({ url: 'wss://gateway.discord.gg/' }), { status: 200 });
+});
+assert.deepEqual(await budgetClient.rest.get(Routes.gatewayBot()), realBudget, 'real session_start_limit must not be fabricated');
+assert.equal(publicFetches, 0, 'public gateway must not be consulted when the real budget is available');
+
+// A hung authenticated call (shared-IP rate limit) must not block startup.
+let slowSignal: AbortSignal | undefined;
+const slowClient = {
+  rest: { get: (_route: string, options?: { signal?: AbortSignal }) => { slowSignal = options?.signal; return new Promise(() => {}); } },
+} as unknown as Client;
+usePublicDiscordGateway(slowClient, 'slow-test', async () => new Response(
+  JSON.stringify({ url: 'wss://gateway.discord.gg/' }),
+  { status: 200 },
+), 20);
+const slowInfo = await slowClient.rest.get(Routes.gatewayBot()) as { url: string; session_start_limit: { remaining: number } };
+assert.equal(slowInfo.url, 'wss://gateway.discord.gg/');
+assert.equal(slowInfo.session_start_limit.remaining, 1, 'timeout falls back to the synthetic single-shard budget');
+assert.equal(slowSignal?.aborted, true, 'the timed-out authenticated request must be aborted, not left in flight');
+
+// A pending Retry-After skips the authenticated attempt entirely.
+const pendingRoutes: string[] = [];
+const pendingClient = {
+  rest: { get: async (route: string) => { pendingRoutes.push(route); return realBudget; } },
+} as unknown as Client;
+recordDiscordRetryAfter('pending-test', '600');
+usePublicDiscordGateway(pendingClient, 'pending-test', async () => new Response(
+  JSON.stringify({ url: 'wss://gateway.discord.gg/' }),
+  { status: 200 },
+));
+const pendingInfo = await pendingClient.rest.get(Routes.gatewayBot()) as { shards: number; session_start_limit: { remaining: number } };
+assert.deepEqual(pendingRoutes, [], 'a pending Retry-After must not spend another authenticated call');
+assert.equal(pendingInfo.shards, 1);
+assert.equal(pendingInfo.session_start_limit.remaining, 1, 'skipped discovery must still yield the synthetic single-shard budget');
+recordDiscordRetryAfter('pending-test', '0');
 
 const fallbackClient = {
   rest: { get: async () => ({ original: true }) },

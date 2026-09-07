@@ -348,8 +348,9 @@ export async function reassignLobbyHostOrAbort(
 }
 
 // 로비의 유령 플레이어를 솎아내고(GC) 호스트 공백/빈 테이블을 정리한다. 진행 중 매치는 no-op.
-// read/entry 경로(heartbeat·join·list)에서 호출 — 활성 클라가 30s 마다 하트비트를 보내므로
-// 로비가 살아있는 한 GC 가 주기적으로 돈다.
+// entry/read 경로(join·list)에서 호출한다. heartbeat 에서는 호출하지 않는다(MUE-85 —
+// 활성 클라 N 명이 30s 마다 로비 전체 GC 를 돌리면 Edge Function 예산을 태운다). 주기적 GC 는
+// phase-advance 의 performPresenceSweep 이 담당한다.
 export async function reconcileLobbyPresence(matchId: string): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { data: matchRow, error: matchErr } = await supabase

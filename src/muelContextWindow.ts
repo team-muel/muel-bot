@@ -126,7 +126,19 @@ export const formatCurrentTime = (): string => {
   ].join('\n');
 };
 
-const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
+// "unavailable" (persistence outage) and "absent" (genuinely new user) must not
+// read the same to the model: the first is a temporary blind spot, the second is
+// a fact about the user (MUE-59 / PR #241 finding).
+const HISTORY_UNAVAILABLE_LINE = '대화 기록을 지금은 조회할 수 없음(저장소 일시 장애) — 처음 보는 유저라고 단정하지 말 것.';
+
+const formatUserHistory = (
+  summary: UserHistorySummary | null | undefined,
+  authorName: string,
+  unavailable = false,
+): string => {
+  if (unavailable) {
+    return `--- About This User ---\n${authorName}: ${HISTORY_UNAVAILABLE_LINE}\n--- End User ---`;
+  }
   if (!summary || summary.totalInteractions === 0) {
     return `--- About This User ---\n${authorName}: 아직 나와 대화한 기록이 거의 없는 유저.\n--- End User ---`;
   }
@@ -141,11 +153,13 @@ const formatUserHistory = (summary: UserHistorySummary | null | undefined, autho
   return lines.join('\n');
 };
 
-const formatMentionedUsers = (mentioned: MentionedUserContext[]): string => {
+const formatMentionedUsers = (mentioned: MentionedUserContext[], unavailable = false): string => {
   if (!mentioned || mentioned.length === 0) return '';
   const lines = ['--- Mentioned Users ---'];
   for (const m of mentioned) {
-    if (m.summary && m.summary.totalInteractions > 0) {
+    if (unavailable) {
+      lines.push(`${m.name}: ${HISTORY_UNAVAILABLE_LINE}`);
+    } else if (m.summary && m.summary.totalInteractions > 0) {
       lines.push(`${m.name}: ${m.summary.totalInteractions}번 대화함.`);
       if (m.summary.recentTopics.length > 0) {
         lines.push(`  최근 했던 말: ${m.summary.recentTopics.slice(0, 3).join(' / ')}`);
@@ -245,7 +259,7 @@ export const buildMuelContextWindow = async (
 
   if (opts.guildTopology) pushSection('guildTopology', opts.guildTopology);
 
-  pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName));
+  pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName, Boolean(opts.skipDatabaseContext)));
 
   // P5 소셜 프로필 — 유저의 대화 레지스터(반말/드립 성향 등). 잡담 개인화 재료라
   // lightweight 턴에도 주입한다(단일 select, 저비용·실패 무해).
@@ -254,7 +268,7 @@ export const buildMuelContextWindow = async (
     if (profileText) pushSection('socialProfile', profileText);
   }
 
-  pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? []));
+  pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? [], Boolean(opts.skipDatabaseContext)));
 
   // Memory — lightweight 턴은 직접 지침(muel_user_memos)만 저비용 주입(임베딩 X),
   // 비-lightweight 턴은 직접 지침 + 의미 기반 장기 기억(임베딩 유사도) 풀 경로.
