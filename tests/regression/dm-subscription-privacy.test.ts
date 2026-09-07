@@ -41,7 +41,8 @@ const makeClient = (stored: unknown, dm: unknown) => {
 };
 const ownDm = { id: 'dm-1', type: ChannelType.DM, recipientId: 'u1', send: async () => ({}) };
 const otherDm = { id: 'dm-2', type: ChannelType.DM, recipientId: 'u2', send: async () => ({}) };
-const guildText = { id: 'c-1', type: ChannelType.GuildText, send: async () => ({}) };
+const guildText = { id: 'c-1', type: ChannelType.GuildText, guildId: 'g1', send: async () => ({}) };
+const foreignGuildText = { id: 'c-9', type: ChannelType.GuildText, guildId: 'g9', send: async () => ({}) };
 const privateRow = { id: 1, user_id: 'u1', guild_id: null, channel_id: 'dm-2' };
 
 assert.equal((await resolveDeliveryDestination(makeClient(ownDm, ownDm), { ...privateRow, channel_id: 'dm-1' })).id, 'dm-1');
@@ -52,6 +53,22 @@ assert.equal((await resolveDeliveryDestination(makeClient(guildText, ownDm), { i
 await assert.rejects(
   resolveDeliveryDestination(makeClient(null, ownDm), { id: 3, user_id: 'u1', guild_id: 'g1', channel_id: 'missing' }),
   /not sendable/,
+);
+// Fail-closed guards (internal adversarial review of #258).
+await assert.rejects(
+  resolveDeliveryDestination(makeClient(guildText, ownDm), { id: 4, user_id: null, guild_id: null, channel_id: 'c-1' }),
+  /neither guild nor owner scope/,
+  'a row with no guild and no owner must never deliver as community',
+);
+await assert.rejects(
+  resolveDeliveryDestination(makeClient(foreignGuildText, ownDm), { id: 5, user_id: 'u1', guild_id: 'g1', channel_id: 'c-9' }),
+  /does not match stored channel/,
+  'a guild row must not deliver into a channel of another guild',
+);
+await assert.rejects(
+  resolveDeliveryDestination(makeClient(ownDm, ownDm), { id: 6, user_id: 'u1', guild_id: 'g1', channel_id: 'dm-1' }),
+  /does not match stored channel/,
+  'a guild row must not deliver into a DM',
 );
 
 // 4) DM overflow is delivered inline, in full, without a thread.
@@ -71,4 +88,4 @@ assert.ok(joined.includes('문단 0') && joined.includes('문단 59'), 'no part 
 assert.match(monitorSource, /channel\.type === ChannelType\.DM\s*\?\s*false/, 'DM path must skip thread creation');
 assert.match(monitorSource, /if \(!threaded\) \{\s*await postOverflowInline\(/, 'thread failure must fall back inline');
 
-console.log('Results: 24 passed, 0 failed');
+console.log('Results: 27 passed, 0 failed');

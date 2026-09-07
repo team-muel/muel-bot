@@ -168,9 +168,18 @@ export const resolveDeliveryDestination = async (
   client: Pick<Client, 'channels' | 'users'>,
   row: Pick<SourceRow, 'id' | 'user_id' | 'guild_id' | 'channel_id'>,
 ): Promise<SendableChannel> => {
+  // Fail closed: a row with neither guild nor owner scope has no legitimate
+  // destination, so it must never fall through to the guild (community) path.
+  if (row.guild_id === null && !row.user_id) {
+    throw new Error(`source ${row.id} has neither guild nor owner scope; refusing to deliver`);
+  }
   const stored = await client.channels.fetch(row.channel_id!).catch(() => null);
   if (!isPrivateRow(row as SourceRow)) {
     if (!isSendable(stored)) throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
+    const storedGuildId = 'guildId' in stored ? (stored as { guildId?: unknown }).guildId : null;
+    if (storedGuildId !== row.guild_id) {
+      throw new Error(`source ${row.id} guild scope ${row.guild_id} does not match stored channel ${row.channel_id}`);
+    }
     return stored;
   }
   const recipientId = stored && typeof stored === 'object' && 'recipientId' in stored

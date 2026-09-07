@@ -32,12 +32,21 @@ export const postOverflowToThread = async (
   const chunks = splitForDiscord(body, DISCORD_SAFE.infoDescription);
   if (chunks.length === 0) return false;
 
+  let thread: Awaited<ReturnType<NonNullable<ThreadableMessage['startThread']>>>;
   try {
-    const thread = await message.startThread({
+    thread = await message.startThread({
       name: (name || '이어서').slice(0, 90),
       autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
       reason: opts.reason ?? 'Muel overflow thread',
     });
+  } catch (error) {
+    console.warn('[discord] overflow thread could not be opened', error);
+    return false;
+  }
+  // Once the thread exists, a failed chunk must not report `false`: callers use
+  // `false` to fall back to inline posting, which would duplicate the chunks
+  // already delivered into the thread.
+  try {
     for (let i = 0; i < chunks.length; i += 1) {
       const embed = new EmbedBuilder()
         .setColor(opts.color ?? MUEL_BRAND_COLOR)
@@ -49,8 +58,8 @@ export const postOverflowToThread = async (
     }
     return true;
   } catch (error) {
-    console.warn('[discord] overflow thread failed', error);
-    return false;
+    console.warn('[discord] overflow thread send failed after thread was opened; not falling back inline', error);
+    return true;
   }
 };
 
