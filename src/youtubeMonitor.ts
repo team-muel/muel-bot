@@ -30,7 +30,12 @@ import { safeBreakIndex } from './rendering/discordText.js';
 import { renewYouTubeWebSubSubscriptions } from './youtubeWebSub.js';
 import { runYouTubeApiDataLifecycle } from './youtubeLifecycle.js';
 import { mapWithConcurrency } from './utils/concurrency.js';
-import { isSupabaseDataApiRestricted } from './serviceRestriction.js';
+import {
+  isSupabaseDataApiProbeDue,
+  isSupabaseDataApiRestricted,
+  observeSupabaseDataApiError,
+  recordSupabaseDataApiSuccess,
+} from './serviceRestriction.js';
 
 type SourceRow = {
   id: number;
@@ -758,7 +763,10 @@ const processRow = async (client: Client, row: SourceRow): Promise<number> => {
 };
 
 export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
-  if (isSupabaseDataApiRestricted()) {
+  // While the circuit is open only the half-open probe window may run; a
+  // successful source load closes the circuit again. This lets the monitor
+  // recover on its own when ENABLE_JOB_WORKER=false (MUE-59 / PR #242 finding).
+  if (isSupabaseDataApiRestricted() && !isSupabaseDataApiProbeDue()) {
     lastTickStatus = 'restricted';
     lastTickMessage = 'skipped=supabase_data_api_restricted';
     return;
@@ -773,6 +781,7 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
   lastTickMessage = null;
   try {
     const rows = await loadRows();
+    recordSupabaseDataApiSuccess();
     const sentByRow = await mapWithConcurrency(
       rows,
       config.youtubeMonitorConcurrency,
@@ -780,6 +789,9 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
         try {
           return await processRow(client, row);
         } catch (error) {
+          // A Supabase 402 reached directly by the monitor must open the shared
+          // circuit so readiness and other consumers see the restriction.
+          if (observeSupabaseDataApiError(error)) throw error;
           console.warn(`[youtube] row ${row.id} failed`, error);
           try {
             await updateRowError(row, error);
@@ -801,9 +813,15 @@ export const runYouTubeMonitorTick = async (client: Client): Promise<void> => {
     }
   } catch (error) {
     const message = formatUnknownError(error);
-    lastTickStatus = 'error';
-    lastTickMessage = message;
-    console.warn('[youtube] tick failed', error);
+    if (observeSupabaseDataApiError(error)) {
+      lastTickStatus = 'restricted';
+      lastTickMessage = `supabase_data_api_restricted: ${message}`.slice(0, 240);
+      console.warn('[youtube] tick hit Supabase restriction; circuit opened', message);
+    } else {
+      lastTickStatus = 'error';
+      lastTickMessage = message;
+      console.warn('[youtube] tick failed', error);
+    }
   } finally {
     lastTickFinishedAt = new Date().toISOString();
     running = false;

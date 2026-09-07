@@ -98,7 +98,13 @@ export class SupabaseRestrictionCircuit {
  */
 export const isSupabaseQuotaRestriction = (error: unknown): boolean => {
   const detail = errorDetail(error);
-  return /exceed_db_size_quota|service for this project is restricted|payment required/i.test(detail);
+  if (/exceed_db_size_quota|service for this project is restricted/i.test(detail)) return true;
+  // A bare "Payment Required" body only identifies Supabase when it arrives
+  // PostgREST-shaped: postgrest-js hands the 402 body over as a plain object
+  // (`{ message }`), never as an Error instance. Provider SDKs (AI-Q, model
+  // gateways) throw real Error subclasses for their own HTTP 402, and those must
+  // not open the Supabase circuit (MUE-59 / PR #242 finding).
+  return !(error instanceof Error) && /payment required/i.test(detail);
 };
 
 const restrictionCircuit = new SupabaseRestrictionCircuit();
