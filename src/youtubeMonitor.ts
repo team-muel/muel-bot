@@ -1,4 +1,4 @@
-import { Client } from 'discord.js';
+import { ChannelType, Client } from 'discord.js';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { config } from './config.js';
@@ -25,7 +25,7 @@ import {
   type YouTubeVideoMetadata,
 } from './youtubeMetadataClient.js';
 import { buildVideoItemInput, claimYouTubeDelivery, upsertYouTubeItem } from './youtubeItemStore.js';
-import { postOverflowToThread } from './rendering/discordDelivery.js';
+import { postOverflowInline, postOverflowToThread } from './rendering/discordDelivery.js';
 import { safeBreakIndex } from './rendering/discordText.js';
 import { renewYouTubeWebSubSubscriptions } from './youtubeWebSub.js';
 import { runYouTubeApiDataLifecycle } from './youtubeLifecycle.js';
@@ -34,6 +34,8 @@ import { isSupabaseDataApiRestricted } from './serviceRestriction.js';
 
 type SourceRow = {
   id: number;
+  user_id: string | null;
+  guild_id: string | null;
   channel_id: string | null;
   name: string | null;
   url: string;
@@ -139,6 +141,63 @@ const getMode = (row: SourceRow): 'posts' | 'videos' => {
   return 'videos';
 };
 
+/**
+ * A subscription created from a Muel DM has no guild. Its provenance is the
+ * subscribing user, so deliveries stay owner-scoped: Weave nodes are private to
+ * that user and the Discord destination must be that user's own bot DM.
+ */
+const isPrivateRow = (row: SourceRow): boolean => row.guild_id === null && Boolean(row.user_id);
+
+type SendableChannel = {
+  id: string;
+  type: ChannelType;
+  send: (payload: unknown) => Promise<Parameters<typeof postOverflowToThread>[0]>;
+};
+
+const isSendable = (channel: unknown): channel is SendableChannel =>
+  Boolean(channel) && typeof channel === 'object'
+  && 'send' in (channel as object) && typeof (channel as { send?: unknown }).send === 'function';
+
+/**
+ * Resolve where a source row delivers. Guild rows use their stored channel.
+ * Private (DM) rows are allowed only into the owner's own DM: a stored id that
+ * points anywhere else (another user's DM, a group DM, a guild channel with no
+ * guild scope) is normalized to the owner's bot DM instead of being trusted.
+ */
+export const resolveDeliveryDestination = async (
+  client: Pick<Client, 'channels' | 'users'>,
+  row: Pick<SourceRow, 'id' | 'user_id' | 'guild_id' | 'channel_id'>,
+): Promise<SendableChannel> => {
+  // Fail closed: a row with neither guild nor owner scope has no legitimate
+  // destination, so it must never fall through to the guild (community) path.
+  if (row.guild_id === null && !row.user_id) {
+    throw new Error(`source ${row.id} has neither guild nor owner scope; refusing to deliver`);
+  }
+  const stored = await client.channels.fetch(row.channel_id!).catch(() => null);
+  if (!isPrivateRow(row as SourceRow)) {
+    if (!isSendable(stored)) throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
+    const storedGuildId = 'guildId' in stored ? (stored as { guildId?: unknown }).guildId : null;
+    if (storedGuildId !== row.guild_id) {
+      throw new Error(`source ${row.id} guild scope ${row.guild_id} does not match stored channel ${row.channel_id}`);
+    }
+    return stored;
+  }
+  const recipientId = stored && typeof stored === 'object' && 'recipientId' in stored
+    ? (stored as { recipientId?: unknown }).recipientId
+    : null;
+  if (isSendable(stored) && stored.type === ChannelType.DM && recipientId === row.user_id) {
+    return stored;
+  }
+  console.warn('[youtube] private subscription destination is not the owner DM; normalizing', {
+    sourceId: row.id,
+    storedChannelId: row.channel_id,
+  });
+  const owner = await client.users.fetch(row.user_id!);
+  const dm = await owner.createDM();
+  if (!isSendable(dm)) throw new Error(`Discord DM is not sendable for user ${row.user_id}`);
+  return dm;
+};
+
 const isYouTubeRow = (row: SourceRow): boolean => {
   const name = String(row.name ?? '').toLowerCase();
   const url = String(row.url ?? '').toLowerCase();
@@ -148,7 +207,7 @@ const isYouTubeRow = (row: SourceRow): boolean => {
 const loadRows = async (): Promise<SourceRow[]> => {
   const { data, error } = await getSupabaseClient()
     .from('sources')
-    .select('id,channel_id,name,url,is_active,last_post_id,last_post_signature,last_check_at')
+    .select('id,user_id,guild_id,channel_id,name,url,is_active,last_post_id,last_post_signature,last_check_at')
     .eq('is_active', true);
 
   if (error) {
@@ -501,10 +560,8 @@ const processVideoRow = async (client: Client, row: SourceRow): Promise<number> 
     return 0;
   }
 
-  const channel = await client.channels.fetch(row.channel_id!);
-  if (!channel || !('send' in channel) || typeof channel.send !== 'function') {
-    throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
-  }
+  const channel = await resolveDeliveryDestination(client, row);
+  const privateRow = isPrivateRow(row);
 
   let sent = 0;
   for (const candidate of candidates) {
@@ -571,7 +628,8 @@ const processVideoRow = async (client: Client, row: SourceRow): Promise<number> 
 
     void insertWeaveNode({
       sourceKind: 'community_video',
-      visibility: 'community',
+      visibility: privateRow ? 'private' : 'community',
+      ownerUserId: privateRow ? row.user_id : null,
       title: videoMetadata?.title ?? latest.title,
       body: videoMetadata?.description || latest.title,
       tags: [videoMetadata?.channelTitle ?? latest.author].filter(Boolean),
@@ -615,10 +673,8 @@ const processCommunityRow = async (client: Client, row: SourceRow): Promise<numb
     return 0;
   }
 
-  const channel = await client.channels.fetch(row.channel_id!);
-  if (!channel || !('send' in channel) || typeof channel.send !== 'function') {
-    throw new Error(`Discord channel is not sendable: ${row.channel_id}`);
-  }
+  const channel = await resolveDeliveryDestination(client, row);
+  const privateRow = isPrivateRow(row);
 
   await upsertYouTubeItem(getSupabaseClient(), {
     sourceId: row.id,
@@ -717,7 +773,8 @@ const processCommunityRow = async (client: Client, row: SourceRow): Promise<numb
 
   void insertWeaveNode({
     sourceKind: 'community_post',
-    visibility: 'community',
+    visibility: privateRow ? 'private' : 'community',
+    ownerUserId: privateRow ? row.user_id : null,
     title: latest.title,
     body: latest.content || latest.title,
     tags: [latest.author].filter(Boolean),
@@ -729,9 +786,16 @@ const processCommunityRow = async (client: Client, row: SourceRow): Promise<numb
   });
 
   if (overflow) {
-    await postOverflowToThread(sentMessage, threadTitle('이어서 보기', latest), overflow, {
-      footer: displayLink(latest),
-    });
+    // DMs have no threads; deliver the rest inline so nothing is lost. The
+    // thread path also falls back inline if Discord refuses the thread.
+    const threaded = channel.type === ChannelType.DM
+      ? false
+      : await postOverflowToThread(sentMessage, threadTitle('이어서 보기', latest), overflow, {
+          footer: displayLink(latest),
+        });
+    if (!threaded) {
+      await postOverflowInline(channel, overflow, { footer: displayLink(latest) });
+    }
   }
 
   if (latest.content) {

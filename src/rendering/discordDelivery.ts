@@ -32,12 +32,21 @@ export const postOverflowToThread = async (
   const chunks = splitForDiscord(body, DISCORD_SAFE.infoDescription);
   if (chunks.length === 0) return false;
 
+  let thread: Awaited<ReturnType<NonNullable<ThreadableMessage['startThread']>>>;
   try {
-    const thread = await message.startThread({
+    thread = await message.startThread({
       name: (name || '이어서').slice(0, 90),
       autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
       reason: opts.reason ?? 'Muel overflow thread',
     });
+  } catch (error) {
+    console.warn('[discord] overflow thread could not be opened', error);
+    return false;
+  }
+  // Once the thread exists, a failed chunk must not report `false`: callers use
+  // `false` to fall back to inline posting, which would duplicate the chunks
+  // already delivered into the thread.
+  try {
     for (let i = 0; i < chunks.length; i += 1) {
       const embed = new EmbedBuilder()
         .setColor(opts.color ?? MUEL_BRAND_COLOR)
@@ -49,9 +58,41 @@ export const postOverflowToThread = async (
     }
     return true;
   } catch (error) {
-    console.warn('[discord] overflow thread failed', error);
-    return false;
+    console.warn('[discord] overflow thread send failed after thread was opened; not falling back inline', error);
+    return true;
   }
+};
+
+/** Minimal shape of a channel that accepts embed payloads (DMs have no threads). */
+type EmbedChannelSend = {
+  send?: (payload: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+};
+
+/**
+ * Deliver overflow as follow-up embeds in the same channel. This is the
+ * thread-less path for DMs (Discord has no threads in DM channels) and the
+ * fallback when `postOverflowToThread` could not open a thread, so a long
+ * community post is never silently truncated. Returns the number of chunks sent.
+ */
+export const postOverflowInline = async (
+  channel: EmbedChannelSend,
+  body: string,
+  opts: { color?: number; footer?: string } = {},
+): Promise<number> => {
+  if (typeof channel.send !== 'function') return 0;
+  const chunks = splitForDiscord(body, DISCORD_SAFE.infoDescription);
+  let sent = 0;
+  for (let i = 0; i < chunks.length; i += 1) {
+    const embed = new EmbedBuilder()
+      .setColor(opts.color ?? MUEL_BRAND_COLOR)
+      .setDescription(chunks[i]!);
+    if (opts.footer && i === chunks.length - 1) {
+      embed.setFooter({ text: opts.footer.slice(0, DISCORD_LIMITS.embedFooter) });
+    }
+    await channel.send({ embeds: [embed] });
+    sent += 1;
+  }
+  return sent;
 };
 
 /**

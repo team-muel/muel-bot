@@ -16,7 +16,7 @@
     "test:regression": "tsx tests/regression/mention-llm-callsite.test.ts",
     "test:regression:research": "tsx tests/regression/research-enrich-callsite.test.ts",
     "test:regression:discord-polish": "tsx tests/regression/discord-output-polish.test.ts",
-    "test:regression:subscribe": "tsx tests/regression/subscribe-interaction.test.ts",
+    "test:regression:subscribe": "tsx tests/regression/subscribe-interaction.test.ts && node --import tsx tests/regression/dm-subscription-privacy.test.ts",
     "test:regression:delivery": "tsx tests/regression/discord-delivery.test.ts",
     "test:regression:hub-responsiveness": "tsx tests/regression/hub-responsiveness.test.ts",
     "test:regression:channel-buffer": "tsx tests/regression/channel-buffer.test.ts",

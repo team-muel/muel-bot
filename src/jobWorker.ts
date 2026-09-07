@@ -92,12 +92,26 @@ const workerStatus: JobWorkerStatus = {
 
 let workerClient: Client | null = null;
 
-const isValidSubscribeChannelType = (t: number): boolean =>
+const isValidGuildSubscribeChannelType = (t: number): boolean =>
   t === ChannelType.GuildText ||
   t === ChannelType.GuildAnnouncement ||
   t === ChannelType.PublicThread ||
   t === ChannelType.PrivateThread ||
   t === ChannelType.AnnouncementThread;
+
+/**
+ * DM semantics shared with the Gateway path (`src/subscribe.ts`): a DM
+ * subscription is owner-scoped, so the only valid private destination is the
+ * invoking user's own bot DM. Any other private destination is rejected.
+ */
+export const isAllowedSubscribeDestination = (
+  channel: { type: number; recipientId?: string | null } | null | undefined,
+  scope: { guildId: string | null; userId: string },
+): boolean => {
+  if (!channel) return false;
+  if (scope.guildId) return isValidGuildSubscribeChannelType(channel.type);
+  return channel.type === ChannelType.DM && channel.recipientId === scope.userId;
+};
 
 const patchOriginalInteractionResponse = async (
   applicationId: string,
@@ -135,14 +149,15 @@ const resolveWorkerChannelTarget = async (channelId: string | null | undefined) 
 };
 
 const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) => {
-  if (!payload.guildId) {
-    await patchOriginalInteractionResponse(payload.applicationId, payload.token, buildSubscribeResponse('구독', '이 명령어는 서버에서만 사용할 수 있어.'));
-    return;
-  }
-
+  // Nullable guildId is a Muel DM. The HTTP interaction path must carry the same
+  // DM semantics as the Gateway handler in src/subscribe.ts: owner-scoped list,
+  // and add/remove only into the invoking user's own bot DM.
   try {
     if (payload.action === 'list') {
-      const rows = await listYouTubeSubscriptions({ guildId: payload.guildId });
+      const rows = await listYouTubeSubscriptions({
+        guildId: payload.guildId,
+        userId: payload.guildId ? undefined : payload.userId,
+      });
       const previewRows = rows.slice(0, 20);
       const lines = await mapWithConcurrency(
         previewRows,
@@ -169,9 +184,12 @@ const handleSubscribeInteraction = async (payload: SubscribeInteractionPayload) 
       throw new Error('Discord client is unavailable for subscription jobs');
     }
 
-    const channel = await workerClient.channels.fetch(payload.channelId);
-    if (!channel || !('type' in channel) || !isValidSubscribeChannelType(channel.type)) {
-      await patchOriginalInteractionResponse(payload.applicationId, payload.token, buildSubscribeResponse('구독', '텍스트 채널이나 스레드에서만 사용할 수 있어.'));
+    const channel = await workerClient.channels.fetch(payload.channelId).catch(() => null);
+    const destination = channel && 'type' in channel
+      ? { type: channel.type, recipientId: 'recipientId' in channel ? (channel as { recipientId?: string | null }).recipientId ?? null : null }
+      : null;
+    if (!channel || !destination || !isAllowedSubscribeDestination(destination, { guildId: payload.guildId, userId: payload.userId })) {
+      await patchOriginalInteractionResponse(payload.applicationId, payload.token, buildSubscribeResponse('구독', 'Muel DM 또는 서버의 텍스트, 공지, 스레드 채널에서만 사용할 수 있어.'));
       return;
     }
 
