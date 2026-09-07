@@ -26,8 +26,10 @@ import { classifyActionDraft } from './actionDraft.js';
 import { classifyProposeMemo, buildMemoProposalCard } from './memoProposal.js';
 import { buildHubActionConfirmation } from './actionConfirmations.js';
 import {
+  isSupabaseDataApiProbeDue,
   isSupabaseDataApiRestricted,
   isSupabaseQuotaRestriction,
+  recordSupabaseDataApiSuccess,
   recordSupabaseQuotaRestriction,
 } from './serviceRestriction.js';
 
@@ -239,7 +241,12 @@ export const handleMuelMention = async (
 
   let inboundMessageId: string | null = null;
   let chatId: string | null = null;
-  let statelessMode = isSupabaseDataApiRestricted();
+  // Half-open probe: once the restriction backoff has elapsed, the next mention
+  // is allowed to touch the Data API again. If it succeeds the circuit closes
+  // (recordSupabaseDataApiSuccess); if it fails we fall back to stateless below.
+  // This keeps recovery possible when ENABLE_JOB_WORKER=false and no other
+  // periodic path probes Supabase (MUE-59 / PR #242 finding).
+  let statelessMode = isSupabaseDataApiRestricted() && !isSupabaseDataApiProbeDue();
   const lightweightTurn = isLightweightTurn(effectiveText);
   const replyStartedAt = Date.now();
 
@@ -290,6 +297,7 @@ export const handleMuelMention = async (
         });
         chatId = prepared.chatId;
         history = prepared.messages;
+        recordSupabaseDataApiSuccess();
       } catch (error) {
         if (!isSupabaseQuotaRestriction(error)) throw error;
         recordSupabaseQuotaRestriction(error);
@@ -426,21 +434,27 @@ export const handleMuelMention = async (
     let channelActivity = '';
     let guildTopology = '';
 
-    if (!lightweightTurn && !statelessMode) {
-      const mentionedHistoryPromises = mentionedUsers.map((u) =>
-        getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
-          name: u.displayName ?? u.username,
-          summary,
-        })),
-      );
-
-      [userHistory, ...mentionedHistories] = await Promise.all([
-        getUserHistorySummary(supabase, message.author.id).catch(() => null),
-        ...mentionedHistoryPromises,
-      ]);
-
+    if (!lightweightTurn) {
+      // In-memory context (channel buffer, guild topology) needs no database and
+      // stays available in stateless mode (MUE-59 / PR #241 finding).
       channelActivity = formatForContext(message.channelId, client.user.id, 6);
       guildTopology = message.guild ? formatGuildTopology(message.guild) : '';
+
+      if (!statelessMode) {
+        const mentionedHistoryPromises = mentionedUsers.map((u) =>
+          getUserHistorySummary(supabase, u.id).catch(() => null).then((summary) => ({
+            name: u.displayName ?? u.username,
+            summary,
+          })),
+        );
+
+        [userHistory, ...mentionedHistories] = await Promise.all([
+          getUserHistorySummary(supabase, message.author.id).catch(() => null),
+          ...mentionedHistoryPromises,
+        ]);
+      } else {
+        mentionedHistories = mentionedUsers.map((u) => ({ name: u.displayName ?? u.username, summary: null }));
+      }
     }
 
     const authorName = message.author.displayName ?? message.author.username;

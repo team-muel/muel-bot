@@ -143,6 +143,100 @@ await check('non-OK gateway bodies are bounded and never leak raw pages', async 
   }
 });
 
+// --- MUE-60 (PR #240 findings) ---
+
+await check('factual market lookups reach the live-search lane when the tool exists; forecasts stay guarded', async () => {
+  const { getPreflightGuard } = await import('../../src/capabilities.js');
+  assert.equal(getPreflightGuard('오늘 원달러 환율 얼마야', { liveSearchAvailable: true }), null, '환율 lookup must not be blocked');
+  assert.equal(getPreflightGuard('삼성전자 주가 얼마야', { liveSearchAvailable: true }), null, '현재가 lookup must not be blocked');
+  assert.equal(getPreflightGuard('삼성전자 주가 얼마야')?.reason, 'realtime_finance', 'without a search tool the missing-capability guard stays');
+  assert.equal(getPreflightGuard('테슬라 오를까 살까', { liveSearchAvailable: true })?.reason, 'realtime_finance', 'investment forecasts stay guarded');
+  assert.equal(getPreflightGuard('환율 전망 어때', { liveSearchAvailable: true })?.reason, 'realtime_finance');
+  const agent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
+  assert.match(
+    agent,
+    /liveSearchAvailable: isNaverSearchConfigured\(\) && shouldEnableTools\(userText\)/,
+    'the guard may only yield when the search tool is actually enabled for the turn',
+  );
+  // Every phrase the finance guard recognises as a market lookup must also enable
+  // the tool lane — otherwise the bypass would hand the question to bare weights.
+  for (const q of ['달러 얼마?', '애플 현재가 알려줘', '삼성전자 시세', '비트코인 등락률', '엔화 얼마야']) {
+    assert.equal(shouldEnableTools(q), true, `${q} must enable tools`);
+  }
+});
+
+await check('English trigger words are whole-word only; casual words containing them stay casual', async () => {
+  const { isLightweightTurn } = await import('../../src/muelContextWindow.js');
+  for (const casual of ['frustrated', 'grateful today', 'moderate', 'selection', 'stocking up', '지금 시간 있어?']) {
+    assert.equal(shouldEnableTools(casual), false, `${casual} must not enable tools`);
+    assert.equal(isLightweightTurn(casual), true, `${casual} must stay lightweight`);
+  }
+  assert.equal(shouldEnableTools('stock prices'), true);
+  assert.equal(shouldEnableTools('the rate'), true);
+});
+
+await check('bare temporal words do not push casual turns onto the heavy/tool lane', async () => {
+  const { isLightweightTurn } = await import('../../src/muelContextWindow.js');
+  for (const casual of ['지금 뭐해?', '오늘 힘들다', '오늘도 화이팅', '지금 심심해', '현재 기분 좋아', 'how are you today']) {
+    assert.equal(shouldEnableTools(casual), false, `${casual} must not enable tools`);
+    assert.equal(isLightweightTurn(casual), true, `${casual} must stay lightweight`);
+  }
+  for (const current of ['지금 대통령 누구야', '오늘 환율 얼마야', '지금 몇 시야?', '오늘 무슨 일 있었어', '현재 코스피 어때?']) {
+    assert.equal(shouldEnableTools(current), true, `${current} must enable tools`);
+    assert.equal(isLightweightTurn(current), false, `${current} must not be lightweight`);
+  }
+});
+
+await check('English current-information questions get the live-search tool', () => {
+  for (const q of [
+    "who is the president of korea now",
+    "what's the USD to KRW exchange rate",
+    'how much is bitcoin today',
+    'weather in seoul today',
+    'latest news about samsung',
+    'what is the current price of gold',
+  ]) {
+    assert.equal(shouldEnableTools(q), true, `${q} must enable tools`);
+  }
+  assert.equal(shouldEnableTools('thanks!'), false);
+  assert.equal(shouldEnableTools('good morning'), false);
+});
+
+await check('provider fallback keeps the provider-neutral search tool', () => {
+  const agent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
+  assert.match(agent, /const activeTools = toolsEnabled \? tools : \{\};/);
+  assert.match(agent, /tryGenerate\(fallback\.model, fallback\.provider, fallback\.modelId, activeTools\)/, 'fallback must receive the same tool set (search_naver included)');
+  assert.match(agent, /'search_naver' in allTools\s*\?\s*\{ search_naver: allTools\.search_naver \}/, 'degraded mode keeps search_naver');
+});
+
+await check('NAVER timeout bounds the body read, not only the headers', async () => {
+  const originalFetch = globalThis.fetch;
+  const { config } = await import('../../src/config.js');
+  const originalTimeout = config.naverSearchTimeoutMs;
+  (config as { naverSearchTimeoutMs: number }).naverSearchTimeoutMs = 50;
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    // Headers arrive immediately; the body never finishes unless aborted.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"items":['));
+        init?.signal?.addEventListener('abort', () => controller.error(new Error('aborted')));
+      },
+    });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      searchNaver({ query: 'stall', type: 'news' }),
+      (error: unknown) => error instanceof Error && /exceeded 50ms/.test(error.message),
+    );
+    assert.ok(Date.now() - startedAt < 2_000, 'a stalled body must be cut by the timeout');
+  } finally {
+    globalThis.fetch = originalFetch;
+    (config as { naverSearchTimeoutMs: number }).naverSearchTimeoutMs = originalTimeout;
+  }
+});
+
 console.log(`\n${'='.repeat(50)}`);
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

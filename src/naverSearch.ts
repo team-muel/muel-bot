@@ -141,24 +141,40 @@ export const searchNaver = async (input: {
     url.searchParams.set('sort', input.sort);
   }
 
-  const response = await fetchWithTimeout(
-    url,
-    {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'muel-bot/1.0',
-        'X-NCP-APIGW-API-KEY-ID': config.naverHubKeyId!,
-        'X-NCP-APIGW-API-KEY': config.naverHubKey!,
+  // The timeout must cover the whole HTTP lifecycle — headers AND body. A
+  // helper that clears its timer as soon as headers arrive leaves a slow or
+  // stalled body read unbounded (MUE-60 / PR #240 finding).
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), config.naverSearchTimeoutMs);
+  let payload: NaverSearchResponse;
+  try {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'muel-bot/1.0',
+          'X-NCP-APIGW-API-KEY-ID': config.naverHubKeyId!,
+          'X-NCP-APIGW-API-KEY': config.naverHubKey!,
+        },
+        signal: controller.signal,
       },
-    },
-    config.naverSearchTimeoutMs,
-  );
+      config.naverSearchTimeoutMs,
+    );
 
-  if (!response.ok) {
-    throw formatHttpError(response.status, await response.text());
+    if (!response.ok) {
+      throw formatHttpError(response.status, await response.text());
+    }
+
+    payload = await response.json() as NaverSearchResponse;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`NAVER API HUB request exceeded ${config.naverSearchTimeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(deadline);
   }
-
-  const payload = await response.json() as NaverSearchResponse;
   if (!Array.isArray(payload.items)) {
     const message = cleanNaverText(payload.errorMessage ?? payload.message);
     throw new Error(message ? `NAVER API HUB: ${truncate(message, 180)}` : 'NAVER API HUB returned an invalid response');

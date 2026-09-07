@@ -1,45 +1,37 @@
 name: CI
 
+# No `paths:` filter on purpose: `typecheck` and `smoke tests` are required
+# status checks on the default branch ruleset. A path filter would leave
+# docs-only PRs without a check result and block them from merging.
 on:
   pull_request:
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'supabase/migrations/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - '.github/workflows/ci.yml'
   merge_group:
   push:
     branches:
       - main
       - master
 
+permissions:
+  contents: read
+
 jobs:
   typecheck:
     name: typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run typecheck
+    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
+    with:
+      node-version: '20'
+      package-manager: npm
+      install-command: npm ci
+      test-command: npm run typecheck
+      build-command: ''
 
   smoke:
     name: smoke tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - name: Smoke tests (no live API keys required)
-        env:
-          DISCORD_BOT_TOKEN: smoke-test-dummy
-        run: npm run test:smoke
+    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
+    with:
+      node-version: '20'
+      package-manager: npm
+      install-command: npm ci
+      # Smoke tests need no live API keys; the dummy token satisfies config validation.
+      test-command: DISCORD_BOT_TOKEN=smoke-test-dummy npm run test:smoke
+      build-command: ''
