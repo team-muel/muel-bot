@@ -153,7 +153,26 @@ await check('factual market lookups reach the live-search lane when the tool exi
   assert.equal(getPreflightGuard('테슬라 오를까 살까', { liveSearchAvailable: true })?.reason, 'realtime_finance', 'investment forecasts stay guarded');
   assert.equal(getPreflightGuard('환율 전망 어때', { liveSearchAvailable: true })?.reason, 'realtime_finance');
   const agent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
-  assert.match(agent, /getPreflightGuard\(userText, \{ liveSearchAvailable: isNaverSearchConfigured\(\) \}\)/);
+  assert.match(
+    agent,
+    /liveSearchAvailable: isNaverSearchConfigured\(\) && shouldEnableTools\(userText\)/,
+    'the guard may only yield when the search tool is actually enabled for the turn',
+  );
+  // Every phrase the finance guard recognises as a market lookup must also enable
+  // the tool lane — otherwise the bypass would hand the question to bare weights.
+  for (const q of ['달러 얼마?', '애플 현재가 알려줘', '삼성전자 시세', '비트코인 등락률', '엔화 얼마야']) {
+    assert.equal(shouldEnableTools(q), true, `${q} must enable tools`);
+  }
+});
+
+await check('English trigger words are whole-word only; casual words containing them stay casual', async () => {
+  const { isLightweightTurn } = await import('../../src/muelContextWindow.js');
+  for (const casual of ['frustrated', 'grateful today', 'moderate', 'selection', 'stocking up', '지금 시간 있어?']) {
+    assert.equal(shouldEnableTools(casual), false, `${casual} must not enable tools`);
+    assert.equal(isLightweightTurn(casual), true, `${casual} must stay lightweight`);
+  }
+  assert.equal(shouldEnableTools('stock prices'), true);
+  assert.equal(shouldEnableTools('the rate'), true);
 });
 
 await check('bare temporal words do not push casual turns onto the heavy/tool lane', async () => {

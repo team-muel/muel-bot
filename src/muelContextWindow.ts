@@ -61,12 +61,12 @@ const DEFAULT_CONTEXT_MESSAGES = 12;
 // is small talk, not a search (MUE-60 / PR #240 finding). They only count when
 // paired with an information cue — see CURRENT_INFO_CUE_RE below.
 const TOOL_TRIGGER_RE =
-  /(최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|환율|코스피|코스닥|나스닥|비트코인|금리|유가|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져|who(?:'s|\s+is|\s+are)\b|what(?:'s|\s+is|\s+are)\s+the\b|how\s+much|how\s+many|price|rate|weather|stock|exchange|election|president|headline)/iu;
+  /(최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|시세|현재가|등락률|환율|달러|엔화|코스피|코스닥|나스닥|비트코인|금리|유가|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져|who(?:'s|\s+is|\s+are)\b|what(?:'s|\s+is|\s+are)\s+the\b|how\s+much|how\s+many|\b(?:price|rate|weather|stock|exchange|election|president|headline)s?\b)/iu;
 const TEMPORAL_RE = /(현재|지금|오늘|이번\s*주|올해|\bnow\b|\btoday\b|this\s+week|this\s+year|right\s+now)/iu;
 // An information-seeking cue that, together with a temporal word, marks a
 // current-information question rather than casual chat.
 const CURRENT_INFO_CUE_RE =
-  /(누구|얼마|몇\s*(명|개|시|도|퍼센트|%)|언제|어디|무슨\s*일|어떤\s*일|어떻게\s*됐|상황|결과|순위|점수|스코어|시간|날짜|며칠|요일|(?:who|what|when|where|which)(?:'s|\s+(?:is|are|was|were))\b|how\s+(?:much|many|long|old)|score|result|ranking)/iu;
+  /(누구|얼마|몇\s*(명|개|시|도|퍼센트|%)|언제|어디|무슨\s*일|어떤\s*일|어떻게\s*됐|상황|결과|순위|점수|스코어|날짜|며칠|요일|(?:who|what|when|where|which)(?:'s|\s+(?:is|are|was|were))\b|how\s+(?:much|many|long|old)|score|result|ranking)/iu;
 
 const isCurrentInfoQuestion = (text: string): boolean =>
   TEMPORAL_RE.test(text) && CURRENT_INFO_CUE_RE.test(text);

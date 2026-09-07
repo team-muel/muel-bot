@@ -22,6 +22,7 @@ import { getOverlayPromptText, hasOverlayKeyPrefix } from './promptOverlays.js';
 import {
   buildMuelContextWindow,
   isLightweightTurn,
+  shouldEnableTools,
   type MentionedUserContext,
 } from './muelContextWindow.js';
 import { runSocialRead, formatSocialReadSection } from './socialRead.js';
@@ -230,7 +231,12 @@ export const generateMuelReply = async (
   databaseAvailable = true,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
-  const preflightGuard = getPreflightGuard(userText, { liveSearchAvailable: isNaverSearchConfigured() });
+  // The guard yields to live search only when the tool will actually be on
+  // this turn; otherwise the model would answer a market question from stale
+  // weights, which is exactly what the guard exists to prevent.
+  const preflightGuard = getPreflightGuard(userText, {
+    liveSearchAvailable: isNaverSearchConfigured() && shouldEnableTools(userText),
+  });
   if (preflightGuard) {
     if (databaseAvailable) {
       await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
