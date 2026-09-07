@@ -96,4 +96,66 @@ assert.equal(degradedWindow.diagnostics.sections.includes('databaseDegraded'), t
 assert.match(degradedWindow.system, /Do not claim to remember prior conversations/);
 assert.match(degradedWindow.system, /available public-search evidence only/);
 
+// --- MUE-59 (PR #241/#242 findings) ---
+
+// #242: a provider SDK's own HTTP 402 is not a Supabase restriction.
+class ProviderApiError extends Error {
+  name = 'AI_APICallError';
+  statusCode = 402;
+  url = 'https://aiq.example/v1/chat';
+  requestBodyValues = {};
+}
+class FetchGatewayError extends Error {
+  status = 402;
+  url = 'https://gateway.example/v1';
+}
+class PostgrestErrorLike extends Error {
+  name = 'PostgrestError';
+  code = '';
+  details = '';
+  hint = '';
+}
+assert.equal(isSupabaseQuotaRestriction(new ProviderApiError('Payment Required')), false, 'AI SDK provider 402 must not open the Supabase circuit');
+assert.equal(isSupabaseQuotaRestriction(new FetchGatewayError('Payment Required')), false, 'fetch-style gateway 402 must not open the Supabase circuit');
+assert.equal(isSupabaseQuotaRestriction(new Error('Service for this project is restricted due to exceed_db_size_quota')), true, 'Supabase prose still counts even when wrapped in an Error');
+assert.equal(isSupabaseQuotaRestriction({ message: 'Payment Required' }), true, 'PostgREST-shaped bare 402 still counts');
+assert.equal(isSupabaseQuotaRestriction(new PostgrestErrorLike('Payment Required')), true, 'throwOnError PostgrestError still counts');
+assert.equal(isSupabaseQuotaRestriction(new Error('sources load failed: Payment Required')), true, 'app code re-wrapping the Supabase 402 in Error still counts');
+
+// #242: circuit recovery without the job worker — mention path probes and closes.
+assert.match(mention, /isSupabaseDataApiRestricted\(\) && !isSupabaseDataApiProbeDue\(\)/, 'mention must probe once backoff elapsed');
+assert.match(mention, /history = prepared\.messages;\s*recordSupabaseDataApiSuccess\(\);/, 'a successful turn must close the circuit');
+const youtube = readFileSync(join(SRC, 'youtubeMonitor.ts'), 'utf8');
+assert.match(youtube, /isSupabaseDataApiRestricted\(\) && !isSupabaseDataApiProbeDue\(\)/, 'monitor must probe once backoff elapsed');
+assert.match(youtube, /const rows = await loadRows\(\);\s*recordSupabaseDataApiSuccess\(\);/, 'monitor success must close the circuit');
+assert.equal((youtube.match(/observeSupabaseDataApiError\(error\)/g) ?? []).length, 2, 'monitor must feed Supabase 402s into the circuit on both row and tick failures');
+
+// #241: in-memory context survives stateless mode; DB reads do not.
+assert.match(mention, /if \(!lightweightTurn\) \{\s*\/\/ In-memory context[\s\S]*?channelActivity = formatForContext\([\s\S]*?if \(!statelessMode\) \{/, 'channel buffer must not be gated on statelessMode');
+assert.match(mention, /if \(!statelessMode\) void \(async \(\) => \{\s*try \{\s*const proposal = await classifyProposeMemo/, 'memo proposal must stay off during an outage');
+
+// #241: unavailable history is not "a user we barely talked to".
+const unavailableWindow = await buildMuelContextWindow({
+  supabase: {} as any,
+  baseSystemPrompt: 'base',
+  userText: '이 사람이랑 나 무슨 얘기 했었지',
+  authorName: 'Tester',
+  history: [{ id: 'm', role: 'user', parts: [{ type: 'text', text: 'x' }], metadata: {} } as any],
+  sourceUserId: 'discord-user-1',
+  mentionedUsers: [{ name: 'Friend', summary: null }],
+  skipDatabaseContext: true,
+});
+assert.doesNotMatch(unavailableWindow.system, /거의 없는 유저/, 'outage must not be described as a new user');
+assert.match(unavailableWindow.system, /Tester: 대화 기록을 지금은 조회할 수 없음/);
+assert.match(unavailableWindow.system, /Friend: 대화 기록을 지금은 조회할 수 없음/);
+const absentWindow = await buildMuelContextWindow({
+  supabase: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) } as any,
+  baseSystemPrompt: 'base',
+  userText: '안녕',
+  authorName: 'Tester',
+  history: [{ id: 'm', role: 'user', parts: [{ type: 'text', text: '안녕' }], metadata: {} } as any],
+  userHistory: null,
+});
+assert.match(absentWindow.system, /Tester: 아직 나와 대화한 기록이 거의 없는 유저/, 'a genuinely new user keeps the absent wording');
+
 console.log('supabase quota degradation regression passed.');

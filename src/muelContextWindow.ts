@@ -56,8 +56,20 @@ const LIGHTWEIGHT_TURN_MAX_CHARS = 24;
 const LIGHTWEIGHT_CONTEXT_MESSAGES = 4;
 const DEFAULT_CONTEXT_MESSAGES = 12;
 
+// Words that on their own mean "I want information that may have changed".
+// Bare temporal words (지금/오늘/현재, now/today) are NOT in here: "지금 뭐해?"
+// is small talk, not a search (MUE-60 / PR #240 finding). They only count when
+// paired with an information cue — see CURRENT_INFO_CUE_RE below.
 const TOOL_TRIGGER_RE =
-  /(현재|지금|오늘|최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|환율|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져)/iu;
+  /(최신|최근|latest|current|search|검색|찾아|알아봐|news|뉴스|출시|발표|가격|주가|시세|현재가|등락률|환율|달러|엔화|코스피|코스닥|나스닥|비트코인|금리|유가|날씨|대통령|ceo|공개\s*정보|post|게시글|영상|video|shorts|쇼츠|기억|remember|전에|지난번|메모|memo|꿈|dream|schedule|일정|채널|쓰레드|thread|프로필|profile|다이제스트|digest|요약|구독|허브|상태|켜져|꺼져|who(?:'s|\s+is|\s+are)\b|what(?:'s|\s+is|\s+are)\s+the\b|how\s+much|how\s+many|\b(?:price|rate|weather|stock|exchange|election|president|headline)s?\b)/iu;
+const TEMPORAL_RE = /(현재|지금|오늘|이번\s*주|올해|\bnow\b|\btoday\b|this\s+week|this\s+year|right\s+now)/iu;
+// An information-seeking cue that, together with a temporal word, marks a
+// current-information question rather than casual chat.
+const CURRENT_INFO_CUE_RE =
+  /(누구|얼마|몇\s*(명|개|시|도|퍼센트|%)|언제|어디|무슨\s*일|어떤\s*일|어떻게\s*됐|상황|결과|순위|점수|스코어|날짜|며칠|요일|(?:who|what|when|where|which)(?:'s|\s+(?:is|are|was|were))\b|how\s+(?:much|many|long|old)|score|result|ranking)/iu;
+
+const isCurrentInfoQuestion = (text: string): boolean =>
+  TEMPORAL_RE.test(text) && CURRENT_INFO_CUE_RE.test(text);
 const RECALL_CONTEXT_RE = /(기억|remember|전에|지난번|메모|나에 대해|내가 너에게|weave)/iu;
 const CATCHUP_CONTEXT_RE = /(최근|채널|쓰레드|thread|다이제스트|digest|요약|무슨 일|따라잡|catch\s*up)/iu;
 const ADMIN_CONTEXT_RE = /(구독|허브|상태|켜져|꺼져|프로필|profile|server|서버)/iu;
@@ -67,10 +79,12 @@ export const isLightweightTurn = (userText: string): boolean => {
   if (!normalized) return true;
   if (normalized.length > LIGHTWEIGHT_TURN_MAX_CHARS) return false;
   if (TOOL_TRIGGER_RE.test(normalized)) return false;
+  if (isCurrentInfoQuestion(normalized)) return false;
   return true;
 };
 
-export const shouldEnableTools = (userText: string): boolean => TOOL_TRIGGER_RE.test(userText);
+export const shouldEnableTools = (userText: string): boolean =>
+  TOOL_TRIGGER_RE.test(userText) || isCurrentInfoQuestion(userText);
 
 export const classifyContextWindowMode = (userText: string): MuelContextWindowMode => {
   if (isLightweightTurn(userText)) return 'lightweight';
@@ -112,7 +126,19 @@ export const formatCurrentTime = (): string => {
   ].join('\n');
 };
 
-const formatUserHistory = (summary: UserHistorySummary | null | undefined, authorName: string): string => {
+// "unavailable" (persistence outage) and "absent" (genuinely new user) must not
+// read the same to the model: the first is a temporary blind spot, the second is
+// a fact about the user (MUE-59 / PR #241 finding).
+const HISTORY_UNAVAILABLE_LINE = '대화 기록을 지금은 조회할 수 없음(저장소 일시 장애) — 처음 보는 유저라고 단정하지 말 것.';
+
+const formatUserHistory = (
+  summary: UserHistorySummary | null | undefined,
+  authorName: string,
+  unavailable = false,
+): string => {
+  if (unavailable) {
+    return `--- About This User ---\n${authorName}: ${HISTORY_UNAVAILABLE_LINE}\n--- End User ---`;
+  }
   if (!summary || summary.totalInteractions === 0) {
     return `--- About This User ---\n${authorName}: 아직 나와 대화한 기록이 거의 없는 유저.\n--- End User ---`;
   }
@@ -127,11 +153,13 @@ const formatUserHistory = (summary: UserHistorySummary | null | undefined, autho
   return lines.join('\n');
 };
 
-const formatMentionedUsers = (mentioned: MentionedUserContext[]): string => {
+const formatMentionedUsers = (mentioned: MentionedUserContext[], unavailable = false): string => {
   if (!mentioned || mentioned.length === 0) return '';
   const lines = ['--- Mentioned Users ---'];
   for (const m of mentioned) {
-    if (m.summary && m.summary.totalInteractions > 0) {
+    if (unavailable) {
+      lines.push(`${m.name}: ${HISTORY_UNAVAILABLE_LINE}`);
+    } else if (m.summary && m.summary.totalInteractions > 0) {
       lines.push(`${m.name}: ${m.summary.totalInteractions}번 대화함.`);
       if (m.summary.recentTopics.length > 0) {
         lines.push(`  최근 했던 말: ${m.summary.recentTopics.slice(0, 3).join(' / ')}`);
@@ -231,7 +259,7 @@ export const buildMuelContextWindow = async (
 
   if (opts.guildTopology) pushSection('guildTopology', opts.guildTopology);
 
-  pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName));
+  pushSection('userHistory', formatUserHistory(opts.userHistory, opts.authorName, Boolean(opts.skipDatabaseContext)));
 
   // P5 소셜 프로필 — 유저의 대화 레지스터(반말/드립 성향 등). 잡담 개인화 재료라
   // lightweight 턴에도 주입한다(단일 select, 저비용·실패 무해).
@@ -240,7 +268,7 @@ export const buildMuelContextWindow = async (
     if (profileText) pushSection('socialProfile', profileText);
   }
 
-  pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? []));
+  pushSection('mentionedUsers', formatMentionedUsers(opts.mentionedUsers ?? [], Boolean(opts.skipDatabaseContext)));
 
   // Memory — lightweight 턴은 직접 지침(muel_user_memos)만 저비용 주입(임베딩 X),
   // 비-lightweight 턴은 직접 지침 + 의미 기반 장기 기억(임베딩 유사도) 풀 경로.

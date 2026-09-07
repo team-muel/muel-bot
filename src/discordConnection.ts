@@ -34,19 +34,88 @@ const fetchPublicGatewayUrl = async (name: string, fetchGateway: FetchGateway): 
   }
 };
 
+const AUTHENTICATED_GATEWAY_TIMEOUT_MS = 5_000;
+
+type GatewayBotInfo = {
+  url: string;
+  shards: number;
+  session_start_limit: {
+    total: number;
+    remaining: number;
+    reset_after: number;
+    max_concurrency: number;
+  };
+};
+
+const isGatewayBotInfo = (value: unknown): value is GatewayBotInfo => {
+  if (!value || typeof value !== 'object') return false;
+  const info = value as Partial<GatewayBotInfo>;
+  const limit = info.session_start_limit;
+  return typeof info.url === 'string'
+    && typeof info.shards === 'number'
+    && !!limit
+    && typeof limit.total === 'number'
+    && typeof limit.remaining === 'number'
+    && typeof limit.reset_after === 'number'
+    && typeof limit.max_concurrency === 'number';
+};
+
 /**
- * Small single-shard apps do not need the authenticated Get Gateway Bot route.
- * Avoiding it also isolates startup from unrelated tenants exhausting a shared
- * hosting IP's authenticated Discord REST limit.
+ * Discord resets a bot token when the daily Identify budget is exceeded, so the
+ * session_start_limit handed to discord.js must be the real one whenever it can
+ * be obtained. The authenticated Get Gateway Bot call is bounded: if it is rate
+ * limited on a shared hosting IP (or a Retry-After is already pending) startup
+ * falls back to the unauthenticated /gateway URL with a synthetic budget so a
+ * single-shard app can still come up. The fallback is logged as "budget
+ * unknown" instead of being presented as a real allowance.
  */
 export const usePublicDiscordGateway = (
   client: Client,
   name: string,
   fetchGateway: FetchGateway = fetch,
+  authenticatedTimeoutMs = AUTHENTICATED_GATEWAY_TIMEOUT_MS,
 ): void => {
   const originalGet = client.rest.get.bind(client.rest);
   client.rest.get = async (route, options) => {
     if (String(route) !== Routes.gatewayBot()) return originalGet(route, options);
+
+    const retryAt = getDiscordRetryAt(name);
+    if (!retryAt) {
+      let timer: NodeJS.Timeout | undefined;
+      // Abort the in-flight authenticated request when the race times out so a
+      // queued/rate-limited call does not still land (and get discarded) later.
+      const abort = new AbortController();
+      try {
+        const info = await Promise.race([
+          originalGet(route, { ...options, signal: abort.signal }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              abort.abort();
+              reject(new Error(`authenticated gateway discovery exceeded ${authenticatedTimeoutMs}ms`));
+            }, authenticatedTimeoutMs);
+          }),
+        ]);
+        if (isGatewayBotInfo(info)) {
+          console.info(`[${name}-connection] gateway bot discovered`, {
+            shards: info.shards,
+            sessionsRemaining: info.session_start_limit.remaining,
+            sessionsTotal: info.session_start_limit.total,
+            resetAfterMs: info.session_start_limit.reset_after,
+          });
+          return info;
+        }
+        throw new Error('malformed gateway bot response');
+      } catch (error) {
+        console.warn(`[${name}-connection] authenticated gateway discovery failed; session budget unknown`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    } else {
+      console.warn(`[${name}-connection] skipping authenticated gateway discovery; session budget unknown`, { retryAt });
+    }
+
     const url = await fetchPublicGatewayUrl(name, fetchGateway);
     return {
       url,
@@ -57,7 +126,7 @@ export const usePublicDiscordGateway = (
         reset_after: GATEWAY_CACHE_MS,
         max_concurrency: 1,
       },
-    };
+    } satisfies GatewayBotInfo;
   };
 };
 
