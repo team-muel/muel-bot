@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
 import { getPreflightGuard } from './capabilities.js';
+import { isNaverSearchConfigured } from './naverSearch.js';
 import { sanitizeModelOutput } from './responseSanitizer.js';
 import { splitForDiscord } from './rendering/discordText.js';
 import { DISCORD_LIMITS } from './rendering/discordLimits.js';
@@ -229,7 +230,7 @@ export const generateMuelReply = async (
   databaseAvailable = true,
 ): Promise<MuelAgentResult> => {
   const localFallback = getLocalFallbackReply(userText);
-  const preflightGuard = getPreflightGuard(userText);
+  const preflightGuard = getPreflightGuard(userText, { liveSearchAvailable: isNaverSearchConfigured() });
   if (preflightGuard) {
     if (databaseAvailable) {
       await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
