@@ -82,14 +82,17 @@ export const usePublicDiscordGateway = (
     const retryAt = getDiscordRetryAt(name);
     if (!retryAt) {
       let timer: NodeJS.Timeout | undefined;
+      // Abort the in-flight authenticated request when the race times out so a
+      // queued/rate-limited call does not still land (and get discarded) later.
+      const abort = new AbortController();
       try {
         const info = await Promise.race([
-          originalGet(route, options),
+          originalGet(route, { ...options, signal: abort.signal }),
           new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error(`authenticated gateway discovery exceeded ${authenticatedTimeoutMs}ms`)),
-              authenticatedTimeoutMs,
-            );
+            timer = setTimeout(() => {
+              abort.abort();
+              reject(new Error(`authenticated gateway discovery exceeded ${authenticatedTimeoutMs}ms`));
+            }, authenticatedTimeoutMs);
           }),
         ]);
         if (isGatewayBotInfo(info)) {

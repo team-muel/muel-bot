@@ -55,8 +55,9 @@ assert.deepEqual(await budgetClient.rest.get(Routes.gatewayBot()), realBudget, '
 assert.equal(publicFetches, 0, 'public gateway must not be consulted when the real budget is available');
 
 // A hung authenticated call (shared-IP rate limit) must not block startup.
+let slowSignal: AbortSignal | undefined;
 const slowClient = {
-  rest: { get: () => new Promise(() => {}) },
+  rest: { get: (_route: string, options?: { signal?: AbortSignal }) => { slowSignal = options?.signal; return new Promise(() => {}); } },
 } as unknown as Client;
 usePublicDiscordGateway(slowClient, 'slow-test', async () => new Response(
   JSON.stringify({ url: 'wss://gateway.discord.gg/' }),
@@ -65,6 +66,7 @@ usePublicDiscordGateway(slowClient, 'slow-test', async () => new Response(
 const slowInfo = await slowClient.rest.get(Routes.gatewayBot()) as { url: string; session_start_limit: { remaining: number } };
 assert.equal(slowInfo.url, 'wss://gateway.discord.gg/');
 assert.equal(slowInfo.session_start_limit.remaining, 1, 'timeout falls back to the synthetic single-shard budget');
+assert.equal(slowSignal?.aborted, true, 'the timed-out authenticated request must be aborted, not left in flight');
 
 // A pending Retry-After skips the authenticated attempt entirely.
 const pendingRoutes: string[] = [];
@@ -76,8 +78,10 @@ usePublicDiscordGateway(pendingClient, 'pending-test', async () => new Response(
   JSON.stringify({ url: 'wss://gateway.discord.gg/' }),
   { status: 200 },
 ));
-await pendingClient.rest.get(Routes.gatewayBot());
+const pendingInfo = await pendingClient.rest.get(Routes.gatewayBot()) as { shards: number; session_start_limit: { remaining: number } };
 assert.deepEqual(pendingRoutes, [], 'a pending Retry-After must not spend another authenticated call');
+assert.equal(pendingInfo.shards, 1);
+assert.equal(pendingInfo.session_start_limit.remaining, 1, 'skipped discovery must still yield the synthetic single-shard budget');
 recordDiscordRetryAfter('pending-test', '0');
 
 const fallbackClient = {
