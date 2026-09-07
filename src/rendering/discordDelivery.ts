@@ -54,6 +54,38 @@ export const postOverflowToThread = async (
   }
 };
 
+/** Minimal shape of a channel that accepts embed payloads (DMs have no threads). */
+type EmbedChannelSend = {
+  send?: (payload: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+};
+
+/**
+ * Deliver overflow as follow-up embeds in the same channel. This is the
+ * thread-less path for DMs (Discord has no threads in DM channels) and the
+ * fallback when `postOverflowToThread` could not open a thread, so a long
+ * community post is never silently truncated. Returns the number of chunks sent.
+ */
+export const postOverflowInline = async (
+  channel: EmbedChannelSend,
+  body: string,
+  opts: { color?: number; footer?: string } = {},
+): Promise<number> => {
+  if (typeof channel.send !== 'function') return 0;
+  const chunks = splitForDiscord(body, DISCORD_SAFE.infoDescription);
+  let sent = 0;
+  for (let i = 0; i < chunks.length; i += 1) {
+    const embed = new EmbedBuilder()
+      .setColor(opts.color ?? MUEL_BRAND_COLOR)
+      .setDescription(chunks[i]!);
+    if (opts.footer && i === chunks.length - 1) {
+      embed.setFooter({ text: opts.footer.slice(0, DISCORD_LIMITS.embedFooter) });
+    }
+    await channel.send({ embeds: [embed] });
+    sent += 1;
+  }
+  return sent;
+};
+
 /**
  * Deliver reply overflow without dropping content. `anchor` is the already-sent
  * first reply. Up to `maxInline` extra chunks are posted as normal follow-up
