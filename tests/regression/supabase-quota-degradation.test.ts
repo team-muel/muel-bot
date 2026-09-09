@@ -64,7 +64,7 @@ assert.match(mention, /isSupabaseQuotaRestriction/);
 assert.match(mention, /continuing stateless/);
 assert.match(mention, /!statelessMode/);
 assert.match(agent, /databaseAvailable/);
-assert.match(agent, /search_naver: allTools\.search_naver/);
+assert.match(agent, /databaseAvailable \? allTools : \{\}/, 'no tool survives a database restriction (live search retired in MUE-86)');
 assert.match(agent, /skipDatabaseContext: !databaseAvailable/);
 assert.match(context, /skipDatabaseContext/);
 assert.match(worker, /recordSupabaseQuotaRestriction/);
