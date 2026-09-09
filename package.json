@@ -59,7 +59,7 @@
     "express-rate-limit": "^8.5.2",
     "hono": "^4.13.7",
     "ip-address": "^10.2.0",
-    "qs": "^6.16.0",
+    "qs": "^6.15.3",
     "undici": "^6.28.1"
   },
   "devDependencies": {
