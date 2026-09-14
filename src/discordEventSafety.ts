@@ -1,3 +1,5 @@
+import type { Client, ClientEvents } from 'discord.js';
+
 export type DiscordEventErrorLogger = (eventName: string, error: unknown) => void;
 
 export const safeDiscordEvent = async (
@@ -12,4 +14,14 @@ export const safeDiscordEvent = async (
   } catch (error) {
     logError(eventName, error);
   }
+};
+
+export const onSafeDiscordEvent = <Event extends keyof ClientEvents>(
+  client: Client,
+  eventName: Event,
+  handler: (...args: ClientEvents[Event]) => Promise<unknown> | unknown,
+): void => {
+  client.on(eventName, (...args) => {
+    void safeDiscordEvent(String(eventName), () => handler(...args));
+  });
 };
