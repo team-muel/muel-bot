@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
 import { config } from './config.js';
-import { registerGomdoriCommands } from './discordCommandRegistry.js';
+import { registerTrackedGomdoriCommands } from './gomdoriCommandRegistry.js';
 import {
   CODEX_COMMAND_NAME,
   handleCodexCommand,
@@ -26,7 +26,7 @@ export const registerGomdoriClientRuntime = (
 
     if (config.registerDiscordCommandsOnReady) {
       try {
-        await registerGomdoriCommands(readyClient, config.gomdoriBotToken!);
+        await registerTrackedGomdoriCommands(readyClient, config.gomdoriBotToken!);
         console.log('[gomdori] replaced global commands');
       } catch (error) {
         console.error('[gomdori] command registration failed', error);
