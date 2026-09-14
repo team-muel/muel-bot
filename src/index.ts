@@ -4,12 +4,8 @@ import {
   handleFlatSubscribeCommand,
   SUBSCRIBE_COMMAND_NAME,
 } from './subscribe.js';
-import {
-  getYouTubeMonitorStatus,
-} from './youtubeMonitor.js';
 import { handleMuelMention, shouldMuelRespond } from './mentionHandler.js';
 import { pushMessage } from './channelBuffer.js';
-import { getJobWorkerStatus } from './jobWorker.js';
 import { getSupabaseClient } from './supabase.js';
 import { isNegativeEmoji, recordFeedbackSignal } from './feedbackSignals.js';
 import { observeCommunityMessage } from './communityFlow.js';
@@ -33,58 +29,24 @@ import {
   archiveMessageCreate,
   archiveMessageDelete,
   archiveMessageUpdate,
-  getArchivistStatus,
 } from './archivist/index.js';
 import {
   ARCHIVE_POLICY_COMMAND_NAME,
   handleArchivePolicyCommand,
 } from './archivist/policy.js';
 import {
-  getCommandRegistrationStatus,
   registerGomdoriCommands,
   registerMuelCommands,
 } from './discordCommandRegistry.js';
-import { getSupabaseRestrictionStatus } from './serviceRestriction.js';
 import { startRuntimeHttpServer } from './runtimeHttpServer.js';
 import { startRuntimeServices } from './runtimeServices.js';
+import { buildRuntimeStatus } from './runtimeStatus.js';
 import { observeDiscordConnection, usePublicDiscordGateway } from './discordConnection.js';
 
 let readyAt: string | null = null;
 let loginError: string | null = null;
 let gomdoriReadyAt: string | null = null;
 let gomdoriLoginError: string | null = null;
-
-const getRuntimeStatus = () => {
-  const youtubeMonitor = getYouTubeMonitorStatus();
-  const jobWorker = getJobWorkerStatus();
-  const commands = getCommandRegistrationStatus();
-  const supabaseRestriction = getSupabaseRestrictionStatus();
-  const degradedReasons: string[] = [];
-
-  if (loginError) degradedReasons.push(`muel_login:${loginError}`);
-  if (gomdoriClient && config.gomdoriBotToken && gomdoriLoginError) degradedReasons.push(`gomdori_login:${gomdoriLoginError}`);
-  if (!client.isReady()) degradedReasons.push('muel_not_ready');
-  if (gomdoriClient && !gomdoriClient.isReady()) degradedReasons.push('gomdori_not_ready');
-  if (jobWorker.lastError) degradedReasons.push(`job_worker:${jobWorker.lastError}`);
-  if (config.enableYoutubeMonitor && youtubeMonitor.lastTickStatus === 'error') degradedReasons.push(`youtube_monitor:${youtubeMonitor.lastTickMessage ?? 'unknown'}`);
-  if (!config.googleGenerativeAiApiKey && !config.nvidiaApiKey) degradedReasons.push('llm_not_configured');
-  if (commands.lastError) degradedReasons.push(`command_registration:${commands.lastError}`);
-  if (supabaseRestriction.active) {
-    degradedReasons.push(`supabase_data_api:${supabaseRestriction.reason ?? 'restricted'}`);
-  }
-  const archivist = getArchivistStatus();
-  if (archivist.enabled && !archivist.ready) degradedReasons.push(`archivist:${archivist.lastError ?? 'not_ready'}`);
-
-  return {
-    ok: degradedReasons.length === 0,
-    degradedReasons,
-    youtubeMonitor,
-    jobWorker,
-    archivist,
-    commands,
-    supabaseRestriction,
-  };
-};
 
 const client = new Client({
   intents: [
@@ -453,7 +415,13 @@ if (gomdoriClient) {
 startRuntimeHttpServer({
   client,
   gomdoriClient,
-  getRuntimeStatus,
+  getRuntimeStatus: () => buildRuntimeStatus({
+    muelReady: client.isReady(),
+    muelLoginError: loginError,
+    gomdoriConfigured: Boolean(gomdoriClient && config.gomdoriBotToken),
+    gomdoriReady: !gomdoriClient || gomdoriClient.isReady(),
+    gomdoriLoginError,
+  }),
   getMuelConnectionStatus: () => ({ readyAt, loginError }),
   getGomdoriConnectionStatus: () => ({
     readyAt: gomdoriReadyAt,
