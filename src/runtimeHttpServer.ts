@@ -14,16 +14,7 @@ import {
 import { requestYouTubeMonitorSync } from './youtubeMonitor.js';
 import { handleYouTubeWebSubRequest } from './youtubeWebSub.js';
 import { getDiscordRetryAt } from './discordConnection.js';
-
-type RuntimeStatus = {
-  ok: boolean;
-  degradedReasons: string[];
-  youtubeMonitor: unknown;
-  jobWorker: unknown;
-  archivist: unknown;
-  commands: unknown;
-  supabaseRestriction: unknown;
-};
+import type { RuntimeStatus } from './runtimeStatus.js';
 
 type ConnectionStatus = {
   readyAt: string | null;
