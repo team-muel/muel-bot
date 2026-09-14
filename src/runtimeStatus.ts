@@ -1,6 +1,7 @@
 import { getArchivistStatus } from './archivist/index.js';
 import { config } from './config.js';
 import { getCommandRegistrationStatus } from './discordCommandRegistry.js';
+import { getGomdoriCommandRegistrationStatus } from './gomdoriCommandRegistry.js';
 import { getJobWorkerStatus } from './jobWorker.js';
 import { getSupabaseRestrictionStatus } from './serviceRestriction.js';
 import { getYouTubeMonitorStatus } from './youtubeMonitor.js';
@@ -19,6 +20,7 @@ export type RuntimeStatusSnapshot = RuntimeStatusInputs & {
   youtubeMonitor: ReturnType<typeof getYouTubeMonitorStatus>;
   jobWorker: ReturnType<typeof getJobWorkerStatus>;
   commands: ReturnType<typeof getCommandRegistrationStatus>;
+  gomdoriCommands: ReturnType<typeof getGomdoriCommandRegistrationStatus>;
   supabaseRestriction: ReturnType<typeof getSupabaseRestrictionStatus>;
   archivist: ReturnType<typeof getArchivistStatus>;
 };
@@ -30,6 +32,7 @@ export const collectRuntimeStatus = (inputs: RuntimeStatusInputs): RuntimeStatus
   youtubeMonitor: getYouTubeMonitorStatus(),
   jobWorker: getJobWorkerStatus(),
   commands: getCommandRegistrationStatus(),
+  gomdoriCommands: getGomdoriCommandRegistrationStatus(),
   supabaseRestriction: getSupabaseRestrictionStatus(),
   archivist: getArchivistStatus(),
 });
@@ -48,7 +51,9 @@ export const buildRuntimeStatus = (snapshot: RuntimeStatusSnapshot) => {
     degradedReasons.push('youtube_monitor_error');
   }
   if (!snapshot.llmConfigured) degradedReasons.push('llm_not_configured');
-  if (snapshot.commands.lastError) degradedReasons.push('command_registration_error');
+  if (snapshot.commands.lastError || snapshot.gomdoriCommands.lastError) {
+    degradedReasons.push('command_registration_error');
+  }
   if (snapshot.supabaseRestriction.active) {
     degradedReasons.push('supabase_data_api_restricted');
   }
@@ -62,7 +67,10 @@ export const buildRuntimeStatus = (snapshot: RuntimeStatusSnapshot) => {
     youtubeMonitor: snapshot.youtubeMonitor,
     jobWorker: snapshot.jobWorker,
     archivist: snapshot.archivist,
-    commands: snapshot.commands,
+    commands: {
+      ...snapshot.commands,
+      gomdori: snapshot.gomdoriCommands,
+    },
     supabaseRestriction: snapshot.supabaseRestriction,
   };
 };
