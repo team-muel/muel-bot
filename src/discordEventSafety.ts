@@ -25,3 +25,13 @@ export const onSafeDiscordEvent = <Event extends keyof ClientEvents>(
     void safeDiscordEvent(String(eventName), () => handler(...args));
   });
 };
+
+export const onceSafeDiscordEvent = <Event extends keyof ClientEvents>(
+  client: Client,
+  eventName: Event,
+  handler: (...args: ClientEvents[Event]) => Promise<unknown> | unknown,
+): void => {
+  client.once(eventName, (...args) => {
+    void safeDiscordEvent(String(eventName), () => handler(...args));
+  });
+};
