@@ -17,7 +17,9 @@ permissions:
 jobs:
   typecheck:
     name: typecheck
-    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
+    # Pin shared workflow semantics to an immutable organization commit.
+    # Update this SHA only through an explicit reviewed bump PR.
+    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@d53f1ff28f7934e7afc7844ccd7dd08dd78ca254
     with:
       node-version: '24'
       package-manager: npm
@@ -27,7 +29,8 @@ jobs:
 
   smoke:
     name: smoke tests
-    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
+    # Keep both required jobs on the same immutable reusable-workflow revision.
+    uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@d53f1ff28f7934e7afc7844ccd7dd08dd78ca254
     with:
       node-version: '24'
       package-manager: npm
