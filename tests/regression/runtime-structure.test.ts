@@ -41,12 +41,24 @@ assert.deepEqual(await mapWithConcurrency([], 0, async () => 1), []);
 const sourceRoot = join(process.cwd(), 'src');
 const indexSource = readFileSync(join(sourceRoot, 'index.ts'), 'utf8');
 const httpServerSource = readFileSync(join(sourceRoot, 'runtimeHttpServer.ts'), 'utf8');
+const runtimeStatusSource = readFileSync(join(sourceRoot, 'runtimeStatus.ts'), 'utf8');
 const runtimeServicesSource = readFileSync(join(sourceRoot, 'runtimeServices.ts'), 'utf8');
 const memoryWorkerSource = readFileSync(join(sourceRoot, 'memoryWorker.ts'), 'utf8');
 const webSubSource = readFileSync(join(sourceRoot, 'youtubeWebSub.ts'), 'utf8');
 const lifecycleSource = readFileSync(join(sourceRoot, 'youtubeLifecycle.ts'), 'utf8');
 const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts'), 'utf8');
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
+assert.match(indexSource, /buildRuntimeStatus\(\{/);
+assert.doesNotMatch(
+  indexSource,
+  /getYouTubeMonitorStatus|getJobWorkerStatus|getSupabaseRestrictionStatus|getArchivistStatus|getCommandRegistrationStatus/,
+  'index must not own dependency readiness aggregation',
+);
+assert.match(runtimeStatusSource, /getYouTubeMonitorStatus/);
+assert.match(runtimeStatusSource, /getJobWorkerStatus/);
+assert.match(runtimeStatusSource, /getSupabaseRestrictionStatus/);
+assert.match(runtimeStatusSource, /getArchivistStatus/);
+assert.match(runtimeStatusSource, /getCommandRegistrationStatus/);
 assert.match(indexSource, /await startRuntimeServices\(readyClient\)/);
 assert.ok(
   indexSource.indexOf('await startRuntimeServices(readyClient)')
@@ -57,6 +69,7 @@ assert.match(indexSource, /automatic command registration disabled/);
 assert.match(readFileSync(join(sourceRoot, 'config.ts'), 'utf8'), /REGISTER_DISCORD_COMMANDS_ON_READY/);
 assert.doesNotMatch(indexSource, /http\.createServer/);
 assert.match(httpServerSource, /createRuntimeHttpServer/);
+assert.match(httpServerSource, /import type \{ RuntimeStatus \} from '\.\/runtimeStatus\.js'/);
 assert.match(httpServerSource, /\/admin\/reregister-commands/);
 assert.match(httpServerSource, /\/archive\/openapi\.json/);
 assert.ok(
