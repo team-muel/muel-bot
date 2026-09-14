@@ -71,11 +71,11 @@ const store = readFileSync(join(process.cwd(), 'src', 'youtubeSubscriptionStore.
 assert.match(store, /muelUser=/, 'DM subscription URLs must be user-scoped');
 assert.match(store, /\.is\('guild_id', null\)/, 'DM subscription queries must match SQL NULL correctly');
 
-const entrypoint = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf8');
+const interactionEvents = readFileSync(join(process.cwd(), 'src', 'muelInteractionEvents.ts'), 'utf8');
 assert.match(
-  entrypoint,
+  interactionEvents,
   /\[youtube-subscribe\] interaction failed/,
-  'the gateway must log and contain unexpected subscription handler failures',
+  'the gateway interaction module must log and contain unexpected subscription handler failures',
 );
 
 console.log('✅ /구독 acknowledges immediately and supports user-scoped DM subscriptions');
