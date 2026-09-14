@@ -123,10 +123,10 @@ check('renderer emits info-card link button and select menu rows', () => {
 });
 
 check('/메모 select menu interactions are routed', () => {
-  const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
-  assert.match(index, /interaction\.isStringSelectMenu\(\)/);
-  assert.match(index, /isMemoSelectMenu\(interaction\.customId\)/);
-  assert.match(index, /handleMemoSelectMenu\(interaction\)/);
+  const interactions = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
+  assert.match(interactions, /interaction\.isStringSelectMenu\(\)/);
+  assert.match(interactions, /isMemoSelectMenu\(interaction\.customId\)/);
+  assert.match(interactions, /handleMemoSelectMenu\(interaction\)/);
 });
 
 check('legacy global entry point commands are deleted before bulk command replacement', () => {
