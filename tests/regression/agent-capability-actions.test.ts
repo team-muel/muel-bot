@@ -32,7 +32,7 @@ const muelAgent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
 const actionDraft = readFileSync(join(SRC, 'actionDraft.ts'), 'utf8');
 const actionConfirmations = readFileSync(join(SRC, 'actionConfirmations.ts'), 'utf8');
 const mentionHandler = readFileSync(join(SRC, 'mentionHandler.ts'), 'utf8');
-const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+const interactionEvents = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
 
 assert(
   'agentTools exposes read-only hub status tool',
@@ -97,9 +97,9 @@ assert(
 );
 
 assert(
-  'index routes Muel action buttons',
-  /isMuelActionButton\(interaction\.customId\)/.test(index) &&
-    /handleMuelActionButton\(getSupabaseClient\(\), interaction\)/.test(index),
+  'Muel interaction module routes action buttons',
+  /isMuelActionButton\(interaction\.customId\)/.test(interactionEvents) &&
+    /handleMuelActionButton\(getSupabaseClient\(\), interaction\)/.test(interactionEvents),
 );
 
 console.log(`\n${'='.repeat(50)}`);
