@@ -19,7 +19,7 @@ jobs:
     name: typecheck
     uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
     with:
-      node-version: '20'
+      node-version: '24'
       package-manager: npm
       install-command: npm ci
       test-command: npm run typecheck
@@ -29,7 +29,7 @@ jobs:
     name: smoke tests
     uses: team-muel/.github/.github/workflows/reusable-node-quality.yml@main
     with:
-      node-version: '20'
+      node-version: '24'
       package-manager: npm
       install-command: npm ci
       # Smoke tests need no live API keys; the dummy token satisfies config validation.
