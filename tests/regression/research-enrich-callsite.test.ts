@@ -88,11 +88,6 @@ assert(
     !/pollUntilTerminal/.test(researchDeliver),
 );
 
-// Guard 5 (2026-06-12 incident): AI-Q returns lowercase job statuses
-// ('success', …) while callers compare uppercase ('SUCCESS'). aiqClient must
-// normalize at the boundary in every status-returning function, otherwise a
-// finished job is read as "still running" and polling spins until timeout —
-// the user never receives the report even though AI-Q produced it.
 const aiqClient = readFileSync(join(SRC, 'aiqClient.ts'), 'utf8');
 assert(
   'aiqClient defines normalizeStatusResponse with toUpperCase',
@@ -149,10 +144,11 @@ assert(
     /postgresErrorClass/.test(researchEnrich),
 );
 
-const index = readFileSync(join(SRC, 'index.ts'), 'utf8');
+const interactionEvents = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
 assert(
-  'index.ts routes button interactions to handleResearchEnrichButton',
-  /isResearchEnrichButton\(/.test(index) && /handleResearchEnrichButton\(/.test(index),
+  'Muel interaction module routes research buttons to handleResearchEnrichButton',
+  /isResearchEnrichButton\(/.test(interactionEvents) &&
+    /handleResearchEnrichButton\(/.test(interactionEvents),
 );
 
 console.log(`\n${'='.repeat(50)}`);
