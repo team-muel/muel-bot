@@ -1,8 +1,15 @@
 /**
+ * LEGACY — retired from scheduled operation on 2026-09-22.
+ *
+ * This file is retained as historical/reference evaluation code. It is not a
+ * maintained CI or scheduled quality gate. A future replacement should use an
+ * explicitly owned, reproducible, resource-bounded evaluation design rather
+ * than restoring the retired live-key cron workflow.
+ *
  * Stage 4.4 — Embedding baseline evaluation.
  *
  * Establishes a measurable baseline for the current embedding configuration
- * (gemini-embedding-001, 768d). Run periodically and compare metrics to detect:
+ * (gemini-embedding-001, 768d). Historically it was run periodically to compare metrics and detect:
  *   - Provider-side quality regressions.
  *   - Schema/prompt changes elsewhere that degrade retrieval.
  *   - Unexpected dimension/value drift.
@@ -25,8 +32,8 @@
  * Not modeled here (intentional): full RAG end-to-end (out of eval scope) and
  * the merge-vs-insert logic (that's structured-output testing, not embedding).
  *
- * Run:
- *   GOOGLE_GENERATIVE_AI_API_KEY=xxx DISCORD_BOT_TOKEN=dummy npx tsx tests/embeddings/embedding-eval.ts
+ * Legacy manual run only:
+ *   GOOGLE_GENERATIVE_AI_API_KEY=xxx DISCORD_BOT_TOKEN=dummy npm run legacy:eval:embeddings
  *
  * Optional env:
  *   MUEL_EMBEDDING_MODEL (default: gemini-embedding-001)
