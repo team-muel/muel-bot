@@ -9,7 +9,7 @@
  * Stage 4.4 — Embedding baseline evaluation.
  *
  * Establishes a measurable baseline for the current embedding configuration
- * (gemini-embedding-001, 768d). Run periodically and compare metrics to detect:
+ * (gemini-embedding-001, 768d). Historically it was run periodically to compare metrics and detect:
  *   - Provider-side quality regressions.
  *   - Schema/prompt changes elsewhere that degrade retrieval.
  *   - Unexpected dimension/value drift.
