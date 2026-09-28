@@ -159,8 +159,8 @@ assert.match(rollingPaperSource, /resolveUserNames/);
 assert.match(rollingPaperSource, /new Set\(ids\)/);
 assert.match(
   archivistWorkersSource,
-  /await backfillForumStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
-  'forum starter recovery must run before an existing backfill_done state can short-circuit',
+  /await backfillThreadStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
+  'thread starter recovery must run before an existing backfill_done state can short-circuit',
 );
 assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
 assert.match(archivistWorkersSource, /ChannelType\.GuildForum/);
