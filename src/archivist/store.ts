@@ -184,6 +184,7 @@ export class ArchiveStore {
     }
 
     await this.ingestAttachments(message);
+    await this.replaceMessageEmbeds(message);
   }
 
   /**
@@ -240,6 +241,8 @@ export class ArchiveStore {
       throwIfError('backfill page message upsert failed', error);
     }
 
+    await this.replaceBackfillPageEmbeds(owned);
+
     const candidates = owned.flatMap((message) => [...message.attachments.values()].map((attachment) => ({
       message_id: message.id,
       discord_url: attachment.url,
@@ -259,6 +262,92 @@ export class ArchiveStore {
       const { error } = await this.db.from('attachments').insert(missing);
       throwIfError('backfill page attachment insert failed', error);
     }
+  }
+
+  private serializeEmbed(messageId: string, embedIndex: number, embed: Message<true>['embeds'][number]) {
+    const raw = embed.toJSON();
+    return {
+      message_id: messageId,
+      embed_index: embedIndex,
+      embed_type: raw.type ?? null,
+      title: raw.title ?? null,
+      description: raw.description ?? null,
+      url: raw.url ?? null,
+      color: raw.color ?? null,
+      embed_timestamp: raw.timestamp ?? null,
+      author: raw.author ?? null,
+      footer: raw.footer ?? null,
+      fields: raw.fields ?? [],
+      image: raw.image ?? null,
+      thumbnail: raw.thumbnail ?? null,
+      video: raw.video ?? null,
+      provider: raw.provider ?? null,
+      raw,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  private async replaceMessageEmbeds(message: Message<true>): Promise<void> {
+    const { error: deleteError } = await this.db.from('message_embeds')
+      .delete()
+      .eq('message_id', message.id);
+    throwIfError(`message embed delete failed (${message.id})`, deleteError);
+
+    if (message.embeds.length === 0) return;
+    const rows = message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed));
+    const { error } = await this.db.from('message_embeds').insert(rows);
+    throwIfError(`message embed insert failed (${message.id})`, error);
+  }
+
+  private async replaceBackfillPageEmbeds(messages: Message<true>[]): Promise<void> {
+    if (messages.length === 0) return;
+    const messageIds = messages.map((message) => message.id);
+    const { error: deleteError } = await this.db.from('message_embeds')
+      .delete()
+      .in('message_id', messageIds);
+    throwIfError('backfill page embed delete failed', deleteError);
+
+    const rows = messages.flatMap((message) =>
+      message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed)));
+    if (rows.length === 0) return;
+    const { error } = await this.db.from('message_embeds').insert(rows);
+    throwIfError('backfill page embed insert failed', error);
+  }
+
+  async ingestEmbedBackfillPage(messages: Message<true>[]): Promise<number> {
+    const owned = messages.filter((message) => this.owns(message.guildId));
+    if (owned.length === 0) return 0;
+    await this.replaceBackfillPageEmbeds(owned);
+    return owned.reduce((sum, message) => sum + message.embeds.length, 0);
+  }
+
+  async listEmbedReconcileChannels(limit = 1): Promise<Array<{ channelId: string; cursor: string | null }>> {
+    const { data, error } = await this.db.from('channels')
+      .select('channel_id, embed_reconcile_cursor')
+      .eq('guild_id', this.guildId)
+      .not('embed_reconcile_requested_at', 'is', null)
+      .lt('embed_reconcile_version', 1)
+      .order('embed_reconcile_requested_at', { ascending: true })
+      .limit(limit);
+    throwIfError('archive embed reconcile queue query failed', error);
+    return (data ?? []).map((row: any) => ({
+      channelId: String(row.channel_id),
+      cursor: row.embed_reconcile_cursor ? String(row.embed_reconcile_cursor) : null,
+    }));
+  }
+
+  async saveEmbedReconcileState(
+    channelId: string,
+    cursor: string | null,
+    done: boolean,
+  ): Promise<void> {
+    const { error } = await this.db.from('channels').update({
+      embed_reconcile_cursor: cursor,
+      embed_reconcile_version: done ? 1 : 0,
+      embed_reconciled_at: done ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }).eq('channel_id', channelId);
+    throwIfError(`embed reconcile state update failed (${channelId})`, error);
   }
 
   private async ingestAttachments(message: Message<true>): Promise<void> {
@@ -300,6 +389,7 @@ export class ArchiveStore {
       if (current.tombstoned) return;
       if (current.content === (message.content || null)) {
         await this.ingestAttachments(message);
+        await this.replaceMessageEmbeds(message);
         return;
       }
 
@@ -319,6 +409,7 @@ export class ArchiveStore {
       }).eq('message_id', message.id);
       throwIfError(`message edit update failed (${message.id})`, updateError);
       await this.ingestAttachments(message);
+      await this.replaceMessageEmbeds(message);
     });
     const tracked = next.finally(() => {
       if (this.editQueues.get(message.id) === tracked) this.editQueues.delete(message.id);
