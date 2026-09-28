@@ -159,11 +159,10 @@ assert.match(rollingPaperSource, /resolveUserNames/);
 assert.match(rollingPaperSource, /new Set\(ids\)/);
 assert.match(
   archivistWorkersSource,
-  /await backfillForumStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
-  'forum starter recovery must run before an existing backfill_done state can short-circuit',
+  /await backfillThreadStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
+  'thread starter recovery must run before an existing backfill_done state can short-circuit',
 );
 assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
-assert.match(archivistWorkersSource, /ChannelType\.GuildForum/);
 assert.match(
   archivistWorkersSource,
   /guild\.channels\.cache\.values\(\)[\s\S]*await store\.upsertChannel\(channel\)[\s\S]*collectArchivedThreads/,
@@ -172,12 +171,17 @@ assert.match(
 assert.match(
   archivistWorkersSource,
   /for \(const channel of baseChannels\)[\s\S]*await backfillChannel\(store, channel\)[\s\S]*collectArchivedThreads/,
-  'cached channels and active forum posts must heal before archived-thread enumeration',
+  'cached channels and active threads must heal before archived-thread enumeration',
 );
 assert.match(
   archivistWorkersSource,
-  /channel\.parent[\s\S]*channel\.guild\.channels\.cache\.get\(channel\.parentId\)/,
-  'forum starter recovery must resolve a missing ThreadChannel.parent through the guild channel cache',
+  /backfillThreadStarter[\s\S]*fetchStarterMessage\(\)/,
+  'public/news thread starter gaps must be repaired through fetchStarterMessage',
+);
+assert.match(
+  archivistWorkersSource,
+  /channel\.type === ChannelType\.GuildPrivateThread/,
+  'private threads without a public starter-message contract must be excluded from generic starter repair',
 );
 
 console.log('✅ runtime structure, containment, and readiness contracts');
