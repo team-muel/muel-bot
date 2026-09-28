@@ -129,10 +129,9 @@ const backfillChannel = async (
 ): Promise<void> => {
   await store.upsertChannel(channel);
 
-  // Discord forum/media posts are thread channels whose starter message needs
-  // the dedicated fetchStarterMessage() API. Repair it before honoring an
-  // existing backfill_done flag so previously-completed rows with a missing
-  // starter message are healed on the next Archivist startup.
+  // Repair a missing public/news thread starter before honoring an existing
+  // backfill_done flag. Forum post bodies and ordinary thread starters share
+  // the same dedicated fetchStarterMessage() recovery path.
   await backfillThreadStarter(store, channel);
 
   const state = await store.getChannelBackfillState(channel.id);
