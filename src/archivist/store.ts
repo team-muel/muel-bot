@@ -426,6 +426,31 @@ export class ArchiveStore {
     return this.replaceBackfillPageRichPayload(owned);
   }
 
+  async listMissingComponentsV2MessageIds(channelId: string, limit = 50): Promise<string[]> {
+    const { data: rows, error } = await this.db.from('messages')
+      .select('message_id,meta')
+      .eq('guild_id', this.guildId)
+      .eq('channel_id', channelId)
+      .eq('tombstoned', false)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    throwIfError(`Components V2 candidate lookup failed (${channelId})`, error);
+
+    const candidates = (rows ?? []).flatMap((row: any) => {
+      const rawFlags = row.meta && typeof row.meta === 'object' ? row.meta.flags : null;
+      const flags = BigInt(String(rawFlags ?? '0'));
+      return (flags & 32768n) !== 0n ? [String(row.message_id)] : [];
+    });
+    if (candidates.length === 0) return [];
+
+    const { data: existing, error: existingError } = await this.db.from('message_components')
+      .select('message_id')
+      .in('message_id', candidates);
+    throwIfError(`Components V2 existence lookup failed (${channelId})`, existingError);
+    const existingIds = new Set((existing ?? []).map((row: any) => String(row.message_id)));
+    return candidates.filter((messageId) => !existingIds.has(messageId)).slice(0, limit);
+  }
+
   async listEmbedReconcileChannels(limit = 1): Promise<Array<{ channelId: string; cursor: string | null }>> {
     const { data, error } = await this.db.from('channels')
       .select('channel_id, embed_reconcile_cursor')
