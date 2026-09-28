@@ -83,33 +83,41 @@ const collectArchivedThreads = async (
   return [...threads.values()];
 };
 
-const backfillForumStarter = async (
+const backfillThreadStarter = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
 ): Promise<void> => {
-  if (!channel.isThread()) return;
-  const parent = channel.parent
-    ?? (channel.parentId ? channel.guild.channels.cache.get(channel.parentId) : null);
-  const parentType = parent?.type;
-  if (parentType !== ChannelType.GuildForum && parentType !== ChannelType.GuildMedia) return;
+  if (!channel.isThread() || channel.type === ChannelType.GuildPrivateThread) return;
+
+  // Public/news/forum threads all have a starter-message concept. Standard
+  // text-channel thread starters are usually already present in the parent
+  // channel archive, while forum starters live in the post thread itself.
+  // The snowflake identity check makes this repair cheap and idempotent.
   if (await store.hasMessage(channel.id)) return;
 
   try {
     const starter = await channel.fetchStarterMessage();
     if (!starter || !starter.inGuild()) {
-      console.warn('[archivist] forum starter message unavailable', {
+      console.warn('[archivist] thread starter message unavailable', {
         channelId: channel.id,
         parentId: channel.parentId,
+        type: ChannelType[channel.type] ?? String(channel.type),
       });
       return;
     }
     await store.ingestMessage(starter, 'backfill');
+    console.log('[archivist] thread starter recovered', {
+      channelId: channel.id,
+      starterMessageId: starter.id,
+      starterChannelId: starter.channelId,
+    });
   } catch (error) {
-    // A forum post can outlive a deleted starter message. Keep the thread
-    // registry/backfill state usable instead of failing the whole guild crawl.
-    console.warn('[archivist] forum starter message recovery failed', {
+    // A thread can outlive a deleted starter message. Keep the thread registry
+    // and historical backfill usable instead of failing the whole guild crawl.
+    console.warn('[archivist] thread starter message recovery failed', {
       channelId: channel.id,
       parentId: channel.parentId,
+      type: ChannelType[channel.type] ?? String(channel.type),
       error: errorMessage(error),
     });
   }
@@ -125,7 +133,7 @@ const backfillChannel = async (
   // the dedicated fetchStarterMessage() API. Repair it before honoring an
   // existing backfill_done flag so previously-completed rows with a missing
   // starter message are healed on the next Archivist startup.
-  await backfillForumStarter(store, channel);
+  await backfillThreadStarter(store, channel);
 
   const state = await store.getChannelBackfillState(channel.id);
   if (state.done) return;
