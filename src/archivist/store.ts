@@ -437,6 +437,35 @@ export class ArchiveStore {
     return ids.filter((id) => !existing.has(id)).slice(0, limit);
   }
 
+  async listThreadsNeedingHistoryReconcile(limit = 6): Promise<Array<{ channelId: string; cursor: string | null }>> {
+    const { data, error } = await this.db.from('channels')
+      .select('channel_id, history_reconcile_cursor')
+      .eq('guild_id', this.guildId)
+      .in('type', ['GuildPublicThread', 'GuildNewsThread'])
+      .lt('history_reconcile_version', 1)
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+    throwIfError('archive thread history reconcile query failed', error);
+    return (data ?? []).map((row: any) => ({
+      channelId: String(row.channel_id),
+      cursor: row.history_reconcile_cursor ? String(row.history_reconcile_cursor) : null,
+    }));
+  }
+
+  async saveThreadHistoryReconcileState(
+    channelId: string,
+    cursor: string | null,
+    done: boolean,
+  ): Promise<void> {
+    const { error } = await this.db.from('channels').update({
+      history_reconcile_cursor: cursor,
+      history_reconcile_version: done ? 1 : 0,
+      history_reconciled_at: done ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }).eq('channel_id', channelId);
+    throwIfError(`thread history reconcile state update failed (${channelId})`, error);
+  }
+
   async getChannelBackfillState(channelId: string): Promise<{ cursor: string | null; done: boolean }> {
     const { data, error } = await this.db.from('channels')
       .select('last_backfilled_message_id, backfill_done')
