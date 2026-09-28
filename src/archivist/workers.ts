@@ -214,7 +214,7 @@ const reconcileRegisteredThreadHistories = async (
   client: Client<true>,
   store: ArchiveStore,
 ): Promise<void> => {
-  const targets = await store.listThreadsNeedingHistoryReconcile(4);
+  const targets = await store.listThreadsNeedingHistoryReconcile(12);
   if (targets.length === 0) return;
 
   console.log('[archivist] thread history reconcile', { targets: targets.length, concurrency: 2 });
