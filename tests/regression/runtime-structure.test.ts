@@ -239,6 +239,21 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
+  /message\.components[\s\S]*serializeComponent/,
+  'Archivist must persist structured Discord Components V2 payloads',
+);
+assert.match(
+  archivistStoreSource,
+  /messageRichProjection[\s\S]*collectComponentText/,
+  'Archivist must project Components V2 text into searchable rich content',
+);
+assert.match(
+  archivistStoreSource,
+  /replaceBackfillPageComponents/,
+  'historical rich reconciliation must recover Components V2 as well as embeds',
+);
+assert.match(
+  archivistStoreSource,
   /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageEmbeds/,
   'historical embed recovery must use an embed-only batch path',
 );
