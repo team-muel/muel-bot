@@ -72,53 +72,6 @@ const componentJson = (component: unknown): Record<string, unknown> => {
   return (component ?? {}) as Record<string, unknown>;
 };
 
-const collectComponentText = (value: unknown, out: string[] = []): string[] => {
-  if (Array.isArray(value)) {
-    for (const item of value) collectComponentText(item, out);
-    return out;
-  }
-  if (!value || typeof value !== 'object') return out;
-  const record = value as Record<string, unknown>;
-  for (const key of ['content', 'label', 'title', 'description', 'placeholder']) {
-    const text = record[key];
-    if (typeof text === 'string' && text.trim()) out.push(text.trim());
-  }
-  for (const nested of Object.values(record)) {
-    if (nested && typeof nested === 'object') collectComponentText(nested, out);
-  }
-  return out;
-};
-
-const uniqueText = (parts: Array<string | null | undefined>): string | null => {
-  const seen = new Set<string>();
-  const rows: string[] = [];
-  for (const part of parts) {
-    const normalized = part?.trim();
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    rows.push(normalized);
-  }
-  return rows.length > 0 ? rows.join('\n') : null;
-};
-
-const messageRichProjection = (message: Message<true>): string | null => {
-  const embedText = message.embeds.flatMap((embed) => {
-    const raw = embed.toJSON();
-    return [
-      raw.title ?? null,
-      raw.description ?? null,
-      ...(raw.fields ?? []).flatMap((field) => [field.name, field.value]),
-      raw.author?.name ?? null,
-      raw.footer?.text ?? null,
-    ];
-  });
-  const componentText = (message.components as readonly any[]).flatMap((component) => {
-    const raw = typeof component?.toJSON === 'function' ? component.toJSON() : component;
-    return collectComponentText(raw);
-  });
-  return uniqueText([message.content || null, ...embedText, ...componentText]);
-};
-
 export class ArchiveStore {
   readonly guildId: string;
   private readonly salt: string;
@@ -239,7 +192,6 @@ export class ArchiveStore {
         guild_id: message.guildId,
         author_ref: authorRef,
         content: message.content || null,
-        rich_content: messageRichProjection(message),
         created_at: message.createdAt.toISOString(),
         edited_at: message.editedAt?.toISOString() ?? null,
         reply_to_message_id: message.reference?.messageId ?? null,
@@ -258,7 +210,6 @@ export class ArchiveStore {
 
     await this.ingestAttachments(message);
     await this.replaceMessageRichPayload(message);
-    await this.replaceMessageComponents(message);
   }
 
   /**
@@ -296,7 +247,6 @@ export class ArchiveStore {
         guild_id: message.guildId,
         author_ref: authorRefs.get(message.author.id),
         content: message.content || null,
-        rich_content: messageRichProjection(message),
         created_at: message.createdAt.toISOString(),
         edited_at: message.editedAt?.toISOString() ?? null,
         reply_to_message_id: message.reference?.messageId ?? null,
@@ -317,7 +267,6 @@ export class ArchiveStore {
     }
 
     await this.replaceBackfillPageRichPayload(owned);
-    await this.replaceBackfillPageComponents(owned);
 
     const candidates = owned.flatMap((message) => [...message.attachments.values()].map((attachment) => ({
       message_id: message.id,
@@ -546,10 +495,8 @@ export class ArchiveStore {
       if (current.content === (message.content || null)) {
         await this.ingestAttachments(message);
         await this.replaceMessageRichPayload(message);
-        await this.replaceMessageComponents(message);
-        const { error: richError } = await this.db.from('messages').update({
-          rich_content: messageRichProjection(message),
-        }).eq('message_id', message.id);
+            const { error: richError } = await this.db.from('messages').update({
+          }).eq('message_id', message.id);
         throwIfError(`message rich projection edit failed (${message.id})`, richError);
         return;
       }
@@ -564,7 +511,6 @@ export class ArchiveStore {
       throwIfError(`message version insert failed (${message.id})`, versionError);
       const { error: updateError } = await this.db.from('messages').update({
         content: message.content || null,
-        rich_content: messageRichProjection(message),
         edited_at: editedAt,
         has_attachments: message.attachments.size > 0,
         source: 'stream',
@@ -572,8 +518,7 @@ export class ArchiveStore {
       throwIfError(`message edit update failed (${message.id})`, updateError);
       await this.ingestAttachments(message);
       await this.replaceMessageRichPayload(message);
-      await this.replaceMessageComponents(message);
-    });
+      });
     const tracked = next.finally(() => {
       if (this.editQueues.get(message.id) === tracked) this.editQueues.delete(message.id);
     });
