@@ -243,6 +243,11 @@ assert.match(
   'historical embed recovery must use an embed-only batch path',
 );
 assert.match(
+  archivistStoreSource,
+  /embed reconcile archive message lookup failed[\s\S]*archivedIds[\s\S]*archivedMessages/,
+  'embed reconciliation must only attach embeds to messages already present in the archive',
+);
+assert.match(
   archivistWorkersSource,
   /embed reconcile page[\s\S]*saveEmbedReconcileState/,
   'embed reconciliation must persist a resumable cursor',
