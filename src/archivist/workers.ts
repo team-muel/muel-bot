@@ -30,6 +30,12 @@ export const attachmentCopyStatus: WorkerStatus = {
   lastError: null,
 };
 
+export const embedReconcileStatus: WorkerStatus = {
+  running: false,
+  lastCompletedAt: null,
+  lastError: null,
+};
+
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 const withDeadline = async <T>(
@@ -410,6 +416,99 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
   } finally {
     backfillStatus.running = false;
   }
+};
+
+const reconcileEmbedChannel = async (
+  client: Client<true>,
+  store: ArchiveStore,
+  channelId: string,
+  initialCursor: string | null,
+): Promise<void> => {
+  const fetched = await withDeadline(
+    client.channels.fetch(channelId),
+    10_000,
+    `Discord embed reconcile channel fetch ${channelId}`,
+  );
+  if (!fetched || !canFetchMessages(fetched as GuildBasedChannel)) {
+    throw new Error(`embed reconcile target is not a message channel: ${channelId}`);
+  }
+
+  const channel = fetched as GuildTextBasedChannel;
+  let cursor = initialCursor ?? undefined;
+  let pagesSinceYield = 0;
+
+  for (;;) {
+    const page = await withDeadline(
+      channel.messages.fetch({ limit: 100, ...(cursor ? { before: cursor } : {}), cache: false }),
+      20_000,
+      `Discord embed reconcile page ${channelId}`,
+    );
+    const rows = [...page.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    if (rows.length === 0) {
+      await store.saveEmbedReconcileState(channelId, cursor ?? null, true);
+      return;
+    }
+
+    const embeds = await store.ingestEmbedBackfillPage(rows);
+    cursor = rows[0].id;
+    const done = page.size < 100;
+    await store.saveEmbedReconcileState(channelId, cursor, done);
+    console.log('[archivist] embed reconcile page', {
+      channelId,
+      fetched: page.size,
+      embeds,
+      cursor,
+      done,
+    });
+    if (done) return;
+
+    pagesSinceYield += 1;
+    if (pagesSinceYield >= 10) {
+      pagesSinceYield = 0;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+};
+
+const runEmbedReconcileTick = async (
+  client: Client<true>,
+  store: ArchiveStore,
+): Promise<void> => {
+  const targets = await store.listEmbedReconcileChannels(1);
+  if (targets.length === 0) {
+    embedReconcileStatus.lastCompletedAt = new Date().toISOString();
+    return;
+  }
+
+  const target = targets[0];
+  console.log('[archivist] embed reconcile start', {
+    channelId: target.channelId,
+    cursor: target.cursor,
+  });
+  await reconcileEmbedChannel(client, store, target.channelId, target.cursor);
+  embedReconcileStatus.lastCompletedAt = new Date().toISOString();
+};
+
+export const startEmbedReconcileWorker = (client: Client<true>, store: ArchiveStore): void => {
+  if (embedReconcileStatus.running) return;
+  embedReconcileStatus.running = true;
+  embedReconcileStatus.lastError = null;
+
+  const tick = async () => {
+    try {
+      await runEmbedReconcileTick(client, store);
+      embedReconcileStatus.lastError = null;
+    } catch (error) {
+      embedReconcileStatus.lastError = errorMessage(error);
+      console.warn('[archivist] embed reconcile tick failed', {
+        error: embedReconcileStatus.lastError,
+      });
+    } finally {
+      setTimeout(tick, 15_000).unref();
+    }
+  };
+
+  void tick();
 };
 
 const validateDiscordAttachmentUrl = (raw: string): URL => {
