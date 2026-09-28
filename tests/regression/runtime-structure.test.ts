@@ -176,8 +176,13 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
-  /channel\.parent[\s\S]*channel\.guild\.channels\.cache\.get\(channel\.parentId\)/,
-  'forum starter recovery must resolve a missing ThreadChannel.parent through the guild channel cache',
+  /backfillThreadStarter[\s\S]*fetchStarterMessage\(\)/,
+  'public/news thread starter gaps must be repaired through fetchStarterMessage',
+);
+assert.match(
+  archivistWorkersSource,
+  /channel\.type === ChannelType\.GuildPrivateThread/,
+  'private threads without a public starter-message contract must be excluded from generic starter repair',
 );
 
 console.log('✅ runtime structure, containment, and readiness contracts');
