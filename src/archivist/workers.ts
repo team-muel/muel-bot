@@ -155,24 +155,33 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
   backfillStatus.running = true;
   backfillStatus.lastError = null;
   try {
-    const guild = await client.guilds.fetch(store.guildId);
+    const guild = client.guilds.cache.get(store.guildId) ?? await client.guilds.fetch(store.guildId);
     await store.markBackfillStarted();
-    const fetched = await guild.channels.fetch();
-    const baseChannels: GuildBasedChannel[] = [];
-    for (const channel of fetched.values()) {
-      if (channel) baseChannels.push(channel);
+
+    // Discord's GUILD_CREATE cache already carries the current channel registry.
+    // Persist it before any additional REST enumeration so a throttled Discord
+    // REST route cannot block categories/forum parents from becoming queryable.
+    const baseChannels: GuildBasedChannel[] = [...guild.channels.cache.values()];
+    if (baseChannels.length === 0) {
+      const fetched = await guild.channels.fetch();
+      for (const channel of fetched.values()) {
+        if (channel) baseChannels.push(channel);
+      }
     }
 
-    // Persist the full guild channel registry, not only message-fetchable channels.
-    // Categories have no message manager, but preserving them is required to resolve
-    // channel/thread -> category hierarchy for personal archive search clients.
+    console.log('[archivist] backfill registry', {
+      guildId: guild.id,
+      cachedChannels: baseChannels.length,
+    });
+
     for (const channel of baseChannels) {
       await store.upsertChannel(channel);
     }
 
-    const threads = await collectArchivedThreads(guild, baseChannels);
+    // Heal cached/active channels first. This lets active forum posts recover
+    // their starter message even if archived-thread enumeration is rate-limited.
     const candidates = new Map<string, GuildTextBasedChannel>();
-    for (const channel of [...baseChannels, ...threads]) {
+    for (const channel of baseChannels) {
       if (canFetchMessages(channel)) candidates.set(channel.id, channel);
     }
 
@@ -183,6 +192,23 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
       } catch (error) {
         failed += 1;
         console.warn('[archivist] channel backfill failed; cursor remains resumable', {
+          channelId: channel.id,
+          error: errorMessage(error),
+        });
+      }
+    }
+
+    // Archived threads require REST enumeration, so keep them out of the
+    // critical registry/active-thread repair path.
+    const threads = await collectArchivedThreads(guild, baseChannels);
+    for (const channel of threads) {
+      if (!canFetchMessages(channel) || candidates.has(channel.id)) continue;
+      candidates.set(channel.id, channel);
+      try {
+        await backfillChannel(store, channel);
+      } catch (error) {
+        failed += 1;
+        console.warn('[archivist] archived thread backfill failed; cursor remains resumable', {
           channelId: channel.id,
           error: errorMessage(error),
         });

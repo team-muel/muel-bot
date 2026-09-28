@@ -164,5 +164,15 @@ assert.match(
 );
 assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
 assert.match(archivistWorkersSource, /ChannelType\.GuildForum/);
+assert.match(
+  archivistWorkersSource,
+  /guild\.channels\.cache\.values\(\)[\s\S]*await store\.upsertChannel\(channel\)[\s\S]*collectArchivedThreads/,
+  'Archivist must persist the cached channel registry before archived-thread REST enumeration',
+);
+assert.match(
+  archivistWorkersSource,
+  /for \(const channel of baseChannels\)[\s\S]*await backfillChannel\(store, channel\)[\s\S]*collectArchivedThreads/,
+  'cached channels and active forum posts must heal before archived-thread enumeration',
+);
 
 console.log('✅ runtime structure, containment, and readiness contracts');
