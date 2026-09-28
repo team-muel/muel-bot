@@ -257,16 +257,24 @@ const reconcileRegisteredThreadHistories = async (
         await store.ingestBackfillPage(rows);
         const newest = rows[rows.length - 1];
         const previousCursor = pageCursor;
+        const pageMode = pageNo === 0 && !cursor ? 'around' : 'after';
         pageCursor = newest.id;
         const advanced = pageCursor !== previousCursor;
-        const done = page.size < 100 || !advanced;
+
+        // An around-page is a window around the anchor, not an end-of-history
+        // signal. Near the first message Discord may return roughly half a
+        // page even when many later replies exist. Only an after-page may use
+        // a short page as terminal evidence.
+        const done = pageMode === 'around'
+          ? !advanced
+          : (page.size < 100 || !advanced);
         await store.saveThreadHistoryReconcileState(channelId, pageCursor, done);
         console.log('[archivist] thread history page', {
           channelId,
           fetched: page.size,
           cursor: pageCursor,
           done,
-          mode: pageNo === 0 && !cursor ? 'around' : 'after',
+          mode: pageMode,
         });
         if (done) return;
       }
