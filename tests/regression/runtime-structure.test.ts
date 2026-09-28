@@ -157,10 +157,13 @@ assert.match(webSubSource, /mapWithConcurrency/);
 assert.match(youtubeLifecycleSource, /mapWithConcurrency/);
 assert.match(rollingPaperSource, /resolveUserNames/);
 assert.match(rollingPaperSource, /new Set\(ids\)/);
-assert.match(
-  archivistWorkersSource,
-  /for \(const channel of baseChannels\) \{[\s\S]*await store\.upsertChannel\(channel\);[\s\S]*await backfillThreadStarter\(store, channel\);[\s\S]*const candidates/,
-  'thread starter recovery must run during registry discovery before message-backfill candidate filtering',
+const registryLoopStart = archivistWorkersSource.indexOf('for (const channel of baseChannels) {');
+const registeredRepairStart = archivistWorkersSource.indexOf('await repairRegisteredThreadStarters(client, store);');
+assert.ok(registryLoopStart >= 0 && registeredRepairStart > registryLoopStart);
+assert.doesNotMatch(
+  archivistWorkersSource.slice(registryLoopStart, registeredRepairStart),
+  /backfillThreadStarter|channels\.fetch|fetchStarterMessage/,
+  'channel registry persistence must remain free of Discord REST/message repair calls',
 );
 assert.match(
   archivistWorkersSource,
@@ -187,6 +190,11 @@ assert.match(
   archivistWorkersSource,
   /repairRegisteredThreadStarters[\s\S]*client\.channels\.fetch\(channelId\)/,
   'registered historical thread gaps must be repairable by channel id',
+);
+assert.match(
+  archivistWorkersSource,
+  /mapWithConcurrency\(missingIds, 2,[\s\S]*withDeadline/,
+  'historical starter repair must be concurrency-bounded and deadline-bounded',
 );
 assert.match(
   archivistWorkersSource,
