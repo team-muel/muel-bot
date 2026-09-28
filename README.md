@@ -82,8 +82,9 @@ Archivist (optional; setting `OWNED_GUILD_ID` enables it):
 - `ARCHIVE_ENC_KEY` — AES-256-GCM key (32 bytes as hex, base64, or UTF-8)
 - `ARCHIVE_POLICY_URL` — Notion transparency page linked by the guild-only `/정책` command
 - `ARCHIVE_PERSONAL_TOKEN` — separate bearer token for owner-only, read-only REST/MCP access; rotate without changing archive encryption keys
-- `ENABLE_ARCHIVE_BACKFILL` — defaults to `true`; walks every channel to its first API-visible message
-- `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`, `NCP_OBJ_ENDPOINT`, `NCP_OBJ_BUCKET` — NCP Object Storage attachment mirror
+- `ENABLE_ARCHIVE_BACKFILL` — defaults to `true`; walks every message-capable channel to its first API-visible message and records the full channel/category registry
+- `ARCHIVE_OBJECT_ACCESS_KEY`, `ARCHIVE_OBJECT_SECRET_KEY`, `ARCHIVE_OBJECT_ENDPOINT`, `ARCHIVE_OBJECT_BUCKET`, `ARCHIVE_OBJECT_REGION`, `ARCHIVE_OBJECT_FORCE_PATH_STYLE` — optional S3-compatible attachment mirror. This is provider-neutral (for example R2/B2/S3/MinIO); legacy `NCP_*` variables remain accepted only as migration aliases.
+- Stored Discord attachment URLs are not treated as durable objects. When a signed CDN URL has expired, the mirror worker refetches the source message to obtain a fresh URL before copying it.
 
 ### Archivist database preflight
 
