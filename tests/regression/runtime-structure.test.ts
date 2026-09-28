@@ -239,18 +239,33 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
-  /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageEmbeds/,
-  'historical embed recovery must use an embed-only batch path',
+  /message\.components[\s\S]*serializeComponent/,
+  'Archivist must persist structured Discord Components V2 payloads',
 );
 assert.match(
   archivistStoreSource,
-  /embed reconcile archive message lookup failed[\s\S]*archivedIds[\s\S]*archivedMessages/,
-  'embed reconciliation must only attach embeds to messages already present in the archive',
+  /projectRichText[\s\S]*collectComponentText/,
+  'Archivist must project Components V2 text into searchable rich content',
+);
+assert.match(
+  archivistStoreSource,
+  /replaceBackfillPageRichPayload[\s\S]*message_components/,
+  'historical rich reconciliation must recover Components V2 as well as embeds',
+);
+assert.match(
+  archivistStoreSource,
+  /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageRichPayload/,
+  'historical rich recovery must use a bounded rich-payload batch path',
+);
+assert.match(
+  archivistStoreSource,
+  /rich reconcile archive message lookup failed[\s\S]*archivedIds[\s\S]*archivedMessages/,
+  'rich reconciliation must only attach rich payloads to messages already present in the archive',
 );
 assert.match(
   archivistWorkersSource,
-  /embed reconcile page[\s\S]*saveEmbedReconcileState/,
-  'embed reconciliation must persist a resumable cursor',
+  /rich payload reconcile page[\s\S]*saveEmbedReconcileState/,
+  'rich payload reconciliation must persist a resumable cursor',
 );
 assert.match(
   archivistWorkersSource,

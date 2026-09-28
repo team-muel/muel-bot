@@ -95,6 +95,9 @@ const messageColumns = [
   'created_at',
   'edited_at',
   'content',
+  'rendered_text',
+  'has_embeds',
+  'has_components',
   'author_display',
   'mask_state',
   'reply_to_message_id',
@@ -121,7 +124,7 @@ export const searchArchive = async (query: string, filters: ArchiveFilters = {})
   let request = archiveDb().from('v_messages')
     .select(messageColumns)
     .eq('guild_id', requiredGuildId())
-    .ilike('content', `%${q}%`)
+    .ilike('rendered_text', `%${q}%`)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (filters.channelId) request = request.eq('channel_id', filters.channelId);
@@ -174,6 +177,34 @@ export const archiveContext = async (messageId: string, radius = 10) => {
   if (afterResult.error) throw new Error(`archive context after failed: ${afterResult.error.message}`);
   const merged = [...(beforeResult.data ?? []).reverse(), ...(afterResult.data ?? [])] as unknown as Array<Record<string, unknown>>;
   return { target: messageId, messages: await enrichChannelNames(merged) };
+};
+
+export const getArchiveRichMessage = async (messageId: string) => {
+  const { data: message, error: messageError } = await archiveDb().from('v_messages')
+    .select(messageColumns)
+    .eq('guild_id', requiredGuildId())
+    .eq('message_id', messageId)
+    .maybeSingle();
+  if (messageError) throw new Error(`archive rich message lookup failed: ${messageError.message}`);
+  if (!message) return { message: null, embeds: [], components: [] };
+
+  const [{ data: embeds, error: embedError }, { data: components, error: componentError }] = await Promise.all([
+    archiveDb().from('message_embeds')
+      .select('embed_index,embed_type,title,description,url,color,embed_timestamp,author,footer,fields,image,thumbnail,video,provider,raw')
+      .eq('message_id', messageId)
+      .order('embed_index', { ascending: true }),
+    archiveDb().from('message_components')
+      .select('component_index,component_type,text_projection,raw')
+      .eq('message_id', messageId)
+      .order('component_index', { ascending: true }),
+  ]);
+  if (embedError) throw new Error(`archive rich embed lookup failed: ${embedError.message}`);
+  if (componentError) throw new Error(`archive rich component lookup failed: ${componentError.message}`);
+  return {
+    message: (await enrichChannelNames([message as unknown as Record<string, unknown>]))[0],
+    embeds: embeds ?? [],
+    components: components ?? [],
+  };
 };
 
 export const listArchiveChannels = async () => {
@@ -234,6 +265,13 @@ const createArchiveMcpServer = () => {
       radius: z.number().int().min(1).max(25).optional(),
     },
   }, async ({ messageId, radius }) => asToolResult(await archiveContext(messageId, radius)));
+  server.registerTool('get_archive_rich_message', {
+    title: 'Get structured Discord message payload',
+    description: 'Return the masked message plus structured embeds and Components V2 payloads for one archived message. Read-only.',
+    inputSchema: {
+      messageId: z.string().min(1),
+    },
+  }, async ({ messageId }) => asToolResult(await getArchiveRichMessage(messageId)));
   server.registerTool('list_archive_channels', {
     title: 'List archived channels',
     description: 'List channels visible to the archivist and their backfill status. Read-only.',
@@ -321,6 +359,11 @@ export const handleArchivePersonalRequest = async (request: IncomingMessage, res
       json(response, 200, await archiveContext(messageId, normalizeLimit(url.searchParams.get('radius') ?? 10)));
       return;
     }
+    if (url.pathname.startsWith('/archive/rich/')) {
+      const messageId = decodeURIComponent(url.pathname.slice('/archive/rich/'.length));
+      json(response, 200, await getArchiveRichMessage(messageId));
+      return;
+    }
     if (url.pathname === '/archive/channels') {
       json(response, 200, await listArchiveChannels());
       return;
@@ -362,6 +405,9 @@ export const getArchiveOpenApiDocument = (request: IncomingMessage) => {
         { name: 'message_id', in: 'path', required: true, schema: { type: 'string' } },
         { name: 'radius', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 25, default: 10 } },
       ], responses: { 200: { description: 'Nearby messages from the same channel' } } } },
+      '/archive/rich/{message_id}': { get: { operationId: 'getArchiveRichMessage', parameters: [
+        { name: 'message_id', in: 'path', required: true, schema: { type: 'string' } },
+      ], responses: { 200: { description: 'Masked message with structured embeds and Components V2 payloads' } } } },
       '/archive/channels': { get: { operationId: 'listArchiveChannels', responses: { 200: { description: 'Archived channels and backfill state' } } } },
       '/archive/stats': { get: { operationId: 'getArchiveStats', responses: { 200: { description: 'Archive counts and backfill timestamps' } } } },
     },

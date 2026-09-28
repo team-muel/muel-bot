@@ -427,10 +427,10 @@ const reconcileEmbedChannel = async (
   const fetched = await withDeadline(
     client.channels.fetch(channelId),
     10_000,
-    `Discord embed reconcile channel fetch ${channelId}`,
+    `Discord rich payload reconcile channel fetch ${channelId}`,
   );
   if (!fetched || !canFetchMessages(fetched as GuildBasedChannel)) {
-    throw new Error(`embed reconcile target is not a message channel: ${channelId}`);
+    throw new Error(`rich payload reconcile target is not a message channel: ${channelId}`);
   }
 
   const channel = fetched as GuildTextBasedChannel;
@@ -440,7 +440,7 @@ const reconcileEmbedChannel = async (
     const page = await withDeadline(
       channel.messages.fetch({ limit: 100, ...(cursor ? { before: cursor } : {}), cache: false }),
       120_000,
-      `Discord embed reconcile page ${channelId}`,
+      `Discord rich payload reconcile page ${channelId}`,
     );
     const rows = [...page.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
     if (rows.length === 0) {
@@ -448,21 +448,22 @@ const reconcileEmbedChannel = async (
       return;
     }
 
-    const embeds = await store.ingestEmbedBackfillPage(rows);
+    const rich = await store.ingestEmbedBackfillPage(rows);
     cursor = rows[0].id;
     const done = page.size < 100;
     await store.saveEmbedReconcileState(channelId, cursor, done);
-    console.log('[archivist] embed reconcile page', {
+    console.log('[archivist] rich payload reconcile page', {
       channelId,
       fetched: page.size,
-      embeds,
+      embeds: rich.embeds,
+      components: rich.components,
       cursor,
       done,
     });
     if (done) return;
   }
 
-  console.log('[archivist] embed reconcile slice complete', {
+  console.log('[archivist] rich payload reconcile slice complete', {
     channelId,
     cursor,
     pages: 10,
@@ -480,7 +481,7 @@ const runEmbedReconcileTick = async (
   }
 
   const target = targets[0];
-  console.log('[archivist] embed reconcile start', {
+  console.log('[archivist] rich payload reconcile start', {
     channelId: target.channelId,
     cursor: target.cursor,
   });
@@ -499,7 +500,7 @@ export const startEmbedReconcileWorker = (client: Client<true>, store: ArchiveSt
       embedReconcileStatus.lastError = null;
     } catch (error) {
       embedReconcileStatus.lastError = errorMessage(error);
-      console.warn('[archivist] embed reconcile tick failed', {
+      console.warn('[archivist] rich payload reconcile tick failed', {
         error: embedReconcileStatus.lastError,
       });
     } finally {
