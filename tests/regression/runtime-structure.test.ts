@@ -180,8 +180,13 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
-  /channel\.type === ChannelType\.GuildPrivateThread/,
-  'private threads without a public starter-message contract must be excluded from generic starter repair',
+  /channel\.type === ChannelType\.GuildPublicThread[\s\S]*ChannelType\.GuildNewsThread/,
+  'starter repair must be gated by Discord public/news thread enum types rather than the convenience isThread predicate',
+);
+assert.doesNotMatch(
+  archivistWorkersSource,
+  /backfillThreadStarter[\s\S]{0,600}channel\.isThread\(\)/,
+  'starter repair must not depend on BaseChannel.isThread() as its runtime gate',
 );
 
 console.log('✅ runtime structure, containment, and readiness contracts');
