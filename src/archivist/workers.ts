@@ -86,7 +86,7 @@ const collectArchivedThreads = async (
 
 const backfillThreadStarter = async (
   store: ArchiveStore,
-  channel: GuildTextBasedChannel,
+  channel: GuildBasedChannel,
 ): Promise<void> => {
   const isPublicStarterThread = channel.type === ChannelType.GuildPublicThread
     || channel.type === ChannelType.GuildNewsThread;
@@ -137,11 +137,6 @@ const backfillChannel = async (
   channel: GuildTextBasedChannel,
 ): Promise<void> => {
   await store.upsertChannel(channel);
-
-  // Repair a missing public/news thread starter before honoring an existing
-  // backfill_done flag. Forum post bodies and ordinary thread starters share
-  // the same dedicated fetchStarterMessage() recovery path.
-  await backfillThreadStarter(store, channel);
 
   const state = await store.getChannelBackfillState(channel.id);
   if (state.done) return;
@@ -200,6 +195,12 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
 
     for (const channel of baseChannels) {
       await store.upsertChannel(channel);
+
+      // Starter recovery belongs to channel-registry discovery, not to the
+      // later message-backfill candidate filter. A Discord public/news thread
+      // can therefore heal even when canFetchMessages() does not admit the
+      // cached channel object into the pagination phase.
+      await backfillThreadStarter(store, channel);
     }
 
     // Heal cached/active channels first. This lets active forum posts recover
@@ -226,6 +227,9 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
     // critical registry/active-thread repair path.
     const threads = await collectArchivedThreads(guild, baseChannels);
     for (const channel of threads) {
+      await store.upsertChannel(channel);
+      await backfillThreadStarter(store, channel);
+
       if (!canFetchMessages(channel) || candidates.has(channel.id)) continue;
       candidates.set(channel.id, channel);
       try {
