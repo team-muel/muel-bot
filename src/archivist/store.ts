@@ -54,6 +54,31 @@ const collectComponentText = (value: unknown, out: string[] = []): string[] => {
   }
   if (!value || typeof value !== 'object') return out;
   const record = value as Record<string, unknown>;
+  for (const key of ['content', 'title', 'description', 'label', 'name']) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) out.push(candidate.trim());
+  }
+  for (const key of ['components', 'accessory', 'items', 'fields']) {
+    if (key in record) collectComponentText(record[key], out);
+  }
+  return out;
+};
+
+const componentJson = (component: unknown): Record<string, unknown> => {
+  if (component && typeof component === 'object' && 'toJSON' in component
+      && typeof (component as { toJSON?: unknown }).toJSON === 'function') {
+    return ((component as { toJSON: () => unknown }).toJSON() ?? {}) as Record<string, unknown>;
+  }
+  return (component ?? {}) as Record<string, unknown>;
+};
+
+const collectComponentText = (value: unknown, out: string[] = []): string[] => {
+  if (Array.isArray(value)) {
+    for (const item of value) collectComponentText(item, out);
+    return out;
+  }
+  if (!value || typeof value !== 'object') return out;
+  const record = value as Record<string, unknown>;
   for (const key of ['content', 'label', 'title', 'description', 'placeholder']) {
     const text = record[key];
     if (typeof text === 'string' && text.trim()) out.push(text.trim());
@@ -232,7 +257,7 @@ export class ArchiveStore {
     }
 
     await this.ingestAttachments(message);
-    await this.replaceMessageEmbeds(message);
+    await this.replaceMessageRichPayload(message);
     await this.replaceMessageComponents(message);
   }
 
@@ -291,7 +316,7 @@ export class ArchiveStore {
       throwIfError('backfill page message upsert failed', error);
     }
 
-    await this.replaceBackfillPageEmbeds(owned);
+    await this.replaceBackfillPageRichPayload(owned);
     await this.replaceBackfillPageComponents(owned);
 
     const candidates = owned.flatMap((message) => [...message.attachments.values()].map((attachment) => ({
@@ -338,115 +363,118 @@ export class ArchiveStore {
     };
   }
 
-  private serializeComponent(messageId: string, componentIndex: number, component: any) {
-    const raw = typeof component?.toJSON === 'function' ? component.toJSON() : component;
-    const textProjection = uniqueText(collectComponentText(raw));
+  private serializeComponent(messageId: string, componentIndex: number, component: unknown) {
+    const raw = componentJson(component);
+    const projected = [...new Set(collectComponentText(raw))].join('\n').trim();
     return {
       message_id: messageId,
       component_index: componentIndex,
-      component_type: Number(raw?.type ?? component?.type ?? -1),
-      text_projection: textProjection,
+      component_type: Number(raw.type ?? -1),
+      text_projection: projected || null,
       raw,
       updated_at: new Date().toISOString(),
     };
   }
 
-  private async replaceMessageComponents(message: Message<true>): Promise<void> {
-    const { error: deleteError } = await this.db.from('message_components')
-      .delete()
-      .eq('message_id', message.id);
-    throwIfError(`message component delete failed (${message.id})`, deleteError);
-
-    const components = message.components as readonly any[];
-    if (components.length === 0) return;
-    const rows = components.map((component, index) => this.serializeComponent(message.id, index, component));
-    const { error } = await this.db.from('message_components').insert(rows);
-    throwIfError(`message component insert failed (${message.id})`, error);
+  private projectRichText(message: Message<true>): string {
+    const parts: string[] = [];
+    if (message.content?.trim()) parts.push(message.content.trim());
+    for (const embed of message.embeds) {
+      const raw = embed.toJSON();
+      if (raw.title?.trim()) parts.push(raw.title.trim());
+      if (raw.description?.trim()) parts.push(raw.description.trim());
+      for (const field of raw.fields ?? []) {
+        if (field.name?.trim()) parts.push(field.name.trim());
+        if (field.value?.trim()) parts.push(field.value.trim());
+      }
+      if (raw.footer?.text?.trim()) parts.push(raw.footer.text.trim());
+      if (raw.author?.name?.trim()) parts.push(raw.author.name.trim());
+    }
+    for (const component of message.components as readonly unknown[]) {
+      parts.push(...collectComponentText(componentJson(component)));
+    }
+    return [...new Set(parts.map((part) => part.trim()).filter(Boolean))].join('\n').trim();
   }
 
-  private async replaceBackfillPageComponents(messages: Message<true>[]): Promise<number> {
-    if (messages.length === 0) return 0;
+  private async replaceMessageRichPayload(message: Message<true>): Promise<void> {
+    const [embedDelete, componentDelete] = await Promise.all([
+      this.db.from('message_embeds').delete().eq('message_id', message.id),
+      this.db.from('message_components').delete().eq('message_id', message.id),
+    ]);
+    throwIfError(`message embed delete failed (${message.id})`, embedDelete.error);
+    throwIfError(`message component delete failed (${message.id})`, componentDelete.error);
+
+    const embedRows = message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed));
+    if (embedRows.length > 0) {
+      const { error } = await this.db.from('message_embeds').insert(embedRows);
+      throwIfError(`message embed insert failed (${message.id})`, error);
+    }
+
+    const componentRows = [...(message.components as readonly unknown[])]
+      .map((component, index) => this.serializeComponent(message.id, index, component));
+    if (componentRows.length > 0) {
+      const { error } = await this.db.from('message_components').insert(componentRows);
+      throwIfError(`message component insert failed (${message.id})`, error);
+    }
+
+    const { error: richError } = await this.db.from('message_rich_text').upsert({
+      message_id: message.id,
+      rendered_text: this.projectRichText(message),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'message_id' });
+    throwIfError(`message rich text upsert failed (${message.id})`, richError);
+  }
+
+  private async replaceBackfillPageRichPayload(messages: Message<true>[]): Promise<{ embeds: number; components: number }> {
+    if (messages.length === 0) return { embeds: 0, components: 0 };
     const messageIds = messages.map((message) => message.id);
     const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
-      .select('message_id, tombstoned')
+      .select('message_id')
       .in('message_id', messageIds);
-    throwIfError('component reconcile archive message lookup failed', archiveLookupError);
+    throwIfError('rich reconcile archive message lookup failed', archiveLookupError);
 
-    const archivedIds = new Set((archivedRows ?? [])
-      .filter((row: any) => !row.tombstoned)
-      .map((row: any) => String(row.message_id)));
+    const archivedIds = new Set((archivedRows ?? []).map((row: any) => String(row.message_id)));
     const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
-    if (archivedMessages.length === 0) return 0;
+    if (archivedMessages.length === 0) return { embeds: 0, components: 0 };
 
     const archivedMessageIds = archivedMessages.map((message) => message.id);
-    const { error: deleteError } = await this.db.from('message_components')
-      .delete()
-      .in('message_id', archivedMessageIds);
-    throwIfError('backfill page component delete failed', deleteError);
+    const [embedDelete, componentDelete] = await Promise.all([
+      this.db.from('message_embeds').delete().in('message_id', archivedMessageIds),
+      this.db.from('message_components').delete().in('message_id', archivedMessageIds),
+    ]);
+    throwIfError('backfill page embed delete failed', embedDelete.error);
+    throwIfError('backfill page component delete failed', componentDelete.error);
 
-    const rows = archivedMessages.flatMap((message) =>
-      (message.components as readonly any[]).map((component, index) =>
+    const embedRows = archivedMessages.flatMap((message) =>
+      message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed)));
+    const componentRows = archivedMessages.flatMap((message) =>
+      [...(message.components as readonly unknown[])].map((component, index) =>
         this.serializeComponent(message.id, index, component)));
-    if (rows.length > 0) {
-      const { error } = await this.db.from('message_components').insert(rows);
+    const richRows = archivedMessages.map((message) => ({
+      message_id: message.id,
+      rendered_text: this.projectRichText(message),
+      updated_at: new Date().toISOString(),
+    }));
+
+    if (embedRows.length > 0) {
+      const { error } = await this.db.from('message_embeds').insert(embedRows);
+      throwIfError('backfill page embed insert failed', error);
+    }
+    if (componentRows.length > 0) {
+      const { error } = await this.db.from('message_components').insert(componentRows);
       throwIfError('backfill page component insert failed', error);
     }
+    const { error: richError } = await this.db.from('message_rich_text')
+      .upsert(richRows, { onConflict: 'message_id' });
+    throwIfError('backfill page rich text upsert failed', richError);
 
-    for (const message of archivedMessages) {
-      const { error } = await this.db.from('messages').update({
-        rich_content: messageRichProjection(message),
-      }).eq('message_id', message.id);
-      throwIfError(`message rich projection update failed (${message.id})`, error);
-    }
-    return rows.length;
-  }
-
-  private async replaceMessageEmbeds(message: Message<true>): Promise<void> {
-    const { error: deleteError } = await this.db.from('message_embeds')
-      .delete()
-      .eq('message_id', message.id);
-    throwIfError(`message embed delete failed (${message.id})`, deleteError);
-
-    if (message.embeds.length === 0) return;
-    const rows = message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed));
-    const { error } = await this.db.from('message_embeds').insert(rows);
-    throwIfError(`message embed insert failed (${message.id})`, error);
-  }
-
-  private async replaceBackfillPageEmbeds(messages: Message<true>[]): Promise<number> {
-    if (messages.length === 0) return 0;
-    const messageIds = messages.map((message) => message.id);
-    const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
-      .select('message_id, tombstoned')
-      .in('message_id', messageIds);
-    throwIfError('embed reconcile archive message lookup failed', archiveLookupError);
-
-    const archivedIds = new Set((archivedRows ?? [])
-      .filter((row: any) => !row.tombstoned)
-      .map((row: any) => String(row.message_id)));
-    const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
-    if (archivedMessages.length === 0) return 0;
-
-    const archivedMessageIds = archivedMessages.map((message) => message.id);
-    const { error: deleteError } = await this.db.from('message_embeds')
-      .delete()
-      .in('message_id', archivedMessageIds);
-    throwIfError('backfill page embed delete failed', deleteError);
-
-    const rows = archivedMessages.flatMap((message) =>
-      message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed)));
-    if (rows.length === 0) return 0;
-    const { error } = await this.db.from('message_embeds').insert(rows);
-    throwIfError('backfill page embed insert failed', error);
-    return rows.length;
+    return { embeds: embedRows.length, components: componentRows.length };
   }
 
   async ingestEmbedBackfillPage(messages: Message<true>[]): Promise<{ embeds: number; components: number }> {
     const owned = messages.filter((message) => this.owns(message.guildId));
     if (owned.length === 0) return { embeds: 0, components: 0 };
-    const embeds = await this.replaceBackfillPageEmbeds(owned);
-    const components = await this.replaceBackfillPageComponents(owned);
-    return { embeds, components };
+    return this.replaceBackfillPageRichPayload(owned);
   }
 
   async listEmbedReconcileChannels(limit = 1): Promise<Array<{ channelId: string; cursor: string | null }>> {
@@ -457,7 +485,7 @@ export class ArchiveStore {
       .lt('embed_reconcile_version', 1)
       .order('updated_at', { ascending: true })
       .limit(limit);
-    throwIfError('archive embed reconcile queue query failed', error);
+    throwIfError('archive rich reconcile queue query failed', error);
     return (data ?? []).map((row: any) => ({
       channelId: String(row.channel_id),
       cursor: row.embed_reconcile_cursor ? String(row.embed_reconcile_cursor) : null,
@@ -475,7 +503,7 @@ export class ArchiveStore {
       embed_reconciled_at: done ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }).eq('channel_id', channelId);
-    throwIfError(`embed reconcile state update failed (${channelId})`, error);
+    throwIfError(`rich reconcile state update failed (${channelId})`, error);
   }
 
   private async ingestAttachments(message: Message<true>): Promise<void> {
@@ -517,7 +545,7 @@ export class ArchiveStore {
       if (current.tombstoned) return;
       if (current.content === (message.content || null)) {
         await this.ingestAttachments(message);
-        await this.replaceMessageEmbeds(message);
+        await this.replaceMessageRichPayload(message);
         await this.replaceMessageComponents(message);
         const { error: richError } = await this.db.from('messages').update({
           rich_content: messageRichProjection(message),
@@ -543,7 +571,7 @@ export class ArchiveStore {
       }).eq('message_id', message.id);
       throwIfError(`message edit update failed (${message.id})`, updateError);
       await this.ingestAttachments(message);
-      await this.replaceMessageEmbeds(message);
+      await this.replaceMessageRichPayload(message);
       await this.replaceMessageComponents(message);
     });
     const tracked = next.finally(() => {
