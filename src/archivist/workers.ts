@@ -131,6 +131,14 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
     for (const channel of fetched.values()) {
       if (channel) baseChannels.push(channel);
     }
+
+    // Persist the full guild channel registry, not only message-fetchable channels.
+    // Categories have no message manager, but preserving them is required to resolve
+    // channel/thread -> category hierarchy for personal archive search clients.
+    for (const channel of baseChannels) {
+      await store.upsertChannel(channel);
+    }
+
     const threads = await collectArchivedThreads(guild, baseChannels);
     const candidates = new Map<string, GuildTextBasedChannel>();
     for (const channel of [...baseChannels, ...threads]) {
