@@ -90,6 +90,7 @@ const backfillForumStarter = async (
   if (!channel.isThread()) return;
   const parentType = channel.parent?.type;
   if (parentType !== ChannelType.GuildForum && parentType !== ChannelType.GuildMedia) return;
+  if (await store.hasMessage(channel.id)) return;
 
   try {
     const starter = await channel.fetchStarterMessage();

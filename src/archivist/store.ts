@@ -403,6 +403,15 @@ export class ArchiveStore {
     throwIfError('guild backfill completion update failed', error);
   }
 
+  async hasMessage(messageId: string): Promise<boolean> {
+    const { data, error } = await this.db.from('messages')
+      .select('message_id')
+      .eq('message_id', messageId)
+      .maybeSingle();
+    throwIfError(`archive message existence check failed (${messageId})`, error);
+    return Boolean(data);
+  }
+
   async getChannelBackfillState(channelId: string): Promise<{ cursor: string | null; done: boolean }> {
     const { data, error } = await this.db.from('channels')
       .select('last_backfilled_message_id, backfill_done')
