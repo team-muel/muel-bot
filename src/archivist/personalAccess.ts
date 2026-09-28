@@ -95,6 +95,9 @@ const messageColumns = [
   'created_at',
   'edited_at',
   'content',
+  'rendered_text',
+  'has_embeds',
+  'has_components',
   'author_display',
   'mask_state',
   'reply_to_message_id',
@@ -207,6 +210,34 @@ export const getArchiveRichMessage = async (messageId: string) => {
   };
 };
 
+export const getArchiveRichPayload = async (messageId: string) => {
+  const { data: message, error: messageError } = await archiveDb().from('v_messages')
+    .select(messageColumns)
+    .eq('guild_id', requiredGuildId())
+    .eq('message_id', messageId)
+    .maybeSingle();
+  if (messageError) throw new Error(`archive rich payload message lookup failed: ${messageError.message}`);
+  if (!message) return { message: null, embeds: [], components: [] };
+
+  const [embeds, components] = await Promise.all([
+    archiveDb().from('message_embeds')
+      .select('embed_index,embed_type,title,description,url,fields,author,footer,image,thumbnail,raw')
+      .eq('message_id', messageId)
+      .order('embed_index', { ascending: true }),
+    archiveDb().from('message_components')
+      .select('component_index,component_type,text_projection,raw')
+      .eq('message_id', messageId)
+      .order('component_index', { ascending: true }),
+  ]);
+  if (embeds.error) throw new Error(`archive embed lookup failed: ${embeds.error.message}`);
+  if (components.error) throw new Error(`archive component lookup failed: ${components.error.message}`);
+  return {
+    message,
+    embeds: embeds.data ?? [],
+    components: components.data ?? [],
+  };
+};
+
 export const listArchiveChannels = async () => {
   const { data, error } = await archiveDb().from('v_channel_registry')
     .select('channel_id,name,type,kind,parent_id,parent_name,parent_type,parent_resolved,container_channel_id,category_id,category_name,category_type,is_archived,backfill_done')
@@ -272,6 +303,13 @@ const createArchiveMcpServer = () => {
       messageId: z.string().min(1),
     },
   }, async ({ messageId }) => asToolResult(await getArchiveRichMessage(messageId)));
+  server.registerTool('get_archive_rich_payload', {
+    title: 'Get archived Discord rich payload',
+    description: 'Return structured Discord embeds and Components V2 for one archived message. Read-only.',
+    inputSchema: {
+      messageId: z.string().min(1),
+    },
+  }, async ({ messageId }) => asToolResult(await getArchiveRichPayload(messageId)));
   server.registerTool('list_archive_channels', {
     title: 'List archived channels',
     description: 'List channels visible to the archivist and their backfill status. Read-only.',
@@ -364,6 +402,11 @@ export const handleArchivePersonalRequest = async (request: IncomingMessage, res
       json(response, 200, await getArchiveRichMessage(messageId));
       return;
     }
+    if (url.pathname.startsWith('/archive/rich/')) {
+      const messageId = decodeURIComponent(url.pathname.slice('/archive/rich/'.length));
+      json(response, 200, await getArchiveRichPayload(messageId));
+      return;
+    }
     if (url.pathname === '/archive/channels') {
       json(response, 200, await listArchiveChannels());
       return;
@@ -408,6 +451,9 @@ export const getArchiveOpenApiDocument = (request: IncomingMessage) => {
       '/archive/rich/{message_id}': { get: { operationId: 'getArchiveRichMessage', parameters: [
         { name: 'message_id', in: 'path', required: true, schema: { type: 'string' } },
       ], responses: { 200: { description: 'Masked message with structured embeds and Components V2 payloads' } } } },
+      '/archive/rich/{message_id}': { get: { operationId: 'getArchiveRichPayload', parameters: [
+        { name: 'message_id', in: 'path', required: true, schema: { type: 'string' } },
+      ], responses: { 200: { description: 'Structured embeds and Components V2 for an archived message' } } } },
       '/archive/channels': { get: { operationId: 'listArchiveChannels', responses: { 200: { description: 'Archived channels and backfill state' } } } },
       '/archive/stats': { get: { operationId: 'getArchiveStats', responses: { 200: { description: 'Archive counts and backfill timestamps' } } } },
     },
