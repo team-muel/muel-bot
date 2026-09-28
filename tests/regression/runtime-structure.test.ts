@@ -279,6 +279,16 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
+  /listMissingComponentsV2MessageIds[\s\S]*32768n[\s\S]*message_components/,
+  'historical Components V2 repair must target archived IsComponentsV2 messages missing structured components',
+);
+assert.match(
+  archivistWorkersSource,
+  /repairComponentsV2ByMessageId[\s\S]*channel\.messages\.fetch\(messageId\)[\s\S]*ingestEmbedBackfillPage\(\[message\]\)/,
+  'Components V2 repair must use exact Discord message fetches before broad history pagination',
+);
+assert.match(
+  archivistStoreSource,
   /listEmbedReconcileChannels[\s\S]*\.order\('updated_at', \{ ascending: true \}\)/,
   'pending embed channels must rotate by least-recently-processed channel',
 );
