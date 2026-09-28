@@ -148,10 +148,19 @@ export const config = {
   archivePersonalToken: optionalEnv('ARCHIVE_PERSONAL_TOKEN'),
   archiveBackfillEnabled: booleanEnv('ENABLE_ARCHIVE_BACKFILL', true),
   archiveAttachmentCopyIntervalMs: Number(process.env.ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS ?? 30_000),
-  ncpAccessKey: optionalEnv('NCP_ACCESS_KEY'),
-  ncpSecretKey: optionalEnv('NCP_SECRET_KEY'),
-  ncpObjectEndpoint: optionalEnv('NCP_OBJ_ENDPOINT') ?? 'https://kr.object.ncloudstorage.com',
-  ncpObjectBucket: optionalEnv('NCP_OBJ_BUCKET') ?? 'muel-archive',
+  // Provider-neutral S3-compatible attachment mirror. Legacy NCP_* variables
+  // remain read-only aliases so an older deployment can be migrated without
+  // changing the stored archive contract.
+  archiveObjectAccessKey: optionalEnv('ARCHIVE_OBJECT_ACCESS_KEY') ?? optionalEnv('NCP_ACCESS_KEY'),
+  archiveObjectSecretKey: optionalEnv('ARCHIVE_OBJECT_SECRET_KEY') ?? optionalEnv('NCP_SECRET_KEY'),
+  archiveObjectEndpoint: optionalEnv('ARCHIVE_OBJECT_ENDPOINT') ?? optionalEnv('NCP_OBJ_ENDPOINT'),
+  archiveObjectBucket: optionalEnv('ARCHIVE_OBJECT_BUCKET') ?? optionalEnv('NCP_OBJ_BUCKET') ?? 'muel-archive',
+  archiveObjectRegion: optionalEnv('ARCHIVE_OBJECT_REGION')
+    ?? (optionalEnv('NCP_ACCESS_KEY') ? 'kr-standard' : 'auto'),
+  archiveObjectForcePathStyle: booleanEnv(
+    'ARCHIVE_OBJECT_FORCE_PATH_STYLE',
+    Boolean(optionalEnv('NCP_ACCESS_KEY')),
+  ),
   // The NAVER live-search env vars were removed in MUE-86 (retired with the
   // NCP account). Leftover values in a deployment are ignored.
 };

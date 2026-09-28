@@ -105,11 +105,15 @@ services:
         value: "true"
       - key: ARCHIVE_ATTACHMENT_COPY_INTERVAL_MS
         value: "30000"
-      - key: NCP_ACCESS_KEY
+      - key: ARCHIVE_OBJECT_ACCESS_KEY
         sync: false
-      - key: NCP_SECRET_KEY
+      - key: ARCHIVE_OBJECT_SECRET_KEY
         sync: false
-      - key: NCP_OBJ_ENDPOINT
-        value: https://kr.object.ncloudstorage.com
-      - key: NCP_OBJ_BUCKET
+      - key: ARCHIVE_OBJECT_ENDPOINT
+        sync: false
+      - key: ARCHIVE_OBJECT_BUCKET
         value: muel-archive
+      - key: ARCHIVE_OBJECT_REGION
+        value: auto
+      - key: ARCHIVE_OBJECT_FORCE_PATH_STYLE
+        value: "false"

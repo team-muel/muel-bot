@@ -181,31 +181,76 @@ const safeFilename = (name: string | null, id: number): string =>
   (name?.trim() || `attachment-${id}`).replace(/[\\/\0]/g, '_');
 
 const getObjectClient = (): S3Client | null => {
-  if (!config.ncpAccessKey || !config.ncpSecretKey) return null;
+  if (!config.archiveObjectAccessKey || !config.archiveObjectSecretKey) return null;
   return new S3Client({
-    endpoint: config.ncpObjectEndpoint,
-    region: 'kr-standard',
-    forcePathStyle: true,
+    ...(config.archiveObjectEndpoint ? { endpoint: config.archiveObjectEndpoint } : {}),
+    region: config.archiveObjectRegion,
+    forcePathStyle: config.archiveObjectForcePathStyle,
     credentials: {
-      accessKeyId: config.ncpAccessKey,
-      secretAccessKey: config.ncpSecretKey,
+      accessKeyId: config.archiveObjectAccessKey,
+      secretAccessKey: config.archiveObjectSecretKey,
     },
   });
 };
 
-const copyAttachmentBatch = async (store: ArchiveStore, objectClient: S3Client): Promise<number> => {
+const attachmentIdFromUrl = (url: URL): string | null => {
+  const parts = url.pathname.split('/').filter(Boolean);
+  const attachmentsAt = parts.indexOf('attachments');
+  return attachmentsAt >= 0 && parts.length > attachmentsAt + 2
+    ? parts[attachmentsAt + 2]
+    : null;
+};
+
+const fetchAttachmentBody = async (
+  client: Client<true>,
+  scope: { guildId: string; channelId: string },
+  row: { message_id: string; discord_url: string; filename: string | null },
+): Promise<Response> => {
+  const initialUrl = validateDiscordAttachmentUrl(row.discord_url);
+  let response = await fetch(initialUrl, { signal: AbortSignal.timeout(60_000) });
+  if (response.ok) return response;
+
+  // Discord attachment CDN URLs are signed and expire. If the stored URL is
+  // stale, refetch the source message to obtain a fresh signed URL before
+  // declaring the attachment unrecoverable.
+  if (![401, 403, 404].includes(response.status)) {
+    throw new Error(`Discord download returned HTTP ${response.status}`);
+  }
+
+  const channel = await client.channels.fetch(scope.channelId);
+  if (!channel || !channel.isTextBased() || !('messages' in channel)) {
+    throw new Error(`cannot refresh attachment URL for non-message channel ${scope.channelId}`);
+  }
+  const message = await (channel as GuildTextBasedChannel).messages.fetch(row.message_id);
+  const attachmentId = attachmentIdFromUrl(initialUrl);
+  const refreshedAttachment = (attachmentId ? message.attachments.get(attachmentId) : null)
+    ?? [...message.attachments.values()].find((attachment) => attachment.name === row.filename)
+    ?? null;
+  if (!refreshedAttachment) {
+    throw new Error('attachment no longer exists on the source Discord message');
+  }
+
+  const refreshedUrl = validateDiscordAttachmentUrl(refreshedAttachment.url);
+  response = await fetch(refreshedUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!response.ok) throw new Error(`Discord refreshed download returned HTTP ${response.status}`);
+  return response;
+};
+
+const copyAttachmentBatch = async (
+  client: Client<true>,
+  store: ArchiveStore,
+  objectClient: S3Client,
+): Promise<number> => {
   const rows = await store.listUncopiedAttachments();
   for (const row of rows) {
     try {
       const scope = await store.getAttachmentMessageScope(row.message_id);
       if (!scope || scope.guildId !== store.guildId) continue;
-      const url = validateDiscordAttachmentUrl(row.discord_url);
-      const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-      if (!response.ok) throw new Error(`Discord download returned HTTP ${response.status}`);
+      const response = await fetchAttachmentBody(client, scope, row);
       const body = Buffer.from(await response.arrayBuffer());
-      const objectKey = `${scope.guildId}/${scope.channelId}/${row.message_id}/${safeFilename(row.filename, row.id)}`;
+      const objectKey = `${scope.guildId}/${scope.channelId}/${row.message_id}/${row.id}-${safeFilename(row.filename, row.id)}`;
       await objectClient.send(new PutObjectCommand({
-        Bucket: config.ncpObjectBucket,
+        Bucket: config.archiveObjectBucket,
         Key: objectKey,
         Body: body,
         ContentType: row.content_type ?? response.headers.get('content-type') ?? undefined,
@@ -219,10 +264,10 @@ const copyAttachmentBatch = async (store: ArchiveStore, objectClient: S3Client):
   return rows.length;
 };
 
-export const startAttachmentCopyWorker = (store: ArchiveStore): void => {
+export const startAttachmentCopyWorker = (client: Client<true>, store: ArchiveStore): void => {
   const objectClient = getObjectClient();
   if (!objectClient || attachmentCopyStatus.running) {
-    if (!objectClient) attachmentCopyStatus.lastError = 'NCP object storage credentials are not configured.';
+    if (!objectClient) attachmentCopyStatus.lastError = 'Archive object storage credentials are not configured.';
     return;
   }
   attachmentCopyStatus.running = true;
@@ -230,7 +275,7 @@ export const startAttachmentCopyWorker = (store: ArchiveStore): void => {
 
   const tick = async () => {
     try {
-      await copyAttachmentBatch(store, objectClient);
+      await copyAttachmentBatch(client, store, objectClient);
       attachmentCopyStatus.lastCompletedAt = new Date().toISOString();
       attachmentCopyStatus.lastError = null;
     } catch (error) {
