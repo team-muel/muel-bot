@@ -174,5 +174,10 @@ assert.match(
   /for \(const channel of baseChannels\)[\s\S]*await backfillChannel\(store, channel\)[\s\S]*collectArchivedThreads/,
   'cached channels and active forum posts must heal before archived-thread enumeration',
 );
+assert.match(
+  archivistWorkersSource,
+  /channel\.parent[\s\S]*channel\.guild\.channels\.cache\.get\(channel\.parentId\)/,
+  'forum starter recovery must resolve a missing ThreadChannel.parent through the guild channel cache',
+);
 
 console.log('✅ runtime structure, containment, and readiness contracts');
