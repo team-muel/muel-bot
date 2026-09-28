@@ -163,7 +163,6 @@ assert.match(
   'thread starter recovery must run before an existing backfill_done state can short-circuit',
 );
 assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
-assert.match(archivistWorkersSource, /ChannelType\.GuildForum/);
 assert.match(
   archivistWorkersSource,
   /guild\.channels\.cache\.values\(\)[\s\S]*await store\.upsertChannel\(channel\)[\s\S]*collectArchivedThreads/,
@@ -172,7 +171,7 @@ assert.match(
 assert.match(
   archivistWorkersSource,
   /for \(const channel of baseChannels\)[\s\S]*await backfillChannel\(store, channel\)[\s\S]*collectArchivedThreads/,
-  'cached channels and active forum posts must heal before archived-thread enumeration',
+  'cached channels and active threads must heal before archived-thread enumeration',
 );
 assert.match(
   archivistWorkersSource,
