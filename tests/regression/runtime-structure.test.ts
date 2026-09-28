@@ -176,7 +176,7 @@ assert.match(
 assert.match(
   archivistWorkersSource,
   /backfillThreadStarter[\s\S]*fetchStarterMessage\(\)/,
-  'public/news thread starter gaps must be repaired through fetchStarterMessage',
+  'public/news thread starter gaps must use fetchStarterMessage before done-state short-circuit',
 );
 assert.match(
   archivistWorkersSource,
