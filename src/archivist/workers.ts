@@ -232,7 +232,7 @@ const reconcileRegisteredThreadHistories = async (
         || channel.type === ChannelType.GuildNewsThread;
       if (!isPublicThread) return;
       const thread = channel as ThreadChannel;
-      await store.upsertChannel(thread);
+      await store.upsertChannel(channel);
 
       let pageCursor = cursor ?? undefined;
       for (let pageNo = 0; pageNo < 4; pageNo += 1) {
