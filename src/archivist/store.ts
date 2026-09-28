@@ -368,11 +368,13 @@ export class ArchiveStore {
     if (messages.length === 0) return 0;
     const messageIds = messages.map((message) => message.id);
     const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
-      .select('message_id')
+      .select('message_id, tombstoned')
       .in('message_id', messageIds);
     throwIfError('component reconcile archive message lookup failed', archiveLookupError);
 
-    const archivedIds = new Set((archivedRows ?? []).map((row: any) => String(row.message_id)));
+    const archivedIds = new Set((archivedRows ?? [])
+      .filter((row: any) => !row.tombstoned)
+      .map((row: any) => String(row.message_id)));
     const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
     if (archivedMessages.length === 0) return 0;
 
@@ -415,11 +417,13 @@ export class ArchiveStore {
     if (messages.length === 0) return 0;
     const messageIds = messages.map((message) => message.id);
     const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
-      .select('message_id')
+      .select('message_id, tombstoned')
       .in('message_id', messageIds);
     throwIfError('embed reconcile archive message lookup failed', archiveLookupError);
 
-    const archivedIds = new Set((archivedRows ?? []).map((row: any) => String(row.message_id)));
+    const archivedIds = new Set((archivedRows ?? [])
+      .filter((row: any) => !row.tombstoned)
+      .map((row: any) => String(row.message_id)));
     const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
     if (archivedMessages.length === 0) return 0;
 
