@@ -299,26 +299,36 @@ export class ArchiveStore {
     throwIfError(`message embed insert failed (${message.id})`, error);
   }
 
-  private async replaceBackfillPageEmbeds(messages: Message<true>[]): Promise<void> {
-    if (messages.length === 0) return;
+  private async replaceBackfillPageEmbeds(messages: Message<true>[]): Promise<number> {
+    if (messages.length === 0) return 0;
     const messageIds = messages.map((message) => message.id);
+    const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
+      .select('message_id')
+      .in('message_id', messageIds);
+    throwIfError('embed reconcile archive message lookup failed', archiveLookupError);
+
+    const archivedIds = new Set((archivedRows ?? []).map((row: any) => String(row.message_id)));
+    const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
+    if (archivedMessages.length === 0) return 0;
+
+    const archivedMessageIds = archivedMessages.map((message) => message.id);
     const { error: deleteError } = await this.db.from('message_embeds')
       .delete()
-      .in('message_id', messageIds);
+      .in('message_id', archivedMessageIds);
     throwIfError('backfill page embed delete failed', deleteError);
 
-    const rows = messages.flatMap((message) =>
+    const rows = archivedMessages.flatMap((message) =>
       message.embeds.map((embed, index) => this.serializeEmbed(message.id, index, embed)));
-    if (rows.length === 0) return;
+    if (rows.length === 0) return 0;
     const { error } = await this.db.from('message_embeds').insert(rows);
     throwIfError('backfill page embed insert failed', error);
+    return rows.length;
   }
 
   async ingestEmbedBackfillPage(messages: Message<true>[]): Promise<number> {
     const owned = messages.filter((message) => this.owns(message.guildId));
     if (owned.length === 0) return 0;
-    await this.replaceBackfillPageEmbeds(owned);
-    return owned.reduce((sum, message) => sum + message.embeds.length, 0);
+    return this.replaceBackfillPageEmbeds(owned);
   }
 
   async listEmbedReconcileChannels(limit = 1): Promise<Array<{ channelId: string; cursor: string | null }>> {
