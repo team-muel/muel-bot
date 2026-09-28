@@ -207,8 +207,8 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
-  /reconcileRegisteredThreadHistories[\s\S]*thread\.messages\.fetch\(\{ limit: 100,[\s\S]*before: pageCursor/,
-  'historical thread reconciliation must use Discord native reverse message pagination',
+  /reconcileRegisteredThreadHistories[\s\S]*messages\.fetch\(\{ around: channelId, limit: 100[\s\S]*messages\.fetch\(\{ after: pageCursor, limit: 100/,
+  'historical thread reconciliation must use Discord native starter-anchored around/after pagination',
 );
 assert.match(
   archivistWorkersSource,
