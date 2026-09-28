@@ -212,6 +212,11 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
+  /pageMode === 'around'[\s\S]*\? !advanced[\s\S]*page\.size < 100 \|\| !advanced/,
+  'a short around-page must not be treated as terminal history evidence',
+);
+assert.match(
+  archivistWorkersSource,
   /saveThreadHistoryReconcileState\(channelId, pageCursor, done\)/,
   'thread-history reconciliation must persist a resumable cursor and completion state',
 );
