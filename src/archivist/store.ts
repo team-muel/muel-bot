@@ -337,7 +337,7 @@ export class ArchiveStore {
       .eq('guild_id', this.guildId)
       .not('embed_reconcile_requested_at', 'is', null)
       .lt('embed_reconcile_version', 1)
-      .order('embed_reconcile_requested_at', { ascending: true })
+      .order('updated_at', { ascending: true })
       .limit(limit);
     throwIfError('archive embed reconcile queue query failed', error);
     return (data ?? []).map((row: any) => ({

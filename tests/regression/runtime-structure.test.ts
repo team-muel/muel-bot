@@ -258,6 +258,16 @@ assert.match(
   'embed reconciliation must use Discord native reverse message pagination',
 );
 assert.match(
+  archivistWorkersSource,
+  /for \(let pageNo = 0; pageNo < 10; pageNo \+= 1\)/,
+  'embed reconciliation must yield after a bounded page slice so one channel cannot monopolize the queue',
+);
+assert.match(
+  archivistStoreSource,
+  /listEmbedReconcileChannels[\s\S]*\.order\('updated_at', \{ ascending: true \}\)/,
+  'pending embed channels must rotate by least-recently-processed channel',
+);
+assert.match(
   archivistIndexSource,
   /startEmbedReconcileWorker\(client, store\)/,
   'Archivist startup must launch the embed reconciliation worker',
