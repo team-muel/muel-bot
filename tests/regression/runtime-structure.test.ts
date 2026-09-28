@@ -185,6 +185,16 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
+  /repairRegisteredThreadStarters[\s\S]*client\.channels\.fetch\(channelId\)/,
+  'registered historical thread gaps must be repairable by channel id',
+);
+assert.match(
+  archivistWorkersSource,
+  /await repairRegisteredThreadStarters\(client, store\);[\s\S]*collectArchivedThreads/,
+  'registered-thread repair must run before broad archived-thread enumeration',
+);
+assert.match(
+  archivistWorkersSource,
   /channel\.type === ChannelType\.GuildPublicThread[\s\S]*ChannelType\.GuildNewsThread/,
   'starter repair must be gated by Discord public/news thread enum types rather than the convenience isThread predicate',
 );
