@@ -435,9 +435,8 @@ const reconcileEmbedChannel = async (
 
   const channel = fetched as GuildTextBasedChannel;
   let cursor = initialCursor ?? undefined;
-  let pagesSinceYield = 0;
 
-  for (;;) {
+  for (let pageNo = 0; pageNo < 10; pageNo += 1) {
     const page = await withDeadline(
       channel.messages.fetch({ limit: 100, ...(cursor ? { before: cursor } : {}), cache: false }),
       120_000,
@@ -461,13 +460,13 @@ const reconcileEmbedChannel = async (
       done,
     });
     if (done) return;
-
-    pagesSinceYield += 1;
-    if (pagesSinceYield >= 10) {
-      pagesSinceYield = 0;
-      await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
-    }
   }
+
+  console.log('[archivist] embed reconcile slice complete', {
+    channelId,
+    cursor,
+    pages: 10,
+  });
 };
 
 const runEmbedReconcileTick = async (
