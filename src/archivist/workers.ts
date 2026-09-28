@@ -9,6 +9,7 @@ import {
   type ThreadChannel,
 } from 'discord.js';
 import { config } from '../config.js';
+import { mapWithConcurrency } from '../utils/concurrency.js';
 import { ArchiveStore } from './store.js';
 
 type WorkerStatus = {
@@ -30,6 +31,25 @@ export const attachmentCopyStatus: WorkerStatus = {
 };
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+const withDeadline = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> => {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded ${timeoutMs}ms`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
 
 const canFetchMessages = (channel: GuildBasedChannel): channel is GuildTextBasedChannel =>
   channel.isTextBased() && 'messages' in channel;
@@ -136,30 +156,44 @@ const repairRegisteredThreadStarters = async (
   client: Client<true>,
   store: ArchiveStore,
 ): Promise<void> => {
-  const missingIds = await store.listMissingPublicThreadStarterIds(100);
+  // Keep the startup repair intentionally small and bounded. Successful rows
+  // disappear from this query, so subsequent startups continue draining the
+  // historical gap set without letting one Discord REST route stall Archivist.
+  const missingIds = await store.listMissingPublicThreadStarterIds(12);
   if (missingIds.length === 0) return;
 
   console.log('[archivist] registered thread starter repair', {
     missing: missingIds.length,
+    concurrency: 2,
   });
 
-  for (const channelId of missingIds) {
+  await mapWithConcurrency(missingIds, 2, async (channelId) => {
     try {
-      const fetched = await client.channels.fetch(channelId);
+      console.log('[archivist] registered thread repair attempt', { channelId });
+      const fetched = await withDeadline(
+        client.channels.fetch(channelId),
+        10_000,
+        `Discord channel fetch ${channelId}`,
+      );
       if (!fetched || !('guildId' in fetched) || fetched.guildId !== store.guildId) {
         console.warn('[archivist] registered thread unavailable', { channelId });
-        continue;
+        return;
       }
+
       const channel = fetched as GuildBasedChannel;
       await store.upsertChannel(channel);
-      await backfillThreadStarter(store, channel);
+      await withDeadline(
+        backfillThreadStarter(store, channel),
+        12_000,
+        `Discord thread starter fetch ${channelId}`,
+      );
     } catch (error) {
       console.warn('[archivist] registered thread starter repair failed', {
         channelId,
         error: errorMessage(error),
       });
     }
-  }
+  });
 };
 
 const backfillChannel = async (
@@ -223,14 +257,11 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
       cachedChannels: baseChannels.length,
     });
 
+    // Registry persistence must not perform Discord REST. Persist every cached
+    // channel first so metadata discovery always completes even when a later
+    // message/thread route is rate-limited.
     for (const channel of baseChannels) {
       await store.upsertChannel(channel);
-
-      // Starter recovery belongs to channel-registry discovery, not to the
-      // later message-backfill candidate filter. A Discord public/news thread
-      // can therefore heal even when canFetchMessages() does not admit the
-      // cached channel object into the pagination phase.
-      await backfillThreadStarter(store, channel);
     }
 
     // Historical Forum posts can remain in the database registry while no
