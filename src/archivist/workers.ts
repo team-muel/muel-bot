@@ -234,29 +234,39 @@ const reconcileRegisteredThreadHistories = async (
       const thread = channel as ThreadChannel;
       await store.upsertChannel(channel);
 
-      let pageCursor = cursor ?? undefined;
+      // Historical Forum posts are anchored by the thread/starter snowflake.
+      // The single-message and unbounded latest-page routes have both shown
+      // pathological sleeps for some old posts, while Discord's around route
+      // is healthy. Reconcile forward from the starter using native around/after
+      // pagination so replies are recovered without rediscovering the thread.
+      let pageCursor = cursor ?? channelId;
       for (let pageNo = 0; pageNo < 4; pageNo += 1) {
         const page = await withDeadline(
-          thread.messages.fetch({ limit: 100, ...(pageCursor ? { before: pageCursor } : {}) }),
+          pageNo === 0 && !cursor
+            ? thread.messages.fetch({ around: channelId, limit: 100, cache: true })
+            : thread.messages.fetch({ after: pageCursor, limit: 100, cache: true }),
           12_000,
           `Discord thread history page ${channelId}`,
         );
         const rows = [...page.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
         if (rows.length === 0) {
-          await store.saveThreadHistoryReconcileState(channelId, pageCursor ?? null, true);
+          await store.saveThreadHistoryReconcileState(channelId, pageCursor, true);
           return;
         }
 
         await store.ingestBackfillPage(rows);
-        const oldest = rows[0];
-        pageCursor = oldest.id;
-        const done = page.size < 100 || rows.some((message) => message.id === channelId);
+        const newest = rows[rows.length - 1];
+        const previousCursor = pageCursor;
+        pageCursor = newest.id;
+        const advanced = pageCursor !== previousCursor;
+        const done = page.size < 100 || !advanced;
         await store.saveThreadHistoryReconcileState(channelId, pageCursor, done);
         console.log('[archivist] thread history page', {
           channelId,
           fetched: page.size,
           cursor: pageCursor,
           done,
+          mode: pageNo === 0 && !cursor ? 'around' : 'after',
         });
         if (done) return;
       }
