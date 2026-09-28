@@ -259,8 +259,13 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
-  /rich reconcile archive message lookup failed[\s\S]*archivedIds[\s\S]*archivedMessages/,
-  'rich reconciliation must only attach rich payloads to messages already present in the archive',
+  /rich reconcile archive message lookup failed[\s\S]*tombstoned[\s\S]*archivedIds[\s\S]*archivedMessages/,
+  'rich reconciliation must only attach rich payloads to non-tombstoned archived messages',
+);
+assert.doesNotMatch(
+  archivistStoreSource,
+  /replaceMessageRichPayload\(message\);[\s\S]{0,180}\.from\('messages'\)\.update\(\{\s*\}\)/,
+  'Components V2 edit refresh must not issue an empty messages update',
 );
 assert.match(
   archivistWorkersSource,

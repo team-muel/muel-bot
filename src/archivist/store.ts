@@ -378,11 +378,13 @@ export class ArchiveStore {
     if (messages.length === 0) return { embeds: 0, components: 0 };
     const messageIds = messages.map((message) => message.id);
     const { data: archivedRows, error: archiveLookupError } = await this.db.from('messages')
-      .select('message_id')
+      .select('message_id,tombstoned')
       .in('message_id', messageIds);
     throwIfError('rich reconcile archive message lookup failed', archiveLookupError);
 
-    const archivedIds = new Set((archivedRows ?? []).map((row: any) => String(row.message_id)));
+    const archivedIds = new Set((archivedRows ?? [])
+      .filter((row: any) => !row.tombstoned)
+      .map((row: any) => String(row.message_id)));
     const archivedMessages = messages.filter((message) => archivedIds.has(message.id));
     if (archivedMessages.length === 0) return { embeds: 0, components: 0 };
 
@@ -518,11 +520,10 @@ export class ArchiveStore {
       }
       if (current.tombstoned) return;
       if (current.content === (message.content || null)) {
+        // Components V2 and embeds can change while legacy content remains null
+        // or unchanged, so refresh the rich payload on every message update.
         await this.ingestAttachments(message);
         await this.replaceMessageRichPayload(message);
-            const { error: richError } = await this.db.from('messages').update({
-          }).eq('message_id', message.id);
-        throwIfError(`message rich projection edit failed (${message.id})`, richError);
         return;
       }
 
@@ -543,7 +544,7 @@ export class ArchiveStore {
       throwIfError(`message edit update failed (${message.id})`, updateError);
       await this.ingestAttachments(message);
       await this.replaceMessageRichPayload(message);
-      });
+    });
     const tracked = next.finally(() => {
       if (this.editQueues.get(message.id) === tracked) this.editQueues.delete(message.id);
     });
