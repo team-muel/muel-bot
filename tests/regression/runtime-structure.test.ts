@@ -116,6 +116,8 @@ const webSubSource = readFileSync(join(sourceRoot, 'youtubeWebSub.ts'), 'utf8');
 const youtubeLifecycleSource = readFileSync(join(sourceRoot, 'youtubeLifecycle.ts'), 'utf8');
 const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts'), 'utf8');
 const archivistWorkersSource = readFileSync(join(sourceRoot, 'archivist', 'workers.ts'), 'utf8');
+const archivistStoreSource = readFileSync(join(sourceRoot, 'archivist', 'store.ts'), 'utf8');
+const archivistIndexSource = readFileSync(join(sourceRoot, 'archivist', 'index.ts'), 'utf8');
 
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
 assert.match(indexSource, /buildRuntimeStatus\(collectRuntimeStatus\(\{/);
@@ -229,6 +231,31 @@ assert.doesNotMatch(
   archivistWorkersSource,
   /backfillThreadStarter[\s\S]{0,600}channel\.isThread\(\)/,
   'starter repair must not depend on BaseChannel.isThread() as its runtime gate',
+);
+assert.match(
+  archivistStoreSource,
+  /message\.embeds\.map[\s\S]*serializeEmbed/,
+  'Archivist must persist structured Discord embeds during ordinary ingestion',
+);
+assert.match(
+  archivistStoreSource,
+  /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageEmbeds/,
+  'historical embed recovery must use an embed-only batch path',
+);
+assert.match(
+  archivistWorkersSource,
+  /embed reconcile page[\s\S]*saveEmbedReconcileState/,
+  'embed reconciliation must persist a resumable cursor',
+);
+assert.match(
+  archivistWorkersSource,
+  /channel\.messages\.fetch\(\{ limit: 100,[\s\S]*before: cursor/,
+  'embed reconciliation must use Discord native reverse message pagination',
+);
+assert.match(
+  archivistIndexSource,
+  /startEmbedReconcileWorker\(client, store\)/,
+  'Archivist startup must launch the embed reconciliation worker',
 );
 
 console.log('✅ runtime structure, containment, and readiness contracts');
