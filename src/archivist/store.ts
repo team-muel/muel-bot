@@ -412,6 +412,31 @@ export class ArchiveStore {
     return Boolean(data);
   }
 
+  async listMissingPublicThreadStarterIds(limit = 100): Promise<string[]> {
+    const { data: channels, error: channelError } = await this.db.from('channels')
+      .select('channel_id')
+      .eq('guild_id', this.guildId)
+      .in('type', ['GuildPublicThread', 'GuildNewsThread'])
+      .order('updated_at', { ascending: false })
+      .limit(1000);
+    throwIfError('archive public thread registry query failed', channelError);
+
+    const ids = (channels ?? []).map((row: any) => String(row.channel_id));
+    if (ids.length === 0) return [];
+
+    const existing = new Set<string>();
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const chunk = ids.slice(offset, offset + 100);
+      const { data: rows, error } = await this.db.from('messages')
+        .select('message_id')
+        .in('message_id', chunk);
+      throwIfError('archive thread starter existence query failed', error);
+      for (const row of rows ?? []) existing.add(String(row.message_id));
+    }
+
+    return ids.filter((id) => !existing.has(id)).slice(0, limit);
+  }
+
   async getChannelBackfillState(channelId: string): Promise<{ cursor: string | null; done: boolean }> {
     const { data, error } = await this.db.from('channels')
       .select('last_backfilled_message_id, backfill_done')

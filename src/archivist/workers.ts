@@ -132,6 +132,36 @@ const backfillThreadStarter = async (
   }
 };
 
+const repairRegisteredThreadStarters = async (
+  client: Client<true>,
+  store: ArchiveStore,
+): Promise<void> => {
+  const missingIds = await store.listMissingPublicThreadStarterIds(100);
+  if (missingIds.length === 0) return;
+
+  console.log('[archivist] registered thread starter repair', {
+    missing: missingIds.length,
+  });
+
+  for (const channelId of missingIds) {
+    try {
+      const fetched = await client.channels.fetch(channelId);
+      if (!fetched || !('guildId' in fetched) || fetched.guildId !== store.guildId) {
+        console.warn('[archivist] registered thread unavailable', { channelId });
+        continue;
+      }
+      const channel = fetched as GuildBasedChannel;
+      await store.upsertChannel(channel);
+      await backfillThreadStarter(store, channel);
+    } catch (error) {
+      console.warn('[archivist] registered thread starter repair failed', {
+        channelId,
+        error: errorMessage(error),
+      });
+    }
+  }
+};
+
 const backfillChannel = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
@@ -202,6 +232,12 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
       // cached channel object into the pagination phase.
       await backfillThreadStarter(store, channel);
     }
+
+    // Historical Forum posts can remain in the database registry while no
+    // longer appearing in the ready client's channel cache. Repair those
+    // known gaps directly by channel snowflake before broad archived-thread
+    // enumeration, which may be slow or throttled.
+    await repairRegisteredThreadStarters(client, store);
 
     // Heal cached/active channels first. This lets active forum posts recover
     // their starter message even if archived-thread enumeration is rate-limited.
