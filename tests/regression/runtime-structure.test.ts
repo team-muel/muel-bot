@@ -250,6 +250,11 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
+  /message_rich_text[\s\S]*rendered_text/,
+  'Archivist must persist the normalized rich-text projection separately from legacy message content',
+);
+assert.match(
+  archivistStoreSource,
   /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageRichPayload/,
   'historical rich recovery must restore embeds and Components V2 together',
 );
