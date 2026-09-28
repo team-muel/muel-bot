@@ -83,11 +83,41 @@ const collectArchivedThreads = async (
   return [...threads.values()];
 };
 
+const backfillForumStarter = async (
+  store: ArchiveStore,
+  channel: GuildTextBasedChannel,
+): Promise<void> => {
+  if (!channel.isThread()) return;
+  const parentType = channel.parent?.type;
+  if (parentType !== ChannelType.GuildForum && parentType !== ChannelType.GuildMedia) return;
+
+  try {
+    const starter = await channel.fetchStarterMessage();
+    if (!starter || !starter.inGuild()) return;
+    await store.ingestMessage(starter, 'backfill');
+  } catch (error) {
+    // A forum post can outlive a deleted starter message. Keep the thread
+    // registry/backfill state usable instead of failing the whole guild crawl.
+    console.warn('[archivist] forum starter message recovery failed', {
+      channelId: channel.id,
+      parentId: channel.parentId,
+      error: errorMessage(error),
+    });
+  }
+};
+
 const backfillChannel = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
 ): Promise<void> => {
   await store.upsertChannel(channel);
+
+  // Discord forum/media posts are thread channels whose starter message needs
+  // the dedicated fetchStarterMessage() API. Repair it before honoring an
+  // existing backfill_done flag so previously-completed rows with a missing
+  // starter message are healed on the next Archivist startup.
+  await backfillForumStarter(store, channel);
+
   const state = await store.getChannelBackfillState(channel.id);
   if (state.done) return;
   let cursor = state.cursor ?? undefined;

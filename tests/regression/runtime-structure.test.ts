@@ -115,6 +115,7 @@ const memoryWorkerSource = readFileSync(join(sourceRoot, 'memoryWorker.ts'), 'ut
 const webSubSource = readFileSync(join(sourceRoot, 'youtubeWebSub.ts'), 'utf8');
 const youtubeLifecycleSource = readFileSync(join(sourceRoot, 'youtubeLifecycle.ts'), 'utf8');
 const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts'), 'utf8');
+const archivistWorkersSource = readFileSync(join(sourceRoot, 'archivist', 'workers.ts'), 'utf8');
 
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
 assert.match(indexSource, /buildRuntimeStatus\(collectRuntimeStatus\(\{/);
@@ -156,5 +157,12 @@ assert.match(webSubSource, /mapWithConcurrency/);
 assert.match(youtubeLifecycleSource, /mapWithConcurrency/);
 assert.match(rollingPaperSource, /resolveUserNames/);
 assert.match(rollingPaperSource, /new Set\(ids\)/);
+assert.match(
+  archivistWorkersSource,
+  /await backfillForumStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
+  'forum starter recovery must run before an existing backfill_done state can short-circuit',
+);
+assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
+assert.match(archivistWorkersSource, /ChannelType\.GuildForum/);
 
 console.log('✅ runtime structure, containment, and readiness contracts');
