@@ -159,8 +159,13 @@ assert.match(rollingPaperSource, /resolveUserNames/);
 assert.match(rollingPaperSource, /new Set\(ids\)/);
 assert.match(
   archivistWorkersSource,
-  /await backfillThreadStarter\(store, channel\);[\s\S]*const state = await store\.getChannelBackfillState/,
-  'thread starter recovery must run before an existing backfill_done state can short-circuit',
+  /for \(const channel of baseChannels\) \{[\s\S]*await store\.upsertChannel\(channel\);[\s\S]*await backfillThreadStarter\(store, channel\);[\s\S]*const candidates/,
+  'thread starter recovery must run during registry discovery before message-backfill candidate filtering',
+);
+assert.match(
+  archivistWorkersSource,
+  /const threads = await collectArchivedThreads[\s\S]*await store\.upsertChannel\(channel\);[\s\S]*await backfillThreadStarter\(store, channel\);/,
+  'archived thread registry discovery must also repair missing starters',
 );
 assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
 assert.match(
