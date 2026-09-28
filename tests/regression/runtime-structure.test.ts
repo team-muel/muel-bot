@@ -170,7 +170,11 @@ assert.match(
   /const threads = await collectArchivedThreads[\s\S]*await store\.upsertChannel\(channel\);[\s\S]*await backfillThreadStarter\(store, channel\);/,
   'archived thread registry discovery must also repair missing starters',
 );
-assert.match(archivistWorkersSource, /fetchStarterMessage\(\)/);
+assert.match(
+  archivistWorkersSource,
+  /thread\.messages\.fetch\(\{ around: thread\.id, limit: 3, cache: true \}\)/,
+  'thread starter repair must use Discord native around pagination',
+);
 assert.match(
   archivistWorkersSource,
   /guild\.channels\.cache\.values\(\)[\s\S]*await store\.upsertChannel\(channel\)[\s\S]*collectArchivedThreads/,
@@ -183,8 +187,8 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
-  /backfillThreadStarter[\s\S]*fetchStarterMessage\(\)/,
-  'public/news thread starter gaps must be repaired through fetchStarterMessage',
+  /backfillThreadStarter[\s\S]*messages\.fetch\(\{ around: thread\.id/,
+  'public/news thread starter gaps must be repaired through Discord message pagination',
 );
 assert.match(
   archivistWorkersSource,
