@@ -88,13 +88,21 @@ const backfillForumStarter = async (
   channel: GuildTextBasedChannel,
 ): Promise<void> => {
   if (!channel.isThread()) return;
-  const parentType = channel.parent?.type;
+  const parent = channel.parent
+    ?? (channel.parentId ? channel.guild.channels.cache.get(channel.parentId) : null);
+  const parentType = parent?.type;
   if (parentType !== ChannelType.GuildForum && parentType !== ChannelType.GuildMedia) return;
   if (await store.hasMessage(channel.id)) return;
 
   try {
     const starter = await channel.fetchStarterMessage();
-    if (!starter || !starter.inGuild()) return;
+    if (!starter || !starter.inGuild()) {
+      console.warn('[archivist] forum starter message unavailable', {
+        channelId: channel.id,
+        parentId: channel.parentId,
+      });
+      return;
+    }
     await store.ingestMessage(starter, 'backfill');
   } catch (error) {
     // A forum post can outlive a deleted starter message. Keep the thread
