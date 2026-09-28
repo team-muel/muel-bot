@@ -125,7 +125,21 @@ const backfillThreadStarter = async (
   if (await store.hasMessage(thread.id)) return;
 
   try {
-    const starter = await thread.fetchStarterMessage();
+    // discord.js fetchStarterMessage() resolves to GET /channels/:id/messages/:id.
+    // A small around-page uses Discord's native Get Channel Messages route
+    // instead and avoids one pathological single-message bucket observed on an
+    // older forum post. The forum/thread snowflake is still the authoritative
+    // starter id, so only an exact id match is accepted.
+    let starter = thread.messages.cache.get(thread.id) ?? null;
+    if (!starter) {
+      const around = await withDeadline(
+        thread.messages.fetch({ around: thread.id, limit: 3, cache: true }),
+        10_000,
+        `Discord thread starter page ${thread.id}`,
+      );
+      starter = around.get(thread.id) ?? null;
+    }
+
     if (!starter || !starter.inGuild()) {
       console.warn('[archivist] thread starter message unavailable', {
         channelId: thread.id,
