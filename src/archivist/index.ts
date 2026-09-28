@@ -4,8 +4,10 @@ import { ArchiveStore } from './store.js';
 import {
   attachmentCopyStatus,
   backfillStatus,
+  embedReconcileStatus,
   runArchiveBackfill,
   startAttachmentCopyWorker,
+  startEmbedReconcileWorker,
 } from './workers.js';
 import {
   getSupabaseRestrictionStatus,
@@ -35,6 +37,7 @@ export const getArchivistStatus = () => ({
   lastAttemptAt,
   retryScheduled: Boolean(retryTimer),
   backfill: { ...backfillStatus },
+  embedReconcile: { ...embedReconcileStatus },
   attachmentCopy: { ...attachmentCopyStatus },
 });
 
@@ -69,6 +72,7 @@ export const startArchivist = async (client: Client<true>): Promise<void> => {
       });
     });
     startAttachmentCopyWorker(client, store);
+    startEmbedReconcileWorker(client, store);
     void runArchiveBackfill(client, store).catch((error) => {
       console.warn('[archivist] backfill stopped', { error: errorMessage(error) });
     });
