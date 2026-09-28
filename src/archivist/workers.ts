@@ -6,6 +6,7 @@ import {
   type GuildBasedChannel,
   type GuildTextBasedChannel,
   type Message,
+  type ThreadChannel,
 } from 'discord.js';
 import { config } from '../config.js';
 import { ArchiveStore } from './store.js';
@@ -87,27 +88,35 @@ const backfillThreadStarter = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
 ): Promise<void> => {
-  if (!channel.isThread() || channel.type === ChannelType.GuildPrivateThread) return;
+  const isPublicStarterThread = channel.type === ChannelType.GuildPublicThread
+    || channel.type === ChannelType.GuildNewsThread;
+  if (!isPublicStarterThread) return;
+
+  // Do not depend on BaseChannel#isThread() here. Discord forum posts restored
+  // from guild channel cache can carry a concrete GuildPublicThread enum while
+  // the convenience predicate is not a reliable repair gate. The enum is the
+  // protocol-level channel type and is what we persist in archive.channels.
+  const thread = channel as ThreadChannel;
 
   // Public/news/forum threads all have a starter-message concept. Standard
   // text-channel thread starters are usually already present in the parent
   // channel archive, while forum starters live in the post thread itself.
   // The snowflake identity check makes this repair cheap and idempotent.
-  if (await store.hasMessage(channel.id)) return;
+  if (await store.hasMessage(thread.id)) return;
 
   try {
-    const starter = await channel.fetchStarterMessage();
+    const starter = await thread.fetchStarterMessage();
     if (!starter || !starter.inGuild()) {
       console.warn('[archivist] thread starter message unavailable', {
-        channelId: channel.id,
-        parentId: channel.parentId,
-        type: ChannelType[channel.type] ?? String(channel.type),
+        channelId: thread.id,
+        parentId: thread.parentId,
+        type: ChannelType[thread.type] ?? String(thread.type),
       });
       return;
     }
     await store.ingestMessage(starter, 'backfill');
     console.log('[archivist] thread starter recovered', {
-      channelId: channel.id,
+      channelId: thread.id,
       starterMessageId: starter.id,
       starterChannelId: starter.channelId,
     });
@@ -115,9 +124,9 @@ const backfillThreadStarter = async (
     // A thread can outlive a deleted starter message. Keep the thread registry
     // and historical backfill usable instead of failing the whole guild crawl.
     console.warn('[archivist] thread starter message recovery failed', {
-      channelId: channel.id,
-      parentId: channel.parentId,
-      type: ChannelType[channel.type] ?? String(channel.type),
+      channelId: thread.id,
+      parentId: thread.parentId,
+      type: ChannelType[thread.type] ?? String(thread.type),
       error: errorMessage(error),
     });
   }
