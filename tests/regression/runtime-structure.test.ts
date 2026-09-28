@@ -118,6 +118,7 @@ const rollingPaperSource = readFileSync(join(sourceRoot, 'rollingPaperHandler.ts
 const archivistWorkersSource = readFileSync(join(sourceRoot, 'archivist', 'workers.ts'), 'utf8');
 const archivistStoreSource = readFileSync(join(sourceRoot, 'archivist', 'store.ts'), 'utf8');
 const archivistIndexSource = readFileSync(join(sourceRoot, 'archivist', 'index.ts'), 'utf8');
+const archivistPersonalAccessSource = readFileSync(join(sourceRoot, 'archivist', 'personalAccess.ts'), 'utf8');
 
 assert.match(indexSource, /startRuntimeHttpServer\(\{/);
 assert.match(indexSource, /buildRuntimeStatus\(collectRuntimeStatus\(\{/);
@@ -239,13 +240,23 @@ assert.match(
 );
 assert.match(
   archivistStoreSource,
-  /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageEmbeds/,
-  'historical embed recovery must use an embed-only batch path',
+  /message\.components[\s\S]*serializeComponent/,
+  'Archivist must persist Discord Components V2 payloads during ordinary ingestion',
 );
 assert.match(
   archivistStoreSource,
-  /embed reconcile archive message lookup failed[\s\S]*archivedIds[\s\S]*archivedMessages/,
-  'embed reconciliation must only attach embeds to messages already present in the archive',
+  /projectRichText[\s\S]*collectComponentText/,
+  'Archivist must project component text into a searchable rich-text surface',
+);
+assert.match(
+  archivistStoreSource,
+  /ingestEmbedBackfillPage[\s\S]*replaceBackfillPageRichPayload/,
+  'historical rich recovery must restore embeds and Components V2 together',
+);
+assert.match(
+  archivistStoreSource,
+  /rich reconcile archive message lookup failed[\s\S]*tombstoned[\s\S]*archivedMessages/,
+  'rich reconciliation must exclude tombstoned messages',
 );
 assert.match(
   archivistWorkersSource,
@@ -271,6 +282,16 @@ assert.match(
   archivistIndexSource,
   /startEmbedReconcileWorker\(client, store\)/,
   'Archivist startup must launch the embed reconciliation worker',
+);
+assert.match(
+  archivistPersonalAccessSource,
+  /\.ilike\('rendered_text'/,
+  'personal archive search must search rendered rich text rather than legacy content only',
+);
+assert.match(
+  archivistPersonalAccessSource,
+  /getArchiveRichPayload[\s\S]*message_components/,
+  'personal archive must expose structured Components V2 payloads',
 );
 
 console.log('✅ runtime structure, containment, and readiness contracts');
