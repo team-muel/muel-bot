@@ -440,7 +440,7 @@ const reconcileEmbedChannel = async (
   for (;;) {
     const page = await withDeadline(
       channel.messages.fetch({ limit: 100, ...(cursor ? { before: cursor } : {}), cache: false }),
-      20_000,
+      120_000,
       `Discord embed reconcile page ${channelId}`,
     );
     const rows = [...page.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
@@ -508,7 +508,8 @@ export const startEmbedReconcileWorker = (client: Client<true>, store: ArchiveSt
     }
   };
 
-  void tick();
+  // Let Archivist startup/backfill establish its normal Discord state first.
+  setTimeout(() => void tick(), 30_000).unref();
 };
 
 const validateDiscordAttachmentUrl = (raw: string): URL => {
