@@ -105,7 +105,9 @@ const messageColumns = [
 const enrichChannelNames = async (rows: Array<Record<string, unknown>>) => {
   const ids = [...new Set(rows.map((row) => String(row.channel_id ?? '')).filter(Boolean))];
   if (ids.length === 0) return rows;
-  const { data, error } = await archiveDb().from('channels').select('channel_id,name,type').in('channel_id', ids);
+  const { data, error } = await archiveDb().from('v_channel_registry')
+    .select('channel_id,name,type,kind,parent_id,parent_name,parent_type,parent_resolved,container_channel_id,category_id,category_name,category_type,is_archived,backfill_done')
+    .in('channel_id', ids);
   if (error) throw new Error(`channel lookup failed: ${error.message}`);
   const channels = new Map((data ?? []).map((row) => [String(row.channel_id), row]));
   return rows.map((row) => ({ ...row, channel: channels.get(String(row.channel_id)) ?? null }));
@@ -175,9 +177,10 @@ export const archiveContext = async (messageId: string, radius = 10) => {
 };
 
 export const listArchiveChannels = async () => {
-  const { data, error } = await archiveDb().from('channels')
-    .select('channel_id,name,type,parent_id,is_archived,backfill_done')
+  const { data, error } = await archiveDb().from('v_channel_registry')
+    .select('channel_id,name,type,kind,parent_id,parent_name,parent_type,parent_resolved,container_channel_id,category_id,category_name,category_type,is_archived,backfill_done')
     .eq('guild_id', requiredGuildId())
+    .order('category_name', { ascending: true, nullsFirst: false })
     .order('name', { ascending: true });
   if (error) throw new Error(`archive channel list failed: ${error.message}`);
   return { count: data?.length ?? 0, channels: data ?? [] };
