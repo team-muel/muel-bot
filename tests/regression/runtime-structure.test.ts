@@ -202,8 +202,18 @@ assert.match(
 );
 assert.match(
   archivistWorkersSource,
-  /await repairRegisteredThreadStarters\(client, store\);[\s\S]*collectArchivedThreads/,
-  'registered-thread repair must run before broad archived-thread enumeration',
+  /await repairRegisteredThreadStarters\(client, store\);[\s\S]*await reconcileRegisteredThreadHistories\(client, store\);[\s\S]*collectArchivedThreads/,
+  'starter repair and full thread-history reconciliation must run before broad archived-thread enumeration',
+);
+assert.match(
+  archivistWorkersSource,
+  /reconcileRegisteredThreadHistories[\s\S]*thread\.messages\.fetch\(\{ limit: 100,[\s\S]*before: pageCursor/,
+  'historical thread reconciliation must use Discord native reverse message pagination',
+);
+assert.match(
+  archivistWorkersSource,
+  /saveThreadHistoryReconcileState\(channelId, pageCursor, done\)/,
+  'thread-history reconciliation must persist a resumable cursor and completion state',
 );
 assert.match(
   archivistWorkersSource,

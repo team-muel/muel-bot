@@ -210,6 +210,65 @@ const repairRegisteredThreadStarters = async (
   });
 };
 
+const reconcileRegisteredThreadHistories = async (
+  client: Client<true>,
+  store: ArchiveStore,
+): Promise<void> => {
+  const targets = await store.listThreadsNeedingHistoryReconcile(4);
+  if (targets.length === 0) return;
+
+  console.log('[archivist] thread history reconcile', { targets: targets.length, concurrency: 2 });
+
+  await mapWithConcurrency(targets, 2, async ({ channelId, cursor }) => {
+    try {
+      const fetched = await withDeadline(
+        client.channels.fetch(channelId),
+        10_000,
+        `Discord channel fetch ${channelId}`,
+      );
+      if (!fetched || !('guildId' in fetched) || fetched.guildId !== store.guildId) return;
+      const channel = fetched as GuildBasedChannel;
+      const isPublicThread = channel.type === ChannelType.GuildPublicThread
+        || channel.type === ChannelType.GuildNewsThread;
+      if (!isPublicThread) return;
+      const thread = channel as ThreadChannel;
+      await store.upsertChannel(channel);
+
+      let pageCursor = cursor ?? undefined;
+      for (let pageNo = 0; pageNo < 4; pageNo += 1) {
+        const page = await withDeadline(
+          thread.messages.fetch({ limit: 100, ...(pageCursor ? { before: pageCursor } : {}) }),
+          12_000,
+          `Discord thread history page ${channelId}`,
+        );
+        const rows = [...page.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+        if (rows.length === 0) {
+          await store.saveThreadHistoryReconcileState(channelId, pageCursor ?? null, true);
+          return;
+        }
+
+        await store.ingestBackfillPage(rows);
+        const oldest = rows[0];
+        pageCursor = oldest.id;
+        const done = page.size < 100 || rows.some((message) => message.id === channelId);
+        await store.saveThreadHistoryReconcileState(channelId, pageCursor, done);
+        console.log('[archivist] thread history page', {
+          channelId,
+          fetched: page.size,
+          cursor: pageCursor,
+          done,
+        });
+        if (done) return;
+      }
+    } catch (error) {
+      console.warn('[archivist] thread history reconcile failed', {
+        channelId,
+        error: errorMessage(error),
+      });
+    }
+  });
+};
+
 const backfillChannel = async (
   store: ArchiveStore,
   channel: GuildTextBasedChannel,
@@ -283,6 +342,7 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
     // known gaps directly by channel snowflake before broad archived-thread
     // enumeration, which may be slow or throttled.
     await repairRegisteredThreadStarters(client, store);
+    await reconcileRegisteredThreadHistories(client, store);
 
     // Heal cached/active channels first. This lets active forum posts recover
     // their starter message even if archived-thread enumeration is rate-limited.
