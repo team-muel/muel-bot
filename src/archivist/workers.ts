@@ -418,6 +418,41 @@ export const runArchiveBackfill = async (client: Client<true>, store: ArchiveSto
   }
 };
 
+const repairComponentsV2ByMessageId = async (
+  channel: GuildTextBasedChannel,
+  store: ArchiveStore,
+  channelId: string,
+): Promise<number> => {
+  const missingIds = await store.listMissingComponentsV2MessageIds(channelId, 50);
+  if (missingIds.length === 0) return 0;
+
+  let repaired = 0;
+  for (const messageId of missingIds) {
+    try {
+      const message = await withDeadline(
+        channel.messages.fetch(messageId),
+        30_000,
+        `Discord Components V2 direct fetch ${messageId}`,
+      );
+      const result = await store.ingestEmbedBackfillPage([message]);
+      repaired += result.components;
+      console.log('[archivist] Components V2 direct repair', {
+        channelId,
+        messageId,
+        components: result.components,
+        embeds: result.embeds,
+      });
+    } catch (error) {
+      console.warn('[archivist] Components V2 direct repair failed', {
+        channelId,
+        messageId,
+        error: errorMessage(error),
+      });
+    }
+  }
+  return repaired;
+};
+
 const reconcileEmbedChannel = async (
   client: Client<true>,
   store: ArchiveStore,
@@ -434,6 +469,14 @@ const reconcileEmbedChannel = async (
   }
 
   const channel = fetched as GuildTextBasedChannel;
+  const repairedComponents = await repairComponentsV2ByMessageId(channel, store, channelId);
+  if (repairedComponents > 0) {
+    console.log('[archivist] Components V2 direct repair batch complete', {
+      channelId,
+      components: repairedComponents,
+    });
+  }
+
   let cursor = initialCursor ?? undefined;
 
   for (let pageNo = 0; pageNo < 10; pageNo += 1) {
