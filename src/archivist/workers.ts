@@ -448,14 +448,15 @@ const reconcileEmbedChannel = async (
       return;
     }
 
-    const embeds = await store.ingestEmbedBackfillPage(rows);
+    const rich = await store.ingestEmbedBackfillPage(rows);
     cursor = rows[0].id;
     const done = page.size < 100;
     await store.saveEmbedReconcileState(channelId, cursor, done);
     console.log('[archivist] embed reconcile page', {
       channelId,
       fetched: page.size,
-      embeds,
+      embeds: rich.embeds,
+      components: rich.components,
       cursor,
       done,
     });
