@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { looksLikeDurableMemoryCandidate, shouldEnqueueUserMemoryExtraction } from '../../src/capabilities.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -88,6 +89,17 @@ assert(
   'memo proposal and memory extraction share a durable-candidate cost gate',
   /looksLikeDurableMemoryCandidate/.test(memoProposal) &&
     /looksLikeDurableMemoryCandidate/.test(capabilities),
+);
+assert(
+  'durable-memory gate keeps explicit preferences while skipping ordinary requests',
+  looksLikeDurableMemoryCandidate('앞으로 답변은 한국어로 짧게 써줘') &&
+    shouldEnqueueUserMemoryExtraction('내가 좋아하는 숫자는 918271635야 기억해줘') &&
+    !shouldEnqueueUserMemoryExtraction('오늘 저녁 뭐 먹을까?') &&
+    !shouldEnqueueUserMemoryExtraction('최근 AI 뉴스 몇 개 알려줘'),
+);
+assert(
+  'assistant replies no longer enqueue a second memory extraction job',
+  !/enqueueMemoryExtractionJob/.test(muelAgent),
 );
 assert(
   'social-read reserves its extra model hop for ambiguous lightweight turns',
