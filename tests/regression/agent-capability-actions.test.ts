@@ -34,6 +34,7 @@ const actionDraft = readFileSync(join(SRC, 'actionDraft.ts'), 'utf8');
 const memoProposal = readFileSync(join(SRC, 'memoProposal.ts'), 'utf8');
 const capabilities = readFileSync(join(SRC, 'capabilities.ts'), 'utf8');
 const socialRead = readFileSync(join(SRC, 'socialRead.ts'), 'utf8');
+const muelJobs = readFileSync(join(SRC, 'muelJobs.ts'), 'utf8');
 const actionConfirmations = readFileSync(join(SRC, 'actionConfirmations.ts'), 'utf8');
 const mentionHandler = readFileSync(join(SRC, 'mentionHandler.ts'), 'utf8');
 const interactionEvents = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
@@ -91,11 +92,16 @@ assert(
     /looksLikeDurableMemoryCandidate/.test(capabilities),
 );
 assert(
-  'durable-memory gate keeps explicit preferences while skipping ordinary requests',
+  'durable-memory gate still narrows the optional memo-proposal classifier',
   looksLikeDurableMemoryCandidate('앞으로 답변은 한국어로 짧게 써줘') &&
-    shouldEnqueueUserMemoryExtraction('내가 좋아하는 숫자는 918271635야 기억해줘') &&
-    !shouldEnqueueUserMemoryExtraction('오늘 저녁 뭐 먹을까?') &&
-    !shouldEnqueueUserMemoryExtraction('최근 AI 뉴스 몇 개 알려줘'),
+    !looksLikeDurableMemoryCandidate('오늘 저녁 뭐 먹을까?'),
+);
+assert(
+  'automatic memory learning stays broad but coalesces to one user/chat/window job',
+  shouldEnqueueUserMemoryExtraction('오늘 저녁 뭐 먹을까?') &&
+    /MEMORY_EXTRACTION_WINDOW_MS = 30 \* 60 \* 1000/.test(muelJobs) &&
+    /extract_memory:\\${payload\.chatId}:\\${ownerKey}:\\${windowId}/.test(muelJobs) &&
+    /\.in\('status', \['pending', 'failed'\]\)/.test(muelJobs),
 );
 assert(
   'assistant replies no longer enqueue a second memory extraction job',
