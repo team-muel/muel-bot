@@ -13,6 +13,14 @@ const ActionDraftSchema = z.object({
 
 export type MuelActionDraft = z.infer<typeof ActionDraftSchema>;
 
+const HUB_ACTION_TOPIC_RE = /(?:뮤엘\s*)?허브|muel\s*hub|\bhub\b/iu;
+const HUB_ACTION_VERB_RE = /(활성화|비활성화|켜(?:줘|주세요|줄래|기|자)?|꺼(?:줘|주세요|줄래|기|자)?|열어(?:줘|주세요|줄래)?|닫아(?:줘|주세요|줄래)?|enable|disable|activate|deactivate|turn\s+(?:on|off))/iu;
+
+export const shouldClassifyActionDraft = (userText: string): boolean => {
+  const text = userText.trim();
+  return Boolean(text) && HUB_ACTION_TOPIC_RE.test(text) && HUB_ACTION_VERB_RE.test(text);
+};
+
 const ACTION_DRAFT_PROMPT = [
   'Classify whether a Discord user is explicitly asking Muel to prepare a reversible server action.',
   '',
@@ -39,7 +47,7 @@ export const classifyActionDraft = async (
   },
 ): Promise<MuelActionDraft | null> => {
   const text = args.userText.trim();
-  if (!text) return null;
+  if (!shouldClassifyActionDraft(text)) return null;
 
   const model = getPrimaryTextModel('router');
   if (!model) return null;
