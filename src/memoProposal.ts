@@ -21,6 +21,7 @@ import { getPrimaryTextModel } from './modelRegistry.js';
 import { logMuelBackgroundAiEvent } from './muelAiEvents.js';
 import { getSupabaseClient } from './supabase.js';
 import { insertWeaveNode } from './weaveNodes.js';
+import { looksLikeDurableMemoryCandidate } from './capabilities.js';
 
 // 메모 후보 추출 schema. should_propose=false 면 content 없어도 됨.
 // schema 완화 (PR #98 정신): kind 도 z.string + 후처리 정규화.
@@ -60,8 +61,9 @@ export const classifyProposeMemo = async (
   args: { userText: string; chatId?: string | null; discordUserId?: string | null },
 ): Promise<ProposeMemoResult | null> => {
   const trimmed = args.userText.trim();
-  // 너무 짧으면 propose 의미 X — LLM call 절약.
-  if (trimmed.length < 10) return null;
+  // Durable-memory signals are rare. Skip the LLM for ordinary questions,
+  // news requests, greetings, and one-off banter.
+  if (trimmed.length < 10 || !looksLikeDurableMemoryCandidate(trimmed)) return null;
 
   const model = getPrimaryTextModel('extract');
   if (!model) return null;
