@@ -156,7 +156,7 @@ export const shouldEnqueueUserMemoryExtraction = (userText: string): boolean => 
   if (AUTHORITY_CLAIM_RE.test(text)) return false;
   if (/(기억해|remember|저장해|메모리)/iu.test(text) && /(관리자|운영자|admin|owner|권한|생강팀|team[-\s]?muel)/iu.test(text)) return false;
   if (/기억해|remember|저장해|메모리/i.test(text) && /(secret|token|api\s*key|비밀|토큰|개인정보|흑역사|조롱|비방)/iu.test(text)) return false;
-  return looksLikeDurableMemoryCandidate(text);
+  return true;
 };
 
 export const getPreflightGuard = (
