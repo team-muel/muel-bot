@@ -14,6 +14,7 @@ const memoryJobPayloadSchema = z.object({
   messageId: z.string().min(1),
   source: z.string().min(1),
   createdAt: z.string().min(1),
+  ownerUserId: z.string().min(1).nullable().optional(),
 });
 
 const extractMemorySchema = z.object({
@@ -130,7 +131,9 @@ export async function processMemoryJob(job: { payload: unknown }) {
       .find((m) => m.role === 'user' && m.metadata?.discordUserId);
     return lastUser?.metadata?.discordUserId ? String(lastUser.metadata.discordUserId) : null;
   };
-  const memoOwnerUserId = (chatData.source_user_id as string | null) ?? resolveMemoOwnerId();
+  const memoOwnerUserId = payload.ownerUserId
+    ?? (chatData.source_user_id as string | null)
+    ?? resolveMemoOwnerId();
 
   // P5 소셜 프로필 — 대화를 읽는 김에 레지스터 요약 갱신(24h TTL, 실패 무해).
   const ownerUserLines = (messages as Array<{ role: string; parts?: any[]; metadata?: { discordUserId?: string } }>)
