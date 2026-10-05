@@ -91,7 +91,7 @@ assert(
   'research polling backs off from the configured interval to a bounded 30s cap',
   /pollDelayMs/.test(researchDeliver) &&
     /current \* 1\.6/.test(researchDeliver) &&
-    /AIQ_POLL_MAX_INTERVAL_MS = 30_000/.test(researchDeliver),
+    /AIQ_POLL_MAX_INTERVAL_MS = Math\.max\(config\.aiqPollIntervalMs, 30_000\)/.test(researchDeliver),
 );
 
 const aiqClient = readFileSync(join(SRC, 'aiqClient.ts'), 'utf8');
