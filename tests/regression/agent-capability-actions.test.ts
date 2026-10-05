@@ -30,6 +30,9 @@ const assert = (name: string, condition: boolean, detail?: string): void => {
 const agentTools = readFileSync(join(SRC, 'agentTools.ts'), 'utf8');
 const muelAgent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
 const actionDraft = readFileSync(join(SRC, 'actionDraft.ts'), 'utf8');
+const memoProposal = readFileSync(join(SRC, 'memoProposal.ts'), 'utf8');
+const capabilities = readFileSync(join(SRC, 'capabilities.ts'), 'utf8');
+const socialRead = readFileSync(join(SRC, 'socialRead.ts'), 'utf8');
 const actionConfirmations = readFileSync(join(SRC, 'actionConfirmations.ts'), 'utf8');
 const mentionHandler = readFileSync(join(SRC, 'mentionHandler.ts'), 'utf8');
 const interactionEvents = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
@@ -73,6 +76,23 @@ assert(
     /hub_activate/.test(actionDraft) &&
     /hub_deactivate/.test(actionDraft) &&
     /The classifier only drafts an action/.test(actionDraft),
+);
+
+assert(
+  'actionDraft skips LLM calls unless Hub plus an action verb is present',
+  /shouldClassifyActionDraft\(text\)/.test(actionDraft) &&
+    /HUB_ACTION_TOPIC_RE/.test(actionDraft) &&
+    /HUB_ACTION_VERB_RE/.test(actionDraft),
+);
+assert(
+  'memo proposal and memory extraction share a durable-candidate cost gate',
+  /looksLikeDurableMemoryCandidate/.test(memoProposal) &&
+    /looksLikeDurableMemoryCandidate/.test(capabilities),
+);
+assert(
+  'social-read reserves its extra model hop for ambiguous lightweight turns',
+  /shouldRunSocialRead\(input\)/.test(socialRead) &&
+    /AMBIGUOUS_SOCIAL_READ_RE/.test(socialRead),
 );
 
 assert(
