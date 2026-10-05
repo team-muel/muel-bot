@@ -142,7 +142,7 @@ const followUpEphemeral = async (
 };
 
 const terminalStatuses = ['success', 'failure', 'cancelled', 'timeout'];
-const AIQ_POLL_MAX_INTERVAL_MS = 30_000;
+const AIQ_POLL_MAX_INTERVAL_MS = Math.max(config.aiqPollIntervalMs, 30_000);
 
 const nextPollDelayMs = (currentDelayMs: number | null | undefined): number => {
   const current = Math.max(config.aiqPollIntervalMs, currentDelayMs ?? config.aiqPollIntervalMs);
