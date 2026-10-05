@@ -27,6 +27,24 @@ export type SocialRead = {
 
 export const LOW_COMMIT_CONFIDENCE = 0.55;
 
+// The hot path already knows a lightweight message explicitly invoked Muel.
+// Spend an extra classifier hop only when the utterance is genuinely ambiguous
+// or reply-like context exists; ordinary greetings/requests can go straight to
+// the chat model.
+const AMBIGUOUS_SOCIAL_READ_RE =
+  /^(?:아니|아님|뭐|뭐임|뭔데|왜|엥|응|어|ㅇㅇ|ㄴㄴ|헐|진짜|그래|맞아|그치|야|오|음|흠|ㄹㅇ|ㅋㅋ+|ㅎㅎ+|[!?~.]+)$/iu;
+
+export const shouldRunSocialRead = (input: {
+  userText: string;
+  channelActivity?: string;
+}): boolean => {
+  if (!config.enableSocialRead) return false;
+  const text = input.userText.trim();
+  if (!text) return false;
+  if (AMBIGUOUS_SOCIAL_READ_RE.test(text)) return true;
+  return Boolean(input.channelActivity?.trim() && text.length <= 12);
+};
+
 const socialReadSchema = z.object({
   addressee: z.enum(['muel', 'other', 'unclear'])
     .describe('이 메시지가 향한 대상. Muel(봇)에게 직접 온 말이면 muel, 다른 사람들끼리의 대화면 other.'),
@@ -40,7 +58,7 @@ export const runSocialRead = async (input: {
   authorName: string;
   channelActivity?: string;
 }): Promise<SocialRead | null> => {
-  if (!config.enableSocialRead) return null;
+  if (!shouldRunSocialRead(input)) return null;
   const lane = getLaneModel('router');
   if (!lane) return null;
   const startedAt = Date.now();

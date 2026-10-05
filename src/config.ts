@@ -41,11 +41,12 @@ const youtubeWebSubCallbackUrl = (): string | null => {
   return renderExternalUrl ? `${renderExternalUrl}/youtube/websub` : null;
 };
 
-// Gemini 3.6 Flash is the production baseline across generative lanes. Keeping
-// one stable model here and in render.yaml prevents local/default behavior from
-// drifting away from the deployed Blueprint values. MUEL_AI_MODEL and the
-// lane-specific variables remain available for deliberate overrides.
+// Keep user-facing generation on the stable Gemini baseline, but route
+// mechanical classification/extraction/summary lanes to the lower-cost GA
+// Flash-Lite model by default. Lane-specific env vars remain explicit escape
+// hatches for quality experiments or emergency rollback.
 const DEFAULT_LANE_MODEL = 'gemini-3.6-flash';
+const DEFAULT_EFFICIENT_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_HEAVY_MODEL = 'gemini-3.6-flash';
 const DEFAULT_VISION_MODEL = 'gemini-3.6-flash';
 
@@ -60,9 +61,9 @@ export const config = {
   googleGenerativeAiApiKey: optionalEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? optionalEnv('GEMINI_API_KEY'),
   muelAiModel: optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
   muelChatModel: optionalEnv('MUEL_CHAT_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
-  muelRouterModel: optionalEnv('MUEL_ROUTER_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
-  muelExtractModel: optionalEnv('MUEL_EXTRACT_MODEL') ?? DEFAULT_HEAVY_MODEL,
-  muelSummaryModel: optionalEnv('MUEL_SUMMARY_MODEL') ?? optionalEnv('MUEL_AI_MODEL') ?? DEFAULT_LANE_MODEL,
+  muelRouterModel: optionalEnv('MUEL_ROUTER_MODEL') ?? DEFAULT_EFFICIENT_MODEL,
+  muelExtractModel: optionalEnv('MUEL_EXTRACT_MODEL') ?? DEFAULT_EFFICIENT_MODEL,
+  muelSummaryModel: optionalEnv('MUEL_SUMMARY_MODEL') ?? DEFAULT_EFFICIENT_MODEL,
   muelHeavyModel: optionalEnv('MUEL_HEAVY_MODEL') ?? DEFAULT_HEAVY_MODEL,
   heavyProvider: (optionalEnv('MUEL_HEAVY_PROVIDER') ?? 'gemini') as 'gemini' | 'nvidia',
   muelVisionModel: optionalEnv('MUEL_VISION_MODEL') ?? DEFAULT_VISION_MODEL,

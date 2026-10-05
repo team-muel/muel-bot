@@ -133,6 +133,22 @@ const hasEncodedPolicyBypass = (text: string): boolean => {
   return false;
 };
 
+const EXPLICIT_MEMORY_RE = /(기억해(?:줘|둬)?|저장해(?:줘)?|메모해(?:줘)?|remember\s+(?:this|that|me))/iu;
+const LONG_LIVED_PREFERENCE_RE = /(앞으로|다음부터|항상|보통|자주|취향|선호|말투|반말|존댓말|호칭|불러줘|call\s+me|from\s+now\s+on|always|prefer)/iu;
+const SELF_PREFERENCE_RE = /(?:나는|난|저는|제가|내가|내\s|제\s).{0,48}(?:좋아|싫어|선호|원해|원한다|중요|자주|보통|취향)/iu;
+const PROJECT_MEMORY_RE = /(?:프로젝트|작업|운영).{0,64}(?:우선|원칙|규칙|기준|선호|해야|하지\s*마|금지|먼저)/iu;
+const RESPONSE_PREFERENCE_RE = /(?:답변|응답|설명|회의록|문서).{0,40}(?:한국어|영어|짧게|길게|간결|자세|형식|톤|말투|써|작성)/iu;
+
+export const looksLikeDurableMemoryCandidate = (userText: string): boolean => {
+  const text = userText.trim();
+  if (text.length < 8) return false;
+  return EXPLICIT_MEMORY_RE.test(text)
+    || LONG_LIVED_PREFERENCE_RE.test(text)
+    || SELF_PREFERENCE_RE.test(text)
+    || PROJECT_MEMORY_RE.test(text)
+    || RESPONSE_PREFERENCE_RE.test(text);
+};
+
 export const shouldEnqueueUserMemoryExtraction = (userText: string): boolean => {
   const text = userText.trim();
   if (!text) return false;

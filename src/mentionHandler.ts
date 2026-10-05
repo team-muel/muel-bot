@@ -315,6 +315,7 @@ export const handleMuelMention = async (
         messageId: userMessageId,
         source: 'discord',
         createdAt: new Date().toISOString(),
+        ownerUserId: message.author.id,
       });
     }
 

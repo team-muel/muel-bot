@@ -30,11 +30,11 @@ services:
       - key: MUEL_CHAT_MODEL
         value: gemini-3.6-flash
       - key: MUEL_ROUTER_MODEL
-        value: gemini-3.6-flash
+        value: gemini-3.5-flash-lite
       - key: MUEL_EXTRACT_MODEL
-        value: gemini-3.6-flash
+        value: gemini-3.5-flash-lite
       - key: MUEL_SUMMARY_MODEL
-        value: gemini-3.6-flash
+        value: gemini-3.5-flash-lite
       - key: MUEL_HEAVY_MODEL
         value: gemini-3.6-flash
       - key: MUEL_VISION_MODEL

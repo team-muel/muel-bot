@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { looksLikeDurableMemoryCandidate, shouldEnqueueUserMemoryExtraction } from '../../src/capabilities.js';
 
 const SRC = join(process.cwd(), 'src');
 
@@ -30,6 +31,10 @@ const assert = (name: string, condition: boolean, detail?: string): void => {
 const agentTools = readFileSync(join(SRC, 'agentTools.ts'), 'utf8');
 const muelAgent = readFileSync(join(SRC, 'muelAgent.ts'), 'utf8');
 const actionDraft = readFileSync(join(SRC, 'actionDraft.ts'), 'utf8');
+const memoProposal = readFileSync(join(SRC, 'memoProposal.ts'), 'utf8');
+const capabilities = readFileSync(join(SRC, 'capabilities.ts'), 'utf8');
+const socialRead = readFileSync(join(SRC, 'socialRead.ts'), 'utf8');
+const muelJobs = readFileSync(join(SRC, 'muelJobs.ts'), 'utf8');
 const actionConfirmations = readFileSync(join(SRC, 'actionConfirmations.ts'), 'utf8');
 const mentionHandler = readFileSync(join(SRC, 'mentionHandler.ts'), 'utf8');
 const interactionEvents = readFileSync(join(SRC, 'muelInteractionEvents.ts'), 'utf8');
@@ -73,6 +78,39 @@ assert(
     /hub_activate/.test(actionDraft) &&
     /hub_deactivate/.test(actionDraft) &&
     /The classifier only drafts an action/.test(actionDraft),
+);
+
+assert(
+  'actionDraft skips LLM calls unless Hub plus an action verb is present',
+  /shouldClassifyActionDraft\(text\)/.test(actionDraft) &&
+    /HUB_ACTION_TOPIC_RE/.test(actionDraft) &&
+    /HUB_ACTION_VERB_RE/.test(actionDraft),
+);
+assert(
+  'memo proposal imports the durable-candidate cost gate',
+  /looksLikeDurableMemoryCandidate/.test(memoProposal) &&
+    /looksLikeDurableMemoryCandidate/.test(capabilities),
+);
+assert(
+  'durable-memory gate still narrows the optional memo-proposal classifier',
+  looksLikeDurableMemoryCandidate('앞으로 답변은 한국어로 짧게 써줘') &&
+    !looksLikeDurableMemoryCandidate('오늘 저녁 뭐 먹을까?'),
+);
+assert(
+  'automatic memory learning stays broad but coalesces to one user/chat/window job',
+  shouldEnqueueUserMemoryExtraction('오늘 저녁 뭐 먹을까?') &&
+    /MEMORY_EXTRACTION_WINDOW_MS = 30 \* 60 \* 1000/.test(muelJobs) &&
+    /extract_memory:\$\{payload\.chatId\}:\$\{ownerKey\}:\$\{windowId\}/.test(muelJobs) &&
+    /\.in\('status', \['pending', 'failed'\]\)/.test(muelJobs),
+);
+assert(
+  'assistant replies no longer enqueue a second memory extraction job',
+  !/enqueueMemoryExtractionJob/.test(muelAgent),
+);
+assert(
+  'social-read reserves its extra model hop for ambiguous lightweight turns',
+  /shouldRunSocialRead\(input\)/.test(socialRead) &&
+    /AMBIGUOUS_SOCIAL_READ_RE/.test(socialRead),
 );
 
 assert(

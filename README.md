@@ -43,11 +43,11 @@ Optional:
 
 - `HUB_URL` — defaults to `https://muel-tree.vercel.app`
 - `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` — enables AI mention replies
-- `MUEL_AI_MODEL` — defaults to stable `gemini-3.6-flash` across generative lanes
+- `MUEL_AI_MODEL` — defaults to stable `gemini-3.6-flash` for the general Gemini generation baseline
 - `MUEL_CHAT_MODEL` — optional mention reply lane; falls back to `MUEL_AI_MODEL`
-- `MUEL_ROUTER_MODEL` — optional future routing lane; falls back to `MUEL_AI_MODEL`
-- `MUEL_EXTRACT_MODEL` — optional structured extraction lane; falls back to `MUEL_AI_MODEL`
-- `MUEL_SUMMARY_MODEL` — optional community/YouTube summary lane; falls back to `MUEL_AI_MODEL`
+- `MUEL_ROUTER_MODEL` — classification lane; defaults to cost-efficient `gemini-3.5-flash-lite`
+- `MUEL_EXTRACT_MODEL` — structured extraction lane; defaults to `gemini-3.5-flash-lite`
+- `MUEL_SUMMARY_MODEL` — community/YouTube summary lane; defaults to `gemini-3.5-flash-lite`
 - `MUEL_HEAVY_MODEL` — optional escalation lane; falls back to `MUEL_AI_MODEL`
 - `MUEL_VISION_MODEL` — optional image-bearing reply lane; defaults to `gemini-3.6-flash`
 - `MINDLOGIC_API_KEY` — optional FactChat gateway key

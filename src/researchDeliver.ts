@@ -47,6 +47,7 @@ export type ResearchUserDmPayload = {
 
 export type ResearchUserDmPollPayload = ResearchUserDmPayload & {
   externalJobId?: string | null;
+  pollDelayMs?: number;
 };
 
 const reportExcerpt = (report: string, max = 500): string => {
@@ -141,6 +142,12 @@ const followUpEphemeral = async (
 };
 
 const terminalStatuses = ['success', 'failure', 'cancelled', 'timeout'];
+const AIQ_POLL_MAX_INTERVAL_MS = Math.max(config.aiqPollIntervalMs, 30_000);
+
+const nextPollDelayMs = (currentDelayMs: number | null | undefined): number => {
+  const current = Math.max(config.aiqPollIntervalMs, currentDelayMs ?? config.aiqPollIntervalMs);
+  return Math.min(AIQ_POLL_MAX_INTERVAL_MS, Math.ceil(current * 1.6));
+};
 
 const schedulePoll = async (
   payload: ResearchUserDmPollPayload,
@@ -271,7 +278,10 @@ export const processResearchUserDmJob = async (
         .eq('id', rowId);
     }
 
-    await schedulePoll({ ...payload, externalJobId }, config.aiqPollIntervalMs);
+    await schedulePoll(
+      { ...payload, externalJobId, pollDelayMs: config.aiqPollIntervalMs },
+      config.aiqPollIntervalMs,
+    );
   } catch (error) {
     const failure = classifyResearchError(error);
     console.error('[research-deliver] submit failed', {
@@ -330,7 +340,8 @@ export const processResearchUserDmPollJob = async (
 
     const terminal: AiqJobStatusResponse = await getJobStatus(externalJobId);
     if (terminal.status !== 'SUCCESS' && terminal.status !== 'FAILURE' && terminal.status !== 'INTERRUPTED') {
-      await schedulePoll({ ...payload, externalJobId }, config.aiqPollIntervalMs);
+      const delayMs = nextPollDelayMs(payload.pollDelayMs);
+      await schedulePoll({ ...payload, externalJobId, pollDelayMs: delayMs }, delayMs);
       return;
     }
 
