@@ -87,7 +87,7 @@ assert(
     /HUB_ACTION_VERB_RE/.test(actionDraft),
 );
 assert(
-  'memo proposal and memory extraction share a durable-candidate cost gate',
+  'memo proposal imports the durable-candidate cost gate',
   /looksLikeDurableMemoryCandidate/.test(memoProposal) &&
     /looksLikeDurableMemoryCandidate/.test(capabilities),
 );
@@ -100,7 +100,7 @@ assert(
   'automatic memory learning stays broad but coalesces to one user/chat/window job',
   shouldEnqueueUserMemoryExtraction('오늘 저녁 뭐 먹을까?') &&
     /MEMORY_EXTRACTION_WINDOW_MS = 30 \* 60 \* 1000/.test(muelJobs) &&
-    /extract_memory:\\${payload\.chatId}:\\${ownerKey}:\\${windowId}/.test(muelJobs) &&
+    /extract_memory:\$\{payload\.chatId\}:\$\{ownerKey\}:\$\{windowId\}/.test(muelJobs) &&
     /\.in\('status', \['pending', 'failed'\]\)/.test(muelJobs),
 );
 assert(
