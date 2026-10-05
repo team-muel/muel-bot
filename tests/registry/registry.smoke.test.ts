@@ -68,9 +68,9 @@ if (
   && !process.env.MUEL_VISION_MODEL
 ) {
   assert('chat defaults to stable Gemini 3.6 Flash', chatId === 'gemini-3.6-flash', `got ${chatId}`);
-  assert('router defaults to stable Gemini 3.6 Flash', routerId === 'gemini-3.6-flash', `got ${routerId}`);
-  assert('extract defaults to stable Gemini 3.6 Flash', extractId === 'gemini-3.6-flash', `got ${extractId}`);
-  assert('summary defaults to stable Gemini 3.6 Flash', summaryId === 'gemini-3.6-flash', `got ${summaryId}`);
+  assert('router defaults to cost-efficient Gemini 3.5 Flash-Lite', routerId === 'gemini-3.5-flash-lite', `got ${routerId}`);
+  assert('extract defaults to cost-efficient Gemini 3.5 Flash-Lite', extractId === 'gemini-3.5-flash-lite', `got ${extractId}`);
+  assert('summary defaults to cost-efficient Gemini 3.5 Flash-Lite', summaryId === 'gemini-3.5-flash-lite', `got ${summaryId}`);
   assert('heavy defaults to stable Gemini 3.6 Flash', heavyId === 'gemini-3.6-flash', `got ${heavyId}`);
   assert('vision defaults to stable Gemini 3.6 Flash', visionId === 'gemini-3.6-flash', `got ${visionId}`);
 }
