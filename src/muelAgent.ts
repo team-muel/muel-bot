@@ -1,6 +1,5 @@
 import { generateText, isStepCount } from 'ai';
 import { config } from './config.js';
-import { enqueueMemoryExtractionJob } from './muelJobs.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UserHistorySummary, UIMessage } from './muelConversationStore.js';
 import { saveAssistantMessage } from './muelConversationStore.js';
@@ -159,7 +158,6 @@ const saveGeneratedReply = async (
   finalText: string,
   provider: MuelAgentResult['provider'],
   modelName: string,
-  options?: { enqueueMemory?: boolean },
 ): Promise<void> => {
   const assistantMessageId = crypto.randomUUID();
   await saveAssistantMessage(
@@ -172,14 +170,6 @@ const saveGeneratedReply = async (
     console.error('[muel] failed to save generated message', err);
   });
 
-  if ((options?.enqueueMemory ?? true) && finalText.length > 50) {
-    void enqueueMemoryExtractionJob(supabase, {
-      chatId,
-      messageId: assistantMessageId,
-      source: 'system',
-      createdAt: new Date().toISOString(),
-    });
-  }
 };
 
 type GenerateTextUsage = {
@@ -227,9 +217,7 @@ export const generateMuelReply = async (
   const preflightGuard = getPreflightGuard(userText);
   if (preflightGuard) {
     if (databaseAvailable) {
-      await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`, {
-        enqueueMemory: false,
-      });
+      await saveGeneratedReply(supabase, chatId, preflightGuard.reply, 'none', `policy:${preflightGuard.reason}`);
     }
     return {
       text: preflightGuard.reply,
