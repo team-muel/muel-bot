@@ -1,6 +1,7 @@
 import type { Client, GuildMember, Message, PartialGuildMember, PartialMessage } from 'discord.js';
 import { config } from '../config.js';
 import { ArchiveStore } from './store.js';
+import { channelHistoryReconcileStatus, startChannelHistoryReconcileWorker } from './channelHistoryReconcile.js';
 import {
   attachmentCopyStatus,
   backfillStatus,
@@ -38,6 +39,7 @@ export const getArchivistStatus = () => ({
   retryScheduled: Boolean(retryTimer),
   backfill: { ...backfillStatus },
   embedReconcile: { ...embedReconcileStatus },
+  channelHistoryReconcile: { ...channelHistoryReconcileStatus },
   attachmentCopy: { ...attachmentCopyStatus },
 });
 
@@ -73,6 +75,7 @@ export const startArchivist = async (client: Client<true>): Promise<void> => {
     });
     startAttachmentCopyWorker(client, store);
     startEmbedReconcileWorker(client, store);
+    startChannelHistoryReconcileWorker(client, store);
     void runArchiveBackfill(client, store).catch((error) => {
       console.warn('[archivist] backfill stopped', { error: errorMessage(error) });
     });
