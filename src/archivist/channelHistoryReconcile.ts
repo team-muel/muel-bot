@@ -56,9 +56,35 @@ export const channelHistoryReconcileStatus = {
   lastError: null as string | null,
   checkedMessages: 0,
   repairedMessages: 0,
+  phase: 'idle',
+  phaseStartedAt: null as string | null,
+  activeChannelId: null as string | null,
+  lastSourceHttpStatus: null as number | null,
+  lastSourceRetryAfter: null as string | null,
 };
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+// Observe stalled SDK waits without cancelling them or issuing overlapping
+// requests. Discord's Retry-After remains owned by the existing REST client.
+let phaseTimer: NodeJS.Timeout | null = null;
+const setHistoryPhase = (phase: string, channelId: string | null = null): void => {
+  if (phaseTimer) clearTimeout(phaseTimer);
+  channelHistoryReconcileStatus.phase = phase;
+  channelHistoryReconcileStatus.phaseStartedAt = new Date().toISOString();
+  channelHistoryReconcileStatus.activeChannelId = channelId;
+  if (phase === 'idle') return;
+  phaseTimer = setTimeout(() => {
+    console.warn('[archivist] channel history pending ' + JSON.stringify({
+      phase, channelId,
+      phaseStartedAt: channelHistoryReconcileStatus.phaseStartedAt,
+      lastSourceHttpStatus: channelHistoryReconcileStatus.lastSourceHttpStatus,
+      retryAfter: channelHistoryReconcileStatus.lastSourceRetryAfter,
+      action: 'preserve cursor and await existing request; no overlapping retry',
+    }));
+  }, 60_000);
+  phaseTimer.unref();
+};
 
 /** Disabled unless explicitly scoped. Existing backfill and thread cursors
  * are not reset. No Discord writes, schema changes, or new credentials. */
@@ -76,6 +102,20 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
   channelHistoryReconcileStatus.running = true;
   channelHistoryReconcileStatus.channelIds = ids;
   let failures = 0;
+  console.log('[archivist] channel history worker enabled ' + JSON.stringify({ channels: ids.length }));
+  const sourceRoutes = new Set(ids.flatMap((id) => [`/channels/${id}`, `/channels/${id}/messages`]));
+  client.rest.on('response', (request, response) => {
+    if (!sourceRoutes.has(String(request.route).split('?')[0])) return;
+    channelHistoryReconcileStatus.lastSourceHttpStatus = response.status;
+    channelHistoryReconcileStatus.lastSourceRetryAfter = response.headers.get('retry-after');
+    if (response.status >= 400) {
+      console.warn('[archivist] channel history HTTP ' + JSON.stringify({
+        status: response.status,
+        retryAfter: response.headers.get('retry-after'),
+        scope: response.headers.get('x-ratelimit-scope'),
+      }));
+    }
+  });
 
   const tick = async (): Promise<void> => {
     channelHistoryReconcileStatus.inProgress = true;
@@ -86,11 +126,13 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
       const db = getSupabaseClient().schema('archive');
       let allCaughtUp = true;
       for (const channelId of ids) {
+        setHistoryPhase('read_checkpoint', channelId);
         const { data: state, error: stateError } = await db.from('channels')
           .select('channel_id,type,history_reconcile_cursor')
           .eq('guild_id', store.guildId).eq('channel_id', channelId).single();
         if (stateError || !state) throw new Error(`history state: ${stateError?.message ?? 'missing channel'}`);
         if (state.type !== 'GuildText') throw new Error(`history target is not GuildText: ${channelId}`);
+        setHistoryPhase('resolve_discord_channel', channelId);
         const channel = await client.channels.fetch(channelId);
         if (!channel || channel.type !== ChannelType.GuildText || channel.guildId !== store.guildId) {
           throw new Error(`history channel outside owned text scope: ${channelId}`);
@@ -107,6 +149,7 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
           cursor: expectedCursor ?? channelId,
           maxPages: 10,
           fetchPage: async (after) => {
+            setHistoryPhase('fetch_discord_messages', channelId);
             const page = await channel.messages.fetch({ after, limit: 100, cache: false });
             return [...page.values()];
           },
@@ -114,6 +157,7 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
             if (rows.some((row) => row.channelId !== channelId || row.guildId !== store.guildId)) {
               throw new Error('history page crossed configured scope');
             }
+            setHistoryPhase('compare_archived_payload', channelId);
             const messageIds = rows.map((row) => row.id);
             const [existing, richText, embeds, components] = await Promise.all([
               db.from('messages').select('message_id,tombstoned').in('message_id', messageIds),
@@ -144,11 +188,14 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
             ));
             // Healthy archived payloads and explicit tombstones are untouched.
             // A failed partial insert is repaired on replay before checkpointing.
+            setHistoryPhase('persist_missing_messages', channelId);
             await store.ingestBackfillPage(missing);
+            setHistoryPhase('persist_incomplete_rich_payload', channelId);
             await store.ingestEmbedBackfillPage(incomplete);
             repaired += missing.length + incomplete.length;
           },
           checkpoint: async (cursor, caughtUp) => {
+            setHistoryPhase('save_checkpoint', channelId);
             let query = db.from('channels').update({
               history_reconcile_cursor: cursor,
               history_reconcile_version: caughtUp ? 1 : 0,
@@ -183,6 +230,7 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
       });
     } finally {
       channelHistoryReconcileStatus.inProgress = false;
+      setHistoryPhase('idle');
       // Schedule only after settling: no overlapping fetches during rate limits.
       setTimeout(() => void tick(), delayMs).unref();
     }
