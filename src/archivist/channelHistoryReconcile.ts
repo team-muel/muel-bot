@@ -105,7 +105,7 @@ export const startChannelHistoryReconcileWorker = (client: Client<true>, store: 
   console.log('[archivist] channel history worker enabled ' + JSON.stringify({ channels: ids.length }));
   const sourceRoutes = new Set(ids.flatMap((id) => [`/channels/${id}`, `/channels/${id}/messages`]));
   client.rest.on('response', (request, response) => {
-    if (!sourceRoutes.has(String(request.route).split('?')[0])) return;
+    if (!sourceRoutes.has(String(request.path).split('?')[0])) return;
     channelHistoryReconcileStatus.lastSourceHttpStatus = response.status;
     channelHistoryReconcileStatus.lastSourceRetryAfter = response.headers.get('retry-after');
     if (response.status >= 400) {
