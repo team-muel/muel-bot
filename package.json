@@ -53,7 +53,7 @@
     "ai": "^7.0.42",
     "discord.js": "^14.27.0",
     "ws": "^8.21.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "express-rate-limit": "^8.5.2",
